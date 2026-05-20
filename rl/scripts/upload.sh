@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 # Rsync the gavin_puffer dir up to the running pod, excluding build artifacts.
-# Reads scripts/.runpod_pod.json for SSH endpoint.
+# Reads rl/scripts/.runpod_pod.json for SSH endpoint.
 set -euo pipefail
 
-ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-META="$ROOT/scripts/.runpod_pod.json"
-[ -f "$META" ] || { echo "no $META — run scripts/runpod_setup.sh first"; exit 1; }
+ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
+META="$ROOT/rl/scripts/.runpod_pod.json"
+[ -f "$META" ] || { echo "no $META - run rl/scripts/runpod_setup.sh first"; exit 1; }
 
 IP=$(jq -r '.runtime.ports[] | select(.privatePort==22) | .ip' "$META")
 PORT=$(jq -r '.runtime.ports[] | select(.privatePort==22) | .publicPort' "$META")
@@ -42,11 +42,11 @@ rsync -az --delete \
     --exclude='*.so' \
     --exclude='*.o' \
     --exclude='.runs/' \
-    --exclude='experiments/' \
+    --exclude='/experiments/' \
     --exclude='checkpoints/' \
     --exclude='logs/' \
     --exclude='wandb/' \
-    --exclude='scripts/.runpod_pod.json' \
+    --exclude='rl/scripts/.runpod_pod.json' \
     --exclude='.wandb_key' \
     "$ROOT/" "root@$IP:/workspace/gavin_puffer/"
 

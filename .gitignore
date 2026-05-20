@@ -176,3 +176,4 @@ resources/drive/binaries/*
 /runs/
 /.runs/
 scripts/.runpod_pod.json*
+rl/scripts/.runpod_pod.json*

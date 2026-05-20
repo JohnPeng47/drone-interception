@@ -3,9 +3,9 @@
 # BEFORE teardown. Saved under runs/<pod_id>_<timestamp>/.
 set -uo pipefail
 
-ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-META="$ROOT/scripts/.runpod_pod.json"
-[ -f "$META" ] || { echo "no $META — nothing to sync"; exit 1; }
+ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
+META="$ROOT/rl/scripts/.runpod_pod.json"
+[ -f "$META" ] || { echo "no $META - nothing to sync"; exit 1; }
 
 POD_ID=$(jq -r '.id' "$META")
 IP=$(jq -r '[.runtime.ports[] | select(.privatePort==22)][0].ip' "$META")

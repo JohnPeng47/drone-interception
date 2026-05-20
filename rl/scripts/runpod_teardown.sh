@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# Stop and terminate the pod from scripts/.runpod_pod.json.
+# Stop and terminate the pod from rl/scripts/.runpod_pod.json.
 set -euo pipefail
 : "${RUNPOD_API_KEY:?RUNPOD_API_KEY not set}"
 
-ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-META="$ROOT/scripts/.runpod_pod.json"
-[ -f "$META" ] || { echo "no $META — nothing to do"; exit 0; }
+ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
+META="$ROOT/rl/scripts/.runpod_pod.json"
+[ -f "$META" ] || { echo "no $META - nothing to do"; exit 0; }
 
 POD_ID=$(jq -r '.id' "$META")
 echo ">> Terminating pod $POD_ID"

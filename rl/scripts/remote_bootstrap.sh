@@ -57,8 +57,13 @@ else
 fi
 
 echo
-echo "=== building CUDA backend (./build.sh intercept --float) ==="
-./build.sh intercept --float 2>&1 | tail -15
+echo "=== installing RL config into PufferLib config dir ==="
+cp rl/config/default.ini puffer/config/default.ini
+cp rl/config/intercept.ini puffer/config/intercept.ini
+
+echo
+echo "=== building CUDA backend (puffer/build.sh intercept --float) ==="
+(cd puffer && ./build.sh intercept --float) 2>&1 | tail -15
 
 echo
 echo "=== verifying _C.so loads ==="

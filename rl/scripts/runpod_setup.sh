@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Provision an RTX 4090 community-cloud pod on Runpod via GraphQL.
-# Writes pod metadata to scripts/.runpod_pod.json so other scripts can read it.
+# Writes pod metadata to rl/scripts/.runpod_pod.json so other scripts can read it.
 #
 # Env vars:
 #   RUNPOD_API_KEY       (required) your rpa_... token
@@ -23,8 +23,8 @@ POD_MIN_MEM_GB=${POD_MIN_MEM_GB:-16}
 GPU_TYPE_ID=${GPU_TYPE_ID:-NVIDIA GeForce RTX 4090}
 GPU_FALLBACK=${GPU_FALLBACK:-NVIDIA GeForce RTX 3090}
 
-ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-META="$ROOT/scripts/.runpod_pod.json"
+ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
+META="$ROOT/rl/scripts/.runpod_pod.json"
 
 deploy_attempt() {
     local gpu="$1"
@@ -90,7 +90,7 @@ for i in $(seq 1 60); do
         PORT=$(jq -r '.runtime.ports[] | select(.privatePort==22) | .publicPort' "$META")
         echo ">> Ready. SSH: ssh -p $PORT root@$IP"
         echo ">> Pod info: $META"
-        echo ">> Tear down: scripts/runpod_teardown.sh"
+        echo ">> Tear down: rl/scripts/runpod_teardown.sh"
         exit 0
     fi
     sleep 5
