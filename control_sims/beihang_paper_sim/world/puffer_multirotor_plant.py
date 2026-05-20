@@ -6,13 +6,13 @@ import numpy as np
 from pydrake.common.value import AbstractValue
 from pydrake.systems.framework import LeafSystem
 
-from drake_sims.ports import ctbr_value
-from gavin_puffer.backends import PufferDroneBackend
-from gavin_puffer.backends.puffer_c import (
-    SimOptions,
+from backends import PufferDroneBackend, SimOptions
+from backends.puffer_c import (
     initial_state_from_rotorpy,
     vehicle_params_from_quad_params,
 )
+
+from ..drake_compat import ctbr_value
 
 
 class PufferMultirotorPlant(LeafSystem):

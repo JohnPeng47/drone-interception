@@ -4,12 +4,11 @@ from __future__ import annotations
 
 from pydrake.systems.framework import DiagramBuilder
 
-from codex_sim.world.kinematic_target_system import KinematicTargetSystem
-from codex_sim.world.scene_assembler import SceneAssembler
-from gavin_puffer.backends import RotorPyMultirotorPlant
+from backends import RotorPyMultirotorPlant
 from intercept_sim.targets import KinematicTarget
 from intercept_sim.types import CameraRig
 
+from ..drake_compat import KinematicTargetSystem, SceneAssembler
 from .puffer_multirotor_plant import PufferMultirotorPlant
 
 

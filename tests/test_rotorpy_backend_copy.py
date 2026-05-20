@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from gavin_puffer.backends.rotorpy import RotorPyDroneBackend
+from backends.rotorpy import RotorPyDroneBackend
 from intercept_sim.types import CtbrCommand
 
 
@@ -31,4 +31,3 @@ def test_rotorpy_backend_step_ctbr_shape():
 
     np.testing.assert_allclose(out["x"], np.array([0.1, 0.0, 0.0]))
     np.testing.assert_allclose(state["x"], np.zeros(3))
-

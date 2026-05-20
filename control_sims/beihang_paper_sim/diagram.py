@@ -42,7 +42,6 @@ import math
 import numpy as np
 from pydrake.systems.framework import Diagram, DiagramBuilder
 
-from drake_sims.logger import RunnerStepLogger
 from intercept_sim.experiments.config import ExperimentConfig
 from intercept_sim.experiments.runner import (
     _camera_from_config,
@@ -52,10 +51,9 @@ from intercept_sim.experiments.runner import (
 )
 from intercept_sim.sensors import GeometryCamera
 
-from quad_specs import resolve_quad_params
-
 from .actuator.actuator_diagram import add_actuator
 from .controller.controller_diagram import add_controller
+from .drake_compat import RunnerStepLogger, resolve_quad_params
 from .estimation.estimation_diagram import add_estimation
 from .noise_config import NoiseConfig
 from .sensing.sensing_diagram import add_sensing

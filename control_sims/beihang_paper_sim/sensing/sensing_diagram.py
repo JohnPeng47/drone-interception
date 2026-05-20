@@ -12,10 +12,9 @@ from __future__ import annotations
 
 from pydrake.systems.framework import DiagramBuilder
 
-from codex_sim.sensing.feature_perception_system import FeaturePerceptionSystem
-from codex_sim.sensing.geometry_camera_system import GeometryCameraSystem
 from intercept_sim.sensors import FeaturePerceptionModel, GeometryCamera
 
+from ..drake_compat import FeaturePerceptionSystem, GeometryCameraSystem
 from ..noise_config import NoiseConfig
 from .imu_system import ImuSystem
 

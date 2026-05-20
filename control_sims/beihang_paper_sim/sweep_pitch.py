@@ -18,8 +18,8 @@ Layout:
     .runs/scenarios/beihang_paper_sim_pitch_sweep/<group>/aggregate.json
 
 Usage:
-    python -m gavin_puffer.control_sims.beihang_paper_sim.sweep_pitch
-    python -m gavin_puffer.control_sims.beihang_paper_sim.sweep_pitch --angles 0,10,20,30 --n-trials 30
+    python -m control_sims.beihang_paper_sim.sweep_pitch
+    python -m control_sims.beihang_paper_sim.sweep_pitch --angles 0,10,20,30 --n-trials 30
 """
 
 from __future__ import annotations
@@ -36,27 +36,14 @@ from pathlib import Path
 
 import numpy as np
 
-
-def _ensure_paths() -> None:
-    here = Path(__file__).resolve()
-    gavin_puffer_root = here.parents[2]
-    experiments_root = gavin_puffer_root.parent
-    simulations_root = experiments_root.parent
-    drake_sims_root = experiments_root / "drake_sims"
-    for p in (
-        experiments_root,
-        gavin_puffer_root / "shared",
-        drake_sims_root / "src",
-        experiments_root / "intercept_sim" / "src",
-        simulations_root / "rotorpy",
-        drake_sims_root / "sims",
-    ):
-        sp = str(p)
-        if p.exists() and sp not in sys.path:
-            sys.path.insert(0, sp)
+try:
+    from ._paths import ensure_paths
+except ImportError:  # Support direct script execution.
+    sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+    from control_sims.beihang_paper_sim._paths import ensure_paths
 
 
-_ensure_paths()
+ensure_paths()
 
 
 from pydrake.systems.analysis import Simulator   # noqa: E402
@@ -68,8 +55,8 @@ from intercept_sim.experiments.red_balloon import (   # noqa: E402
 )
 from intercept_sim.experiments.telemetry import build_experiment_telemetry   # noqa: E402
 
-from gavin_puffer.control_sims.beihang_paper_sim.diagram import build_diagram_from_config   # noqa: E402
-from gavin_puffer.control_sims.beihang_paper_sim.noise_config import NoiseConfig   # noqa: E402
+from control_sims.beihang_paper_sim.diagram import build_diagram_from_config   # noqa: E402
+from control_sims.beihang_paper_sim.noise_config import NoiseConfig   # noqa: E402
 
 
 YAML = Path(__file__).resolve().parent / "configs" / "red_balloon_x500.yaml"

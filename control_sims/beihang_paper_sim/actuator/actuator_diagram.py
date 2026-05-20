@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pydrake.systems.framework import DiagramBuilder
 
-from codex_sim.actuator.pixhawk_interface import PixhawkInterface
+from ..drake_compat import PixhawkInterface
 
 
 def add_actuator(builder: DiagramBuilder) -> dict:

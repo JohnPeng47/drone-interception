@@ -28,9 +28,9 @@ from __future__ import annotations
 import numpy as np
 from pydrake.systems.framework import LeafSystem
 
-from drake_sims.adapters import hover_ctbr
-from drake_sims.ports import ctbr_value, observer_state_value
 from intercept_sim.types import CameraRig, CtbrCommand
+
+from ..drake_compat import ctbr_value, hover_ctbr, observer_state_value
 
 
 DEFAULT_GAINS = {

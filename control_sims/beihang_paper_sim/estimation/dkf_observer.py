@@ -35,7 +35,7 @@ import numpy as np
 from pydrake.common.value import AbstractValue
 from pydrake.systems.framework import BasicVector, LeafSystem
 
-from drake_sims.ports import (
+from ..drake_compat import (
     measurements_value,
     observer_state_value,
     scene_value,

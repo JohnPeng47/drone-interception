@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from gavin_puffer.backends.puffer_c import InitialState, PufferDroneBackend, VehicleParams
+from backends import InitialState, PufferDroneBackend, VehicleParams
 
 
 def test_backend_hover_smoke():

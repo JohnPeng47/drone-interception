@@ -14,8 +14,7 @@ import numpy as np
 from pydrake.common.value import AbstractValue
 from pydrake.systems.framework import LeafSystem
 
-from drake_sims.adapters import ctbr_to_rotorpy
-from drake_sims.ports import ctbr_value
+from control_sims.beihang_paper_sim.drake_compat import ctbr_to_rotorpy, ctbr_value
 
 
 @dataclass
@@ -87,4 +86,3 @@ class RotorPyMultirotorPlant(LeafSystem):
 
 def _copy_state(state: dict[str, np.ndarray]) -> dict[str, np.ndarray]:
     return {k: np.asarray(v, dtype=float).copy() for k, v in state.items()}
-

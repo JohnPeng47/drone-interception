@@ -6,7 +6,7 @@ per-trial telemetry.jsonl.gz + scenario_metrics.json + summary.json under
 .runs/scenarios/beihang_paper_sim_red_balloon/<group>/run_<seed>/.
 
 Usage:
-    python -m gavin_puffer.control_sims.beihang_paper_sim.run_50_trials
+    python -m control_sims.beihang_paper_sim.run_50_trials
 """
 
 from __future__ import annotations
@@ -23,27 +23,14 @@ from pathlib import Path
 
 import numpy as np
 
-
-def _ensure_paths() -> None:
-    here = Path(__file__).resolve()
-    gavin_puffer_root = here.parents[2]
-    experiments_root = gavin_puffer_root.parent
-    simulations_root = experiments_root.parent
-    drake_sims_root = experiments_root / "drake_sims"
-    for p in (
-        experiments_root,
-        gavin_puffer_root / "shared",
-        drake_sims_root / "src",
-        experiments_root / "intercept_sim" / "src",
-        simulations_root / "rotorpy",
-        drake_sims_root / "sims",
-    ):
-        sp = str(p)
-        if p.exists() and sp not in sys.path:
-            sys.path.insert(0, sp)
+try:
+    from ._paths import ensure_paths
+except ImportError:  # Support direct script execution.
+    sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+    from control_sims.beihang_paper_sim._paths import ensure_paths
 
 
-_ensure_paths()
+ensure_paths()
 
 
 from pydrake.systems.analysis import Simulator   # noqa: E402
@@ -58,8 +45,8 @@ from intercept_sim.experiments.runner import (   # noqa: E402
 )
 from intercept_sim.experiments.telemetry import build_experiment_telemetry   # noqa: E402
 
-from gavin_puffer.control_sims.beihang_paper_sim.diagram import build_diagram_from_config   # noqa: E402
-from gavin_puffer.control_sims.beihang_paper_sim.noise_config import NoiseConfig   # noqa: E402
+from control_sims.beihang_paper_sim.diagram import build_diagram_from_config   # noqa: E402
+from control_sims.beihang_paper_sim.noise_config import NoiseConfig   # noqa: E402
 
 
 DEFAULT_CONFIG = (
@@ -155,7 +142,7 @@ def main() -> int:
     parser.add_argument("--n-trials", type=int, default=50)
     parser.add_argument("--sigma-pixel-px", type=float, default=1.0)
     parser.add_argument("--out-root", type=Path, default=None,
-                         help="Defaults to gavin_puffer/.runs/scenarios/beihang_paper_sim_red_balloon")
+                         help="Defaults to .runs/scenarios/beihang_paper_sim_red_balloon")
     parser.add_argument("--duration-s", type=float, default=None,
                          help="Override scenario duration_s.")
     args = parser.parse_args()

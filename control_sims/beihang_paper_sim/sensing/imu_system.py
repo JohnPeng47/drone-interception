@@ -19,9 +19,8 @@ import numpy as np
 from pydrake.common.value import AbstractValue
 from pydrake.systems.framework import BasicVector, LeafSystem
 
-from drake_sims.ports import vehicle_state_value
-
 from ..noise_config import NoiseConfig
+from ..drake_compat import vehicle_state_value
 
 
 def _quat_to_rot(q_xyzw: np.ndarray) -> np.ndarray:
