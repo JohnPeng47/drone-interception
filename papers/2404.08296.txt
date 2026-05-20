@@ -1,0 +1,1341 @@
+arXiv:2404.08296v1 [cs.RO] 12 Apr 2024
+
+
+
+
+
+
+
+
+
+
+        1
+
+High-Speed Interception Multicopter Control by
+         Image-based Visual Servoing
+
+    Kun Yang, Chenggang Bai, Zhikun     She, Quan Quan
+
+    
+
+                Abstract—In recent years, reports of illegal drones threatening       Static Target
+             public safety have increased. For the invasion of fully autonomous
+               drones, traditional methods such as radio frequency interference
+                       and GPS shielding may fail. This paper proposes a scheme
+                    that uses an autonomous multicopter with a strapdown camera
+    to intercept   a  maneuvering intruder UAV. The                 interceptor
+                    multicopter can autonomously detect and intercept intruders    |         5     of
+               moving at high speed in the air. The strapdown camera avoids the                       8 4 1!
+                                                                                             ALAA
+                complex mechanical structure of the electro-optical pod, making                    &  &         /     Ze
+              the interceptor multicopter compact. However, the coupling of the       [lds             i               A
+              camera and multicopter motion makes interception tasks difficult.
+                   To solve this problem, an Image-Based Visual Servoing (IBVS)
+             controller is proposed to make the interception fast and accurate.       and Circular  Motion
+                Then, in response to the time delay of sensor imaging and image
+             processing relative to attitude changes in high-speed scenarios, a
+                 Delayed Kalman Filter (DKF) observer is generalized to predict                                 om
+                  the current image position and increase the update frequency.              -         ba
+                   Finally, Hardware-in-the-Loop (HITL) simulations and outdoor                             Ma
+             flight experiments verify that this method has a high interception           |
+             accuracy and success rate. In the flight experiments, a high-speed                             ~-      3  i
+    interception is achieved with a terminal speed of 20 m/s.
+       Index Terms—high-speed     interception, image-based              visual                                 =
+servoing, anti-drone system, delayed Kalman filter
+   Video of the experiments: https://youtu.be/146Km6c30Ww Fig. 1. Interception with drones.
+
+                          I. INTRODUCTION                                          A. Problem Statement and Challenges
+                      Advances in micro air vehicles, also known as drones, are                Our previous research developed an Image-Based Visual
+              exploiting opportunities in industrial, agricultural and military              Servo (IBVS) algorithm with a forward-looking monocular
+                 fields [1], [2]. The rapid expansion of the drone industry has     camera for real flight experiments at 5 m/s [11]. This approach,
+                  outpaced regulations for the safe operation of drones, making         however, struggles with high-speed interception tasks due to
+                them representative means of illegal and destructive terror and        its reliance on the small-angle approximation, which fails at
+                      crime [3]. This has spurred the development of anti-drone        higher pitch angles observed during rapid movements, reaching
+                     (or counter-drone) technologies [4] to mitigate risks from    up to 50◦.
+                drone accidents or terrorism, particularly against increasingly               High-speed multicopter movement highlights significant
+    autonomous drones.                                                                    challenges, particularly in camera imaging and processing.
+                                                                                      Delays around 100 ms lead to notable control errors, up to 2 m
+                    The drone interceptors can be classified as radio frequency        at speeds like 20 m/s, challenging the assumption of flawless
+                  interference [5], [6] and hard-kill of enemy drones [7], [8].           image processing. Moreover, the camera’s imaging frequency
+                   However, due to the small size and high flexibility of fully  falls short of the requirements for effective control. To solve the
+                  autonomous drones [9], [10], using these ground-based devices        high-speed interception problem, two main research challenges
+               to rapidly deploy and intercept intruders is a challenging task.    are concluded:
+                  A proposed solution is the use of drones with onboard sensors           C-1: The interceptor’s high-speed and aggressive maneuver-
+    for effective interception, as depicted in Fig. 1.                                        ability necessitate a comprehensive attitude model and
+                  Kun Yang, Chenggang Bai, Quan Quan are with the School of Au-              a redesigned controller that can handle extensive state
+    tomation Science  and    Electrical Engineering, Beihang   University, Bei-            space. This involves working within the three-dimensional
+         jing 100191, China (e-mail: yangkun buaa@buaa.edu.cn; bcg@buaa.edu.cn;            special orthogonal group space, SO (3), requiring the de-
+    qq buaa@buaa.edu.cn).                                                                  velopment of a controller for large maneuver interception
+    Zhikun She is with the School of Mathematical Sciences, Beihang University,
+    Beijing 100191, China (e-mail: zhikun.she@buaa.edu.cn).                           tasks.
+       Corresponding author: Quan Quan                                                      C-2: The delayed, low frame rate, and easy loss of image
+
+    2
+
+
+
+                                                                            TABLE I
+                                            AUTONOMOUS INTERCEPTION AND RACING OF DRONES
+
+     Category      Method               Feature                         Target speed      Interceptor speed                          Pipeline
+
+                   Classical                                                                                Sensors    Software                           Hardware
+                                        Second place in Challenge       0 m/s;                 / ;           Depth
+     Location      perception-                                                            2 - 3 m s
+                   planning-control                                                                                                                        Drone
+     estimation-   pipeline [12],       1 in MBZIRC 2020                7 m/s             Almost no         Camera/    Perception  Planning or
+     based                                                                                mobility           Lidar,                Interception  Control  with Net
+                   [13]                                                                                     GPS, IMU    Filter        Point
+                   Optimal terminal-    Make further improvement                                            Sensors    Software                  Hardware
+                   velocity-control     on the basis of Challenge       10 m/s            10 m/s             Camera
+                   guidance [14]        1 in MBZIRC 2020 (first
+                                        place)                                                             with Pod,   Perception   Guidance &    Drone
+                                                                                                            GPS, IMU    Filter       Control
+
+                                        The neural network gener-       Simulation:
+                   Imitation learning   ates a minimum-jerk tra-        move slowly;                        Sensors    Software                  Hardware
+     Learning-     and low-level        jectory and the controller      Real flight:      4 - 12 m/s;                       Control
+     based         control [15]         tracks it. First to demon-      static narrow     1 - 3 m/s          Camera    Neural     Trajectory     Drone
+                                        strate zero-shot sim-to-real    gates                                               Network
+                                        transfer on drone racing
+
+                                        The neural network pre-
+                   End to end,          dicts     commands directly                                         Sensors        Software  Hardware
+                   imitation learning   from vision. Inputs are a       Simulation:               /s                         Neural
+                   [16]                 sequence of images and          static gates      >10 m         Camera,
+                                        drone state but no globally-                                          IMU      Network     Drone
+                                                                                                                        Perception
+                                        consistent position
+
+                   Pseudo-linear        A new 3-D helical guid-                                             Sensors    Software        Hardware
+                   Kalman filter and    ance law is designed based
+     IBVS-         3-D helical          on the theoretical conclu-      5 m/s             Helical tracking  Camera,    Perception   Guidance &   Drone
+     based         guidance law         sion of the observability                                             IMU       Filter       Control
+                   [17]                 enhancement
+
+                   Perception and       Use only a camera for au-       Simulation:       12 m/s;           Sensors    Software                  Hardware
+                                        tonomous UAV intercep-              s;
+                   IBVS controller                                      10 m/              /
+                   [11]                 tion tasks, no global posi-     Real flight:      5 m s         Camera,
+                                        tion is required                2 m/s                                 IMU      Perception    Control     Drone
+
+     Hardware       Software                Hardware                                             Learning-based methods involve neural networks replacing
+                                                                                              traditional perception, planning, and control modules. They
+     Sensors        Perception     Planning     Control                 Drone                 focus on learning trajectories and predicting commands from
+        visual inputs, offering robustness against system latencies and
+        sensor noise [15], [16]. Despite their potential, the complexity
+Fig. 2. A classic architecture for an autonomous interception and racing of real-world data collection limits their application in actual
+    system.                                                                                flight scenarios.
+                                                                                                      IBVS-based methods eliminate the planning module to
+                                feedback during the high-speed motion of the interceptor  reduce errors from inaccurate location estimation and planning.
+                             will lead to large interception errors. Accurate, real-time        These methods, focusing on bearing measurements, have led
+                            estimation of target coordinates on image is thus essential.   to innovations like 3-D helical guidance laws [17] and the use
+                                                                                           of virtual cameras for tracking targets [20], [21]. This paper
+    B. Related Work                                                                           particularly explores the IBVS controller within the SO (3)
+   1) Review on Autonomous Interception and Racing: Drone space for effective large maneuver interceptions.
+                            racing’s objective of precise gate traversal aligns with au-   2) Review on Delayed State Estimation:      Indoor and outdoor
+                           tonomous interception goals, meriting inclusion in our review     localization systems frequently encounter measurement delays
+                            [18]. Typical autonomous interception and racing systems, as   and losses, especially in Non-Line-of-Sight (NLOS) situations.
+                              shown in Fig. 2, consist of hardware (drones, sensors) and     This is akin to the challenges posed by visual sensor delays
+                           software (perception, planning, control modules). Research in   in drone technology. In indoor systems, strategies like Finite
+                      this field falls into three categories: location estimation-based,        Impulse Response (FIR) filters have been developed, where
+                          learning-based, and IBVS-based methods, summarized in Table I.      lost measurements are predicted based on previous estimates
+                                  Location estimation-based methods, using a perception-    [22], [23]. For outdoor systems, particularly those using GPS
+                            planning-control pipeline, were evident in MBZIRC 2020, with   in obstacle-rich environments, Variational Bayesian (VB)-based
+                         teams implementing such strategies to intercept both stationary   Kalman filters are employed, utilizing Bernoulli variables for
+                                and moving targets [12]–[14], [19]. These methods depend   time delay and state variable estimation [24].
+                           heavily on the estimation accuracy, planning rationality, and        Despite these developments, modeling visual sensor delays
+    control accuracy for interception accuracy.                                           in state estimation remains a challenge. Our approach, inspired
+
+    3
+
+
+                            200Hz                                                                                                                                         Target
+                                                                                                                                                                        (Intruder)
+    ud     e( )t            Controller  ωd, fd  Multicopter and
+                                                   FPV camera
+        -                       30Hz                                                                                                                                        e p   t
+                                     i p(t  )   Imaging and   ip( )t                                                                                                                                            Image Plane
+                                                Image Processing                                                                                                                                   i  ptd
+                            50Hz                                                                                                                                                           ip                     xi
+                   ipˆ( )t  DKF      v( ),t R( )t                                                                                                                                                   oi            ICS
+
+    Fig. 3. Relationship among visual servo model, controller, and state observer.                                                                                                                yi     z c   CCS
+    by existing research, recalculates states over the delay period                                                                                                                                        n      n
+    to address this [25]. To minimize computational demands,                                                                                                                                     x b    nₜ    c td
+    we update the covariance matrix as if there were no delay,                                                                                                              z
+    adjusting it with an additional correction term when the delayed                                                                                                         e                                                                    y
+    measurement arrives. This results in suboptimal estimates                                                                                                                      y                              b
+    during the delay but optimal ones post-delay. We introduce                                                                                                                        e                       e p  ob     Interceptor
+    the Delayed Kalman Filter (DKF) to manage delayed image
+    measurements and real-time multicopter feedback, achieving                                                                                                              oₑ    EFCS     xₑ                     zb     BCS
+high frame rate real-time image state estimates. This method,
+validated through simulations and experiments, effectively
+addresses issues related to delayed, low frame rate, and easily Fig. 4. Description of the interception problem. ep and ept respectively
+    lost image feedback.                                                              represent the position of the intercepting multicopter and the target in EFCS;ip
+                                                                                                                                                                        = px i    pyi T is the coordinate of the target in ICS; nt represents thenc
+                                                                                      target unit vector along the Line of Sight (LOS) in EFCS;                                                                                          represents
+    C. Proposed Methods and Main Contributions                                        the optical axis unit vector in EFCS; ntd                                                                                    is defined as the unit vector of
+   This paper introduces a novel approach for using multicopters the designed LOS in EFCS, called the designed LOS vector; iptd is the
+        intersection of ntd with the image plane in ICS, called the intercept point.
+to intercept aerial targets. We propose a controller on SO (3)
+    based on IBVS for high-speed, large-maneuver interceptions,                                                                                                                   II. M                                ODEL AND PROBLEM FORMULATION
+    and a DKF observer to counteract image delays in high-speed
+    situations.                                                                                                                                                                              In this section, the 6-Degree-of-Freedom (6-DOF) rigid
+                             The contributions of this paper are summarized in the                                                                                                       model of multicopter and the IBVS model are proposed. With
+    following. (i) An IBVS scheme is applied to high-speed                                                                                                                          them, the interception controller design problem is formulated.
+    interception, which solves the problem of coupling between                                                                                                                            Furthermore, the sensor measurement model is proposed and
+    aircraft motion and feature point imaging when the camera is                      the state observer problem is conducted.
+    fixedly connected to the aircraft body. In addition, this scheme                                                                                                                        The relationship among the multicopter and IBVS models,
+is suitable for any installation angle and installation position the controller, and the state observer is shown in Fig. 3. The
+of the camera. (ii) A delay filtering scheme is proposed to interception controller calculates the control signal by the image
+remedy the defects of delayed, low frame rate, and easy loss of error and the multicopter state, and the DKF state observer
+image feedback. (iii) The experiments verified the effectiveness estimates the current image features based on the multicopter
+of the algorithm. These experiments are rare in showcasing state and the delayed image features. The specific forms of
+a multicopter flying at high speeds exceeding 20 m/s, with the three parts are introduced separately to achieve precise
+a maximum pitch angle reaching 50◦, relying solely on its interception control under high-speed conditions.
+    onboard perception and control.                                                   A. Coordinate Systems and Models
+    D. Outline                                                                                                                                                          1) Coordinate Systems:                    There are five coordinate systems
+                            The overall system architecture is shown in Fig. 3. In    used in this paper, as shown in Fig. 4, including
+    Section II, the high-speed multicopter interception problem                                                                                                         •                  {e} = {oe - xeyeze} is the Earth-Fixed Coordinate System
+    is formulated and divided into the optimal state estimation                                                                                                                                 (EFCS), which is used to represent the position and
+    problem and the attitude loop controller design problem. Then,                                                                                                                      velocity of interceptors and targets in the global inertial
+    the attitude loop controller is designed based on the Lyapunov                                                                                                         system;
+    control theory and its stability is shown in Section III, and                                                                                                       •  {b} = {ob - xbybzb}   is   the     Body Coordinate                System
+    the DKF is proposed as a state observer to solve the optimal                                                                                                                             (BCS), which is used to represent the variables of the
+    state estimation problem in Section IV. Finally, necessary                                                                                                             current attitude of interceptors;
+    simulations and real flight experiments are shown in Sections                                                                                                       •  {c} = {oc - xcyczc}  is the                     Camera Coordinate System
+    V and VI, and a conclusion is drawn in Section VII.                                                                                                                    (CCS);
+
+                                                                                                                                                                                               4
+
+                  •                                                  {i} = {oi - xiyi} is the Image Coordinate System (ICS),       3) Target Model:     The target model’s motion is represented
+                                                                    used to express the image position of target features in    using a point-mass model as
+                    the first-person view of cameras.                                                                                                        (ep˙ t = evt
+                  Matrix RF                                                     represents a rotation matrix from coordinate
+                                   F                                                                                                                                    t
+    system                      F1    to²¹ F2,       RF                                           (3), where the 3-D special                               ev˙ t = ea                        (3)
+                                                          2                   ∈ SO
+                                                      F
+                                                          1                                                                     where ept ∈ R3, evt       ∈ R3 and eat     ∈ R3 are the target’s
+    orthogonal group is given by
+
+                                                                                                                                   Using pr to indicate the relative position of the interceptor
+                             SO (3) = R ∈ R3×3 | RTR = I, det (R) = 1                                     .                     position, velocity, and acceleration under EFCS.
+  2) Multicopter Model: The multicopter (interceptor) is and target in EFCS, pr = ep−ept. Further, the relative velocity
+modeled as a rigid body of mass m with a rotor drag is defined as vr = ev − evt, p˙ r = vr; the relative acceleration
+proportional to its velocity [26], [27]. Its flight control rigid is defined as ar = ea − eat, v˙ r = ar. Note that measuring
+    model is summarized as                                                                                                      the target’s motion acceleration   eat   using visual sensors is
+                                                                                                                               challenging. Therefore, in the design of both the controller and
+                                          e          e
+                                           p˙  = v                                                                             the state observer, eat is considered as a disturbance.
+                                   
+                                                                                                                                  4) Camera Imaging Model:              As shown in Fig. 4, the
+                                   
+                                          ev˙         = g + m1  (ef + efdrag )                                                     perspective projection performs a mapping from the 3-D space
+                                                                                                                        (1)    to the 2-D image plane: R3 → R2.
+                                   
+                                   
+                                         R˙ e         = Re bω
+                                            b          b
+                                   J · bω˙     = −bω × ×J · bω + Ga + τ                                                               Assumption 1. The origin of CCS coincides with the origin
+                                                                                                                                   of BCS. That is, their translation vector tbc = 0. Due to the
+        where ep =                      pxₑ   pyₑ        pzₑ  T is the position of the multicopter                              strapdown camera configuration, the rotation matrix Rbc       is
+    under EFCS;e                      ev =     vx         v                                    T is the velocity under EFCS;    constant.
+        a                    g + 1 (ef         ef
+                    =              m       +    drage         )yᵉis the accelerate under EFCS;vzᵉ                          m          The camera used in this paper is fixed to the body, and it
+    is the mass of the multicopter;                                                             g is the local gravitational       is considered a successful interception when the camera is in
+acceleration, g = 0 0 g T; ef ∈ R3 is the controllable force contact with the target. Thus, the optical axis has a constant
+of the multicopter in EFCS; efdrag = −RebDRebTev is the rotation Rbc with the multicopter head direction.
+    aerodynamic drag force of the multicopter in EFCS,                                                                   D =           The LOS is a line between the interceptor and the target.
+    diag (dx, dy, dz) is a constant diagonal matrix that defines the                                                              The unit vector along it from the interceptor to the target is
+rotor-drag coefficients; bω = ωxb ωy ωz T is the angular called the LOS vector, denoted as nt. When the target is in
+                                                                                                       b b                          the sensor’s Field of View (FOV), all types of sensors above
+velocity under BCS; J is the multicopter moments of inertia;
+Ga is gyroscopic torque; τ is the moments generated by the  can be transformed into the perspective view through a unified
+propellers in the body axes. Matrix bω is a skew-symmetric imaging model [28, Ch. 11]. Vector nt is expressed as the unit
+                                                                                                       ×                            vector in the negative direction of pr, or obtained by image
+    matrix, which is a cross product map of the angular velocity
+    bω.                                                                                                                         coordinates and focal of length foc as
+                                                                     The cross product map [·]×: R3 → so (3) is defined such                   nt = −    pr
+    that [x]×y = x × y and [x]T = −[x]                                                                for any x, y ∈ R3. The                       ∥pr∥
+                                                              ×                                       ×
+    inverse of the cross product map is denoted by the vex map                                                                                 = RebRbc       [pxi  pyi    foc]T .         (4)
+    vex (·): so (3) → R3, where the set of 3 by 3 skew-symmetric
+    matrices are denoted by                                                                  so (3) = S ∈ R3×3|S = −ST . For                                  [pxi  pyi    foc]T
+    x ≜                      x1  x2                                             x3 T ∈ R3, the cross product map and vex map       The FOV is   the     range  of  the    observable area that a
+    are summarized as                                                                                                                perception sensor can image, including the Horizontal Field
+                                           0          −x3    x2                                                               of View (HFOV)       and    Vertical  Field    of View   (VFOV).
+                                                                                                                                The parameters    αhfov,  αvfov       are  the angles of    HFOV
+                              [x]× ≜       x3          0        −x1  , vex                          [x]×    ≜ x.                         and VFOV of the perception sensor. The FOV is defined
+                                           −x2      x1        0                                                                 as C  = nx | arctan xxᶜ¹   ≤ 1 α        ,  arctan x    1 α     o
+                                                                                                                                                           c2 ≤                                ,
+                                                                                                                                                      c3       2   hfov          x
+                                                                                                                                                                               c3      2    vfov
+  For multicopters, the controllable force is generated by the where cx ≜ xc1 xc2 xc3 T is x in CCS.
+    thrust of the propellers as                                                                                                         The camera imaging is subject to the FOV constraint that
+                                                                                                                                the target is within the sensor’s FOV,
+                                               ef = f RebRf e3 = f nf                                                    (2)                               nt ∈ C.                           (5)
+                                                                     where 0 ≤ f ≤ fm, fm is the maximum thrust; Rf ∈ SO (3)            The designed LOS vector ntd can be simply conceptualized
+is the rotation matrix transforming the thrust vector to obzb axis as the optical axis vector nc. In pursuit of enhancing the
+in BCS; Rf is constant for multicopters because the propellers interceptor’s maneuverability, ntd is crafted to approximate the
+provide thrust in a fixed direction relative to the fuselage, and force vector nf as closely as possible within the FOV. Upon
+    variable for tiltrotor aircrafts. Vector                      e3 is the third column of                                       achieving the collinear control objective, a greater component
+the 3 × 3 identity matrix I, I = e1 e2 e3 , e3 = 0 0 1 T. of acceleration is directed along ntd, thereby endowing the
+    Vector nf                   is the unit vector of ef .                                                                      interceptor with increased interception velocity.
+
+                                                                                                                                                                                                                                                                                                     5
+
+                                                                   5) IBVS Model:                                                   The image Jacobian matrix [29] can                                                                           where the gyroscope measurement noise ngyr is a zero-
+    represent the relationship between camera motion and image                                                                                                                                                                               mean Gaussian random variable; the bias bgyr    obeys the
+    features motion as                                                                                                                                                                                                                       Wiener process,
+                                                                   ip¯˙         = Lscv                                                                                                                                                           b˙
+                                                                                                                                                                                                                                         (ii) The derivative of the velocity vr, which is the acceler-
+                                                                   Ls = " −˜p,1ᶻ           c      0          p¯xi    p¯x p¯y        −1+ ¯p2          p¯      #     (6)                                                                               gyr = nbgyr.                                  (8)
+                                                                                     0         − p1zc  ppp¯zzycci    1+ ¯ⁱ p2yⁱi      −p¯xi p¯yxiⁱ  −p¯yxⁱ i                                                                                 ation      ea, is obtained from the measured value of the
+    where cv                                                                                                                                                                                                                                 accelerometer as
+                                                                                   ˜ =         cvT            cωT                       T represents the twist in CCS,                                                                           ea = ge3 + Reb (acc − bacc − nacc)                (9)
+    including the linear and angular velocity of a rigid body;i p
+                                                                ¯ =       p¯xi             p¯yi      T =  pxi /foc       py /f                   T
+                                                                                                                                    i     oc            represents the                                                                       where the accelerometer measurement noise nacc is a zero-
+    normalized image coordinate of features in ICS.                                                                                                                                                                                             mean Gaussian random variable; the bias bacc obeys the
+                                                                                                                                                                                                                                             Wiener process,
+    B. State Equation and Measurement Equations                                                                                                                                                                                                  b˙ acc = nbacc .                                 (10)
+                                                                                                               In addition to the multicopter rigid model and the IBVS                                                                       3) Delayed Image Measurements:      Image processing pro-
+    model, the description of the multicopter interception process                                                                                                        vides the image coordinates of the target point, and the stateip
+    requires knowledge of the measurement equations, including                                                                                                                                                                             ¯ is obtained after normalization. Since camera imaging and
+    IMU measurement and delayed image measurement.                                                                                                                                                                                          image processing take time, the measured value obtained is
+  1) System Model: Logarithmic mapping ln (·) : SO (3) → data from a period ago. Suppose that the measured delay is
+so (3) converts rotation matrix Reb into a rotation angle θ ∈ D cycles based on the IMU update frequency, and the delay
+    [−π, π) and a unit rotation vector a ∈ R3, that is                                                                                                                                                                                      time tD > 0 is known. Then the image measurement at time t
+                                                                                                                                                                          is expressed as
+                                                                                                                              X
+                                                                           [θa]                        = ln (Re ) =  ∞ (−1)i (Re − I)i+1                                                                                                         ip
+                                                                                                                                                      .                                                                                          ¯img,k = ip
+                                                                                          ×               b                  i=0 i + 1     b                                                                                                     ¯k−D + nimg                                      (11)
+        where the image measurement noise nimg is a zero-mean
+  A 4-D vector is used to compactly represent inter- Gaussian random variable. Note that the delay time tD involves
+    ceptor’s                                                                rotation                       matrix            Reb, called   orientation         quater-                                                                      camera imaging and image processing time and was estimated
+nion q = cos θ2 nT sin θ2 T ∈ R4. The normalized im- using two methods: (i) direct calculation based on camera
+age coordinate of the center of the target is considered parameters and internal program timers, and (ii) experimental
+the feature point and is denoted as ip
+    able                                                                x  =                  qT       pT   vT       ip                    ¯.    The state       vari-    measurement involving capturing a timer with the camera.
+                                                                                                                                      gyr        acc
+                                                                                                       r          r       ¯T        bT         bT     T        ∈   R18
+    consists of some necessary states, including interceptor’s                                                                                                                                                                             C. Controller Design and State Observer Problem Formulation
+    orientation                                                                           quaternion       q,        relative           position    pr       and rela-                                                                          Based on Assumption 1, the controller design and state
+    tive velocity                                                                                    vr, image feature point                  ip
+    bgyr                                                                = bgyr,x                  bgyr,y     bgyr,z              T         ¯, gyroscope bias              observer problems are summarized as follows.
+bacc = bacc,x bacc,y bacc,z T. , and accelerometer bias Problem 1. (Controller Design Problem) Under Assumption
+        1, it is assumed that the state information, including the
+                                                                   The discrete state equation is written as                                                              multicopter and the image measurement, is accurately available.
+                                                                                                                     xk = Fkxk−1 + Gkwk−1                                                                                                 At the same time, the positions of target and interceptor in
+        the inertial system are unknown. For the interceptor model
+where Fk ∈ R18×18 and Gk ∈ R18×6 are the state transition (1), design controllers for f , bω such that the target unit
+matrix and the noise matrix from time tk−1 to time tk; wk vector remains proximate to the designed LOS vector, i.e.,
+is the process noise vector, where the elements follow the 1 − nT n < ϵ, where ϵ > 0 is a range threshold, and
+    Gaussian distribution with zero mean and uncorrelated, wk ∼                                                                                                                                                                              td t
+                                                                                                                                                                                                                                      the interceptor multicopter further approaches the target, i.e.,
+    N (06×1, Qk) , Qk ∈ R6×6. Vector wk consists of gyroscope                                                                                                             pr → 0.
+    bias noise nbᵍʸʳand accelerometer bias noise nbᵃᶜᶜ , wk                                                                                                          =
+                                                                   nTbgyr   nTb                  T.                                                                       Problem 2.                                                                  (State Observer Problem) Given the initial value
+                                                                                          acc                                             IMU provides gyroscope angle                                                                      x (0), model error and measurement error distribution, how
+                                                                   2) IMU Measurements:
+    increment and accelerometer velocity increment under BCS.                                                                                                                                                                                  to use IMU measurement and delayed image measurement to
+    Combining these measurements with the multicopter rigid                                                                                                               calculate more accurate status information.
+    model (1), the recursive expressions of states q and vr                                                                                                        are                                                                    In        Problem 1, a controller is designed to perform the
+    obtained.                                                                                                                                                                                                                                interception task with accurate image measurement and IMU
+                                                                                                          (i) The derivative of the orientation quaternion q, which is                                                                         information feedback. However, due to the time required
+                                                                                                               the angular velocity bω, is obtained from the gyroscope                                                                       for camera imaging and processing, around 80 ms for color
+                                                                        measurement as                                                                                                                                                    recognition in our experiments, significant errors can occur
+                                                                                                                                                                                                                                        in high-speed flights. To mitigate control quality degradation
+                                                                                                                         bω = ωgyr − bgyr − ngyr                   (7)                                                                   from such delays, image estimation methods are essential. The
+
+    6
+
+
+
+                        n₃                           n₃                                                        High-speed interception controller
+                   n
+        n       td c                                                                                (50Hz)ip       Collinear     b Ȧ1            Attitude   bȦ2    bȦd Multicopter and
+                                                                                                                   Controller     v , Rd        Controller  f          FPV camera
+                                                                                                                   Eqs. (13, 19)  r           Eqs. (20, 23)    d       Eqs. (1-3)
+                            ntd                                                                                                 (50Hz)                      (200Hz)
+
+                        p
+              nₜ = -    p     e₃               nₜ                                                                                         nt, Reb  DKF
+                                                                                                                                               Eqs. (31-33)
+                        (a)                          (b)
+
+                                                                                        Fig. 6. Entire control scheme. The high-speed interception controller is divided
+                                                                                        into a collinear controller in the outer loop and an attitude controller in the
+                                                                                        inner loop.
+                        n                                n₃                             Algorithm 1 fd, ωd = InterceptionController(ip
+                            3                                                                                                                                          ¯, vr,     Reb)
+                  nₜ                           nₜ                                       Input:                     Image measurement, relative velocity and self attitude
+                                                                                        Output:                       Interception controller commands
+        n    td             ntd                                                                           1:  Initialize           ad = 0, Rd = Reb
+                                                                                                          2:  while Interception in progress do
+                                                                                                                                          ¯ and Eq. (4)
+                                                                                                          3:       Calculate nt from ip
+                                                                                                          4:       Calculate the attitude controller commands                      fd,  ωd
+                        (c)                          (d)                                                  5:  according to Eqs. (23), (26)
+                                                                                                                   if  ip
+                                                                                                                      ¯ comes then
+    Fig. 5.    High-speed interception control process. The process for intercepting                      6:                            Calculate the collinear controller commands ω1 and
+    a lower target is (a)–(b), and the process for intercepting a higher target is                            attitude controller desired value ad,                   Rd according to Eqs.
+    (c)–(d)–(b).                                                                                              (13), (19), (22)
+    challenge of choosing a suitable state vector x and estimating                                        7:          ωd = ωd + ω1
+    the position of image features in real-time with a filter is                                          8:       end if
+    addressed in Problem 2.                                                                               9:       wait(T ). T     = iteration time - this loop time
+                                                                                        10:                   end while
+
+    III. HIGH-SPEED INTERCEPTION CONTROL BASED ON
+                            ROTATION MATRIX                                             and an attitude controller (Section III-C) as the inner loop
+   In this section, Problem 1 is solved by designing the angular running at 200 Hz. The collinear controller ensures the target
+velocity controller so that the designed LOS vector ntd, the remains within FOV, while the attitude controller guarantees
+velocity vector vr and the target unit vector nt are collinear. that the multicopter’s velocity and attitude accurately track the
+The detailed derivations and proof of the theorem in this section reference values from the outer loop controller. This controller
+    are placed in Appendix A.                                                           is outlined in Fig. 6 and Algorithm 1.
+                                                                                        B. Collinear Control Design for designed LOS vector and
+    A. High-speed interception control process                                          Target Unit Vector
+                          Figures 5(a) to 5(c) illustrate the design of the attitude                                 Let LOS tracking error as z1       = 1 − nT n
+    rate loop controller, aiming to align the designed LOS vector                       derivative of it, we have                                               td     t      and take the
+    ntd and the target unit vector nt                   for effective target locking                          z˙1  = − nT n˙ t + nTn˙
+    and interception. However, in initial states where the target is                                               = −     1td nT −It     +tdn nT
+    above the interceptor, as shown in Fig. 5(c), this alignment                                                   ∥p ∥     td               t       t      vr − (ntd ×nt)Teω.
+    alone can cause backward acceleration. Given the multicopter’s                                                  r
+    underactuated nature, where acceleration and attitude are                           Choose the following barrier Lyapunov candidate function,
+    coupled, it’s crucial to also ensure the collinearity of the velocity                                              L                    = 1 log       kb2
+    vector  vr and the target unit vector n                  t. This approach allows                                   1                  2          kb2 − z12                        (12)
+for the calculation of desired force fd and rotation matrix Rd where log (·) denoted the natural logarithm, and kb constant
+in achieving the desired velocity.
+   The controller follows two main objectives: ensuring the on z1, that is, we require |z1| < kb. The derivative of Eq. (12)
+    collinearity of the LOS vector and the target unit vector, and                      along Eq. (37) is˙         z
+aligning the velocity vector with the target unit vector. The high- L1 = 1z˙1
+    speed interception controller comprises two parts: a collinear                                             kb² −zz₁²
+    controller (Section III-B) as the outer loop running at
+                                                                              50 Hz,        = − kb₂ −¹z₁₂ ∥p1ᵣ∥ nᵀtd                      −I+nₜnᵀₜ          vᵣ − kb₂ z−¹ z₁₂ (ntd ×nₜ)ᵀᵉω.
+
+                                                                                                                                                                                                               7
+
+    The first term is equal to 0 when vr and nt are collinear, which                                                                                 1) Control Design for Desired Acceleration ad:  The desired
+will be designed in the following subsection. The designed acceleration ad is designed to realize the difference between
+angular velocity makes the second term negative. For control the actual velocity and the desired velocity. According to the
+purposes, designed LOS vector ntd and target unit vector nt multicopter dynamics model (1), we have
+    are collinear. Then                                                                                                                                                   f     1
+                                          eω = kb2zz−1z12 (ntd × nt)                           (13)    Then,                                                              ad = g + m nfd + m efdrag .       (20)
+                                                        ⇒ bω1 = kb2 −1z12 RebT (ntd × nt) .                                                                               nfd = mad − mfgd − efdrag .
+
+    According to the physical meaning of the vector cross product,                                     Because nfd satisfies nT n                                                   , the equation above becomes
+                                                                                                                                                                   fd  fd = 1
+    this control command represents the rotational angular velocity                                                                                                 a     − g − ef         /m
+    from     ntd                       to nt. The term kb2z−1z12             acts as a proportional                                                        nfd = ∥add − g − efdrag             .            (21)
+    coefficient, which becomes larger as the LOS tracking error                                                                                                               drag /m∥
+    z1 approaches the barrier kb.                                                                                                                  Since the yaw motion of the interceptor will cause the target
+                                                                                                                                                    to move laterally on the image, it is better to maintain the
+                                                                                                                                                 current yaw to achieve the desired attitude Rd. A rotation that
+    C. Collinear Control Design for Velocity Vector and Target                                                                                 includes only pitch-roll is defined as Rtilt, and the calculation
+    Unit Vector                                                                                                                                    of Rtilt takes the cross product of the current frame and the
+    The Lyapunov candidate function is designed as                                                     desired frame [30]. The cross product of nf                                                and nfd is the
+                                                                                                                                                   rotation axis r of Rtilt, r = nf ×nfd. And the angle ϕbetween
+                                              L2 = 12 pTr pr ≥ 0.                              (14)    these two axes is the rotation angle,                                               ϕ = arccos   nTf nfd .
+                                                                                                       Therefore, desired attitude of interceptor Rd                                           is obtained as
+    The derivative of Eq. (14) is                                                                          RRd = Rtiltr                                    Reb,                                (22)
+                                                              L˙ 2 = pTr vr.                   (15)        tilt     = eϕ[ ]×                                      = I + [r]× sin ϕ + [r]2× (1 − cos ϕ)
+        where the exponential map e(·) : so (3) → SO (3) converts
+According to Lyapunov’s second method, in order to make the rotation angle ϕ ∈ [−π, π) and unit rotation vector r ∈ R3
+the system stable, L˙ 2 is expected to be negative definite. Let into a rotation matrix Rtilt.
+    vrd = −k1pr = −k1 ∥pr∥ nt with k1 being a positive constant,                                                                                  Combining Eqs. (19) and (21), the desired thrust is calculated
+    which means that desired relative velocity vector vr is collinear                                  as
+    with target unit vector nt. Then, rewrite (15) as:                                                                                                    fd = nTf  (mad − mg − efdrag ) .
+                                          L˙ 2 = pTr (vr − vrd + vrd)                          (16)    In practice, the thrust of a multicopter cannot be negative.
+                                                                = pTr z2 − k1pTr pr.                   Therefore, a saturation limit must be added asfd
+    Let a tracking error as z2 = vr − vrd = vr + k1pr and take                                             = min                                          max nTf     (ad −mg−efdrag ) , 0      , fm .      (23)
+    the derivative of it, we have                                                                                                                      2) Control Design for Desired Attitude Matrix Rd:     The
+                                                                                                       Lyapunov candidate function is designed as
+                                              z˙2 = ar + k1vr.                                                                                                          L4 = tr I − RTd Reb .               (24)
+                                          Define a new Lyapunov candidate function as:                 When the actual attitude Reb                                             of the interceptor is consistent
+
+                                                                                                       is used to define the matrix error,
+                                                       L3 = L1 + L2 + 12 zT2 z2 ≥ 0.           (17)                                                with the desired attitude Rd, RTd Reb = I. The Frobenius norm
+    The derivative of Eq. (17) is                                                                                                             I − RTd Reb  F = rtr I − RTd Reb                 I − RTd RebT
+
+                                          L˙ 3 =− kb₂z−¹z₁₂ ∥p1ᵣ∥ nᵀtd −I+nₜnᵀₜ z₂ − kb₂z−¹z₁₂ (ntd×nₜ)ᵀᵉω                                                                = q2tr I − RTd Reb.
+                                            + pᵀᵣ z₂ −k₁pᵀᵣ pᵣ +zᵀ₂ (aᵣ +k₁vᵣ) .               (18)    So, L4 =     I − RTd Reb                                     2         /2 ≥ 0. The derivative of Eq. (24)
+                                                                                                                                                                    F
+                                                                                                       along Eq. (1) is [31], [32]
+    In order for the system to be stable,                                       L˙ 3 is expected to
+    be negative definite. Thus, letz    ar = −k1vr − k2z2 − pr +                                                                                     L˙ 4  = −tr    RTd Reb bω
+    kb2 −1z12     ∥pmr∥                −I + ntnTt            ntd and k2 is a positive constant. The                                                                 ×                                       (25)
+    desired acceleration ad                                       is designed as                                                                           = vex    RTRe − Re T
+                                                                                                                                                                       d               b b Rd T bω.
+    ad = −k1vr−k2z2−pr+ k2z−1z2               m −I+n nT n     +ea                                        The angular velocity controller is designed as
+                                              b           1 ∥pr∥     t     t     td          (19)t.                                                       bω2 = −vex RTd Reb − RebTRd                       (26)
+
+                                                                                                                                                           8
+
+    Then,
+                L˙ 4 = −  vex RTd Reb − RebTRd  2 ≤ 0.                (27)          1. Using IMU recursion                 ipimg coming
+
+    D. Stability Analysis                                                        1        2       3       4     5               6 7 8     9     10
+    Based on the previous control objectives, the multicopter
+    interceptor attitude loop controller is summarized as                               3. State Correction
+     
+     ᵇωd = sat ᵇω₁ +ᵇω₂, ωₘ                                          (28)          2. Image observation fusion
+      fd = min     max        nᵀf   (ad −mg−ᵉfdrag) , 0    , fₘ                          with time delay
+ The multicopter’s maximum angular velocity is represented Fig. 7. Data flow diagram. Each block represents the data saved between the
+by ωm, where ωm > 0. The function sat (·) is a saturation delayed image measurements.
+function defined as [33]
+                sat (a, am) = κaₘ (a) a,            a ∈ Rn, am ∈ R+,                             As part of the propagation step, the covariance matrix P is
+                κaₘ (a) =      am 1,            ∥a∥ ≤ am    .         (29)    updated by the well-known Kalman filter
+                                 /∥a∥,          ∥a∥ > am                                                         Pk|k−1 = FkPk−1FTk + GkQkGTk           (31)
+Remark 1. The angular velocity control component bω1 is where Fk ∈ R18×18 and Gk ∈ R18×6 are the state transition
+designed to keep the target within the FOV by aligning the matrix and the noise matrix from time tk−1 to time tk.
+    designed LOS vector with the target unit vector. Another                                   According to the continuous form of the state vector relation
+component, bω2, aligns the velocity vector with the target unit (1, 6–11), the partial derivative of the state vector xk at time tk
+vector to ensure the interceptor’s relative position converges to with respect to the state vector xk−1 at time tk−1 is obtained
+    zero, achieving interception.                                             as Fk and Gk,
+                In practical applications, to ensure safety, saturation is
+    applied to both angular velocity and thrust. The saturation                      Fq                                                         
+                                                                                           k        0         0                 0  Fqᵏ       0
+    function    sat (·)        and the saturation of thrust alter only the                q
+                                                                                          k−1             p                        bgyr,k−1
+    magnitude of the control variables, not their direction, thereby                      0       I3×3  Fvr,k                  0     0      0   
+                                                                                         q
+    affecting the convergence speed but not the system’s stability.                        r,k                                  0     0  Fvr,k   
+                                                                                           k−1                3×3        bacc,k−1                
+                                                                              Fk =  Fv             0       I r,k−1                              
+                                                                                    
+                                                                                                                                                         ,
+    Theorem 1.      Under             Assumption 1, for a multicopter with           Fⁱqp¯ᵏ        0    Fⁱvp¯ₖ      Fⁱp¯ᵏ        Fⁱp¯ᵏ      0   
+                                                                                                             k−1                    bgyr,k−1     
+                                                                                          0k−1     0        r,k−1     ip¯
+    strapdown camera model (1)–(4), the attitude controller is                                                0                 0   I3×3     0   
+    designed by (28). If the initial state satisfies                                       0        0         0                 0     0     I
+    x | nT x      > 1 − k        n ∈ S , and p                nt (0) ∈ S =           Gqₖ                0              3×3
+    Proof.  td      b         , then t      r               → 0, as t → ∞.                b0ωk−1
+            See Appendix A.                                                                             0      
+                                                                                                               
+                                                                              G             0      Gvₑar,k     
+                                                                                 k =                           
+                                                                                          i
+                                  IV. DELAYED KALMAN FILTER OBSERVER                 G p¯ᵏ              0k−1  .
+                                                                                           bω                   
+                                                                                             k−1        0      
+            In this section, we design a state observer to address Problem                   0                  
+    2, using the multicopter’s state and delayed image features                              0           0
+    to estimate current image features in real-time. Our method                  The relationships between orientation quaternion, position,
+    employs an extended Kalman filter with Gaussian distributions,            velocity, image features, gyroscope bias, accelerometer bias,
+    where the state progresses according to kinematics equations              and state are derived in Appendix B. The state transfer and
+    without process noise, and the covariance follows its linearized          measurement equations introduced by image measurement are
+    form. The approach includes both propagation and correction               discussed below.
+    steps. Two main challenges are integrating delayed image
+    measurements with concurrent IMU data during correction,                  B. Correction with Delayed Image Measurement
+    and handling the rotation matrix that evolves on the compact
+    Lie group. These are tackled by treating the integration as                                       Image processing provides the image coordinates of the
+                                                                                                                    ¯ is obtained after normalization. Since
+    an optimal prediction and representing the distribution using             target, and the state ip
+    quaternions.                                                              camera imaging and image processing take time, the measure-
+                                                                              ment is obtained from a period ago. Suppose the delay time is
+    A. Prediction                                                             tD > 0, then the image measurement at time t is expressed as
+    The distribution at tk−1 is given by x                                    Eq. (11). After discretization, the measurement equation is
+                                                        ˆk−1 and Pk−1. The
+    goal of the prediction is to propagate them to the next time                                                       zk−D = Hxk−D + v                 (32)
+    step tk          via (1)–(10). The one-step prediction of state x is      where z =       p¯x    p¯    T                 R ,  is the measurement matrix;
+                             x
+                             ˆk|k−1 = Fkx
+                                 ˆk−1.                                (30)                          is the system noise vector, in which the elements follow
+                                 v                                                                i    yi    ∈                2 H
+
+                                                                                                                                       9
+
+                                                                                        ˆ = DelayedFilter(ωgyr, acc, ip
+          a Gaussian distribution with zero mean values that are not   Algorithm 2 x        ¯img)
+correlated with each other, v ∼ N (02×1, R) , R ∈ R2×2. Due Input: IMU measurement, image measurement
+to the measurement delay, zk−D is obtained at time tk. The Output: Estimated state
+    measurement matrix H is                                            1:   Initialize  x
+             2: for t = 1 :ˆ0n, P0, K0
+        H =  02×4 02×3 02×3     I2×2     02×3     02×3       .  (33)   3:    if   ip     do
+                                                                                 ¯img is not available then
+                                                                                                                          ˆt   with
+    This essentially estimates the current state by utilizing a past   4:        Follow (30) and (31) to recursive state  x
+       prior state estimate and a past measurement. More explicitly,        IMU data
+   it is solved by (i) correcting the prior state at time tk−D using   5:    else
+       the current measurement zk−D, and (ii) propagating it to time   6:              According to (34), (35), (36), estimate the state
+                                                                            ˆt−D at time tk−D
+    tk       by repeating the IMU prediction step. In step (ii), IMU        x
+      prediction and propagation are presented in detail as follows.   7:        for i = D − 1 : 0 do
+                                                                                                                                 ˆt with
+              The delay processing is shown in Fig. 7, and the image   8:               Follow (30) and (31) to recursive state x
+               measurement delay is spread over four IMU measurement        stored IMU data
+      cycles. The main point of discussion here is how the currently   9:        end for
+    measured image features are used to correct the historical state   10:   end if
+    estimate and to estimate the current state further.                11:  end for
+        From the measurement Eq. (33), the estimated state is
+        x
+  ˆk−D = x
+        ˆk−D|k−D−1 +K zk−D −Hˆ
+        xk−D|k−D−1 . (34) estimation and control signal calculations in real-time. These
+    The covariance Pk−D of the state xk−D is given by                  control signals are sent to the Pixhawk, which interacts with
+                                                                       RflySim to simulate the interceptor’s motion. RflySim then
+            Pk−D = (I − KH) Pk−D|k−D−1                          (35)   generates and sends new image and IMU data to the onboard
+    where K is the filter gain,                                        computer, completing a closed-loop data and control system.
+            K = Pk−D|k−D−1HTS−1,                                (36)   B. Image Filtering Effect Experiments
+            S = HPk−D|k−D−1HT + R.                                      1) Filtering Algorithm:     Algorithm 2       outlines our state
+    After the above steps, the optimal state estimation at time tk−D   estimation method, and Fig. 7 illustrates data transmission.
+   is obtained, and then the state is propagated to the current time   High-frequency, real-time IMU data is used for state recursion
+    tk  according to the Eqs. (30)–(31).                               when image measurements are pending. Once a delayed image
+                                                                       measurement arrives, it corrects the state variable from D cycles
+                        V. HARDWARE-IN-THE-LOOP SIMULATIONS            prior, updating it to the current moment for enhanced accuracy.
+                                                                       C++ and Eigen1             are employed for real-time computation
+       In this section, the proposed interception controller and DKF   efficiency.
+         observer are implemented in the Hardware-in-the-Loop (HITL)    2) Analysis of Influence of Delay on Control Accuracy:      This
+     simulations to verify the algorithm’s effectiveness and perform   section evaluates the DKF observer’s impact on interception
+    statistical analysis with a large number of simulations.           control accuracy. Simulations on RflySim, run 50 times each
+                                                                       scenario with the IMU and controller at 200 Hz and target
+    A. Introduction to Simulation Platform                             perception at 30 Hz, compare interception accuracies without
+               RflySim is a control and safety testing ecosystem for   and with the DKF observer. Fig. 8(b) shows 50 trial trajecto-
+             unmanned systems, utilizing Model-Based Design (MBD) to   ries without and with the DKF observer, showing smoother
+    verify algorithms and system applicability through high-fidelity   interceptor movements and earlier aggressive maneuvers due
+        digital scenes and a UAV model library [34]. Utilizing auto-   to image prediction, enhancing interception success rates.
+       mated test software, RflySim facilitates extensive simulation          In the simulations, two experiment sets are conducted: (i)
+   verification based on metrics like Circular Error Probable (CEP),   direct control using target detection and (ii) control using
+    which is defined as the radius of a circle centered on a target,   DKF-based target estimation. The same random seed is set
+    within which 50% of projectiles are expected to land [35].         to perform 50 experiments in both experiment sets, and the
+  RflySim is also adept at supporting HITL simulations. As control error box plot is shown in Fig. 8(c). The results and
+shown in Fig. 8(a), HITL simulations use the same hardware circular probability errors are shown in error distribution plots,
+and software architecture as the real flight experiments, in- specifically, CEPdirect = 0.408 m, CEP50Hz = 0.332 m. It
+cluding the onboard computer, the Pixhawk autopilot, and the is shown that the DKF observer can effectively improve the
+high-speed interception algorithm. The key difference between control effect.
+      HITL simulations and real flights lies in the source of sensor    3) Analysis of Influence of DKF Frequency:          This section
+              data: in HITL, images and IMU data is sourced from the   investigates the effect of the IMU frequency on the accuracy of
+    RflySim platform instead of the real world.                        the interception control. In all simulations, the IMU frequency
+             During HITL simulations, the onboard computer processes   and inner-loop controller are set to 200 Hz. The DKF observer
+          simulated image and IMU data from RflySim, executing state   1
+                                                                        https://eigen.tuxfamily.org/
+
+    10
+
+
+
+
+
+
+
+    RflySim platform
+    RTK
+        Onboard computer
+
+
+
+
+    Pixhawk
+    autopilot
+
+
+
+
+    Onboard computer    CSI camera
+
+        (a) HITL Simulations settings
+
+    Interceptor  Target
+
+
+
+
+
+
+
+  4  4
+  -10  -10
+  xₑ(m)   0  directly  2  xₑ(m) 0  50Hz  2
+  0  0
+  10  -1  12yₑ(m)  25  10  -1  12yₑ(m)  25
+
+  (b) Trajectories in statistics
+
+  1.0
+  0.6  0.6
+  0.5  0.5  0.5
+  0.4  0.4
+  0.3  0.3  0.0
+  0.2  0.2  -0.5
+  0.1  0.1
+  directly  50Hz  10Hz  30Hz  50Hz  -1.0
+  Frequency (Hz)  Frequency (Hz)  -1.0   -0.5 e  0.0   0.5  1.0
+  x  (m)
+  Boxplots of control error  Boxplots of control error  Error distribution at 10Hz
+
+  1.0  1.0  1.0  1.0
+
+  0.5  0.5  0.5  0.5
+
+  0.0  0.0  0.0  0.0
+
+  -0.5  -0.5  -0.5  -0.5
+
+  -1.0-1.0   -0.5   0.0  0.5 1.0   -1.0-1.0 -0.5 0.0  0.5  1.0  -1.0-1.0   -0.5  0.0  0.5  1.0  -1.0  -1.0 -0.5  0.0   0.5  1.0
+  eₓ(m)  eₓ(m)  e x  (m)  e  x(m)
+  Error distribution without DKF  Error distribution at 50Hz  Error distribution at 30Hz  Error distribution at 50Hz
+
+  (c) Error distribution with or without DKF observer  (d) Error distribution with different DKF frequency
+
+
+Fig. 8. HITL simulation statistics.
+
+run frequency is set to 10 Hz, 30 Hz, and 50 Hz, respectively, image coordinates plot illustrate the target’s pixel coordinates
+and each set of simulations is run 50 times to obtain the CEP. and the filter-estimated coordinates from target acquisition
+  The same random seed is set in the three experiment sets, to interception completion. Despite an 80 ms image delay,
+and the control error box plot is shown in Fig. 8(d). The results the DKF observer effectively estimates the actual image
+and circular probability errors are shown in error distribution coordinates, quickly converging early in the filtering process
+plots, specifically, CEP10Hz = 0.425 m, CEP30Hz = 0.423 m, and aligning well with the measured values’ overall trend.
+CEP50Hz = 0.332 m. It is shown that the increased frequency It is shown that: (i) the filter estimated value changes
+of the DKF observer is beneficial to improve the control before the observed value in the rising and falling segments,
+effect. Therefore, for practicality and computational efficiency, showing an obvious delay compensation effect; (ii) the filter’s
+the DKF observer frequency is set at 50 Hz in real flight update frequency is higher than the image measurement update
+experiments. frequency; (iii) after the intercept was completed at 36.6 s,
+  4) Details of DKF Observer: In a simulation with the the filter continued to estimate based on the last known
+DKF observer set at 50 Hz, one of 50 trials is depicted in target position. These aspects enhance control quality, with the
+Fig. 9. The interceptor multicopter initially ascends to 3 m IMU compensating for image delays and the higher update
+before starting its mission, adjusting its motion direction frequency allowing for more current target estimations for
+early in the interception and constantly refining its speed, control calculations. Additionally, if the target is lost mid-
+direction, and attitude. The image coordinates plot and the local interception, the interceptor has a chance to reacquire it. Overall,
+
+
+
+
+
+
+
+
+
+
+ez(m)
+
+
+
+
+
+
+
+    e (m)
+
+
+
+
+
+
+
+
+
+ez(m)
+
+
+
+
+
+
+
+
+
+
+                      zₑ(m)
+
+
+
+ez(m)    e(m)
+
+
+
+
+
+
+
+
+
+
+ez(m)    ez(m)
+
+
+
+
+
+
+
+
+
+
+                      zₑ(m)
+
+    11
+
+
+    Interceptor    Origin  DKF
+
+
+   3
+
+  1.5     -6
+   0    xₑ(m)
+    0  10      20     0
+       yₑ(m)
+                                  t(s)                        t(s)
+       (a) Trajectory    (b) Image coordinates    (c) Local image coordinates
+
+           Roll      Pitch  Yaw
+
+
+
+
+
+
+
+
+
+
+                       u(pixel)                                                      t(s)                           t(s)
+                 (d) Target on image                                       (e) Interceptor attitude    (f) Local Interceptor attitude
+
+    Fig. 9. HITL simulation process.
+
+    the DKF observer successfully mitigates the impact of image            A. Static Target Flight Experiments
+    delay on control, increasing confidence for its use in real flight          1) Design of Flight Experiments: The real flight experiments
+    experiments.                                                           used the same multicopter as the HITL simulations shown
+    C. Experiments comparing with previous IBVS method                     in Fig. 8(a), equipped with a T-Motor propulsion system,
+                                                                           Pixhawk Nano V5 flight controller, NVIDIA Jetson Xavier NX
+                To validate our proposed method, we compared it with the   onboard computer, and a front CSI camera with a 120◦ FOV.
+    previously established IBVS method [11] by conducting 50               The multicopter has a thrust-to-weight ratio of about 3, can
+    simulation experiments under the same initial conditions. The          accelerate up to 5 m/s2, and has a 20-minute flight time. The
+    main difference in this study was the controller, while the DKF        target, a red balloon, was placed 3 m above ground level in
+    observer was consistently set at 50 Hz in both cases.                  open space, as illustrated in Fig. 11.
+          Fig. 10 presents the results of these comparative experiments.          The multicopter intercepted the balloon at varying speeds,
+Fig. 10(a) illustrates the aggregated trajectory data from all 5 m/s, 10 m/s, 15 m/s, 19 m/s and 21 m/s, as shown in
+50 experiments. A direct comparison between Fig. 10(b) and Fig. 11(a). It can be observed that the multicopter kept
+Fig. 8(d) reveals a significant improvement in the intercep- approaching the target and kept the target in the FOV until
+tion accuracy and a denser clustering of interception points the final interception task was completed. During the ex-
+in our proposed method, supported by the CEP values of periment, the interceptor’s inclination reached 50◦, and the
+    CEPrevious = 0.457 m versus CEP50Hz = 0.332 m.                         maximum speed was 21 m/s. Experiment videos are available
+                Additional plots in Figs. 10(c), (d), and (e) detail one   at https://youtu.be/146Km6c30Ww.
+    experimental trajectory, image coordinates over time, and              2) Flight Data Analysis:       Fig. 11(b) shows the interceptor’s
+    interceptor attitude, respectively. These plots underscore a key       trajectory, with GPS data used for position and velocity analysis.
+    advantage of our method: the ability to induce more agile              Note that the designed interception controller does not need to
+    attitude adjustments. Such agility is crucial for enhancing            use GPS position data. In the flight trajectory plot, the start
+    the precision of interception, as demonstrated by the reduced          position of the multicopter is about (−1 m, −1.8 m, 3 m), and
+    CEP value. Overall, this comparative analysis underscores              the target position is about (−3 m, −12 m, 4 m). The multi-
+    the enhanced interception accuracy and responsiveness of our           copter smoothly adjusted its attitude in the initial interception
+    approach compared to the previous IBVS method.                         stages and continuously adapted its attitude and acceleration
+    VI. HIGH-SPEED INTERCEPTION FLIGHT EXPERIMENTS                         for accurate final interception.
+                                                                                     Fig. 11(c) displays the time-varying curve of estimated
+                 Extensive HITL simulations verify the effectiveness and   and measured target coordinates during flight. The DKF filter
+    robustness of our proposed method. Building on these simu-             effectively estimates the target position even when the target
+    lations, real flight experiments were conducted, mirroring the         is momentarily lost or leaves the FOV, as seen in the local
+    steps of the simulation process to actualize the experiments.          image coordinates plot in Fig. 11(d). The filter compensates
+
+
+
+
+
+
+
+
+
+
+v(pixel)    zₑ(m)
+
+
+
+
+
+
+
+
+
+
+    v(pixel)  u(pixel)
+
+
+
+
+
+
+
+
+
+
+    v(pixel)  v(pixel)
+
+    12
+
+
+
+
+          Interceptor     Target                                                                  1.0
+
+                                                              0.6
+                                                              0.5                                 0.5
+                                                              0.4                                 0.0
+                                                          4   0.3
+       -10                                                2   0.2                                 -0.5
+                                                              0.1
+    x e(m)    0                                           0       Previous IBVS Proposed method   -1.0-1.0 -0.5   0.0 0.5     1.0
+          10     0     5      10     15      20     25               Method                           e           x(m)
+                           y        e(m)                             Boxplots of control error        Error distribution at 50Hz
+                       (a) Trajectories in statistics                (b) Error distribution of the previous IBVS and the proposed method
+
+
+
+
+      Interceptor                   Origin                    DKF    Roll                         Pitch           Yaw
+
+
+
+
+
+      3
+
+
+          1.5      -8
+
+                 xe(m)
+            0
+          0    10      20               0
+            ye(m)                                         t(s)                               t(s)
+          (c) Trajectory of a single interception         (d) Image coordinates    (e) Interceptor attitude
+
+    Fig. 10. Statistical results and single intercept details for comparison with previous IBVS methods.
+
+
+
+
+
+
+
+                       Target
+      Interceptor
+
+
+
+
+ TPV FPV TPV FPV TPV FPV
+
+Time (s): 3.2s 3.7s 3.8s
+        (a) Interception process
+
+
+      Interceptor                   Origin                    DKF
+
+
+
+
+
+
+    4.2
+
+                                     0        1   2              3      4   5                         1.7         1.75   1.8
+    3.4        -1
+      2.6    xₑ(m)
+          -12          -6      0    3
+          yₑ(m)                      0        1   2              3      4   5   4.65                  4.7         4.75   4.8
+                                                           t(s)                                                   t(s)
+          (b) Trajectory                          (c) Image coordinates         (d) Local image coordinates
+
+                                        Roll              Pitch      Yaw
+
+
+
+
+
+
+
+
+
+
+                                     0                    1   2      3  4   5   3.8   4.0                         4.2
+          u(pixel)                   t(s)                                             t(s)
+    (e) Target on image    (f) Interceptor attitude                             (g) Local Interceptor attitude
+
+    Fig. 11. Interception process of static target. In figure (a), the left is the Third-Person View (TPV), and the right is the First-Person View (FPV) of the onboard
+    camera.
+
+
+
+
+
+
+
+
+
+
+      zₑ(m)                                                             zₑ(m)
+
+
+
+
+v(pixel)
+
+
+
+
+
+
+
+
+
+
+      v(pixel)         u(pixel)                                         v(pixel)                  u(pixel)
+
+
+
+
+
+
+
+                                                                                                                         zₑ(m)
+
+
+                                                                                                                         e(m)
+
+
+
+
+
+
+
+
+
+
+          v(pixel)     v(pixel)                                                                                          ez(m)
+
+    13
+
+
+
+
+    Interceptor  Target
+
+
+
+    TPV        FPV  TPV        FPV    TPV    FPV
+    Time (s):  5.3s    10.4s        13.0s
+              (a) Interception process
+
+        Interceptor        Origin  DKF
+
+
+
+
+12.0
+
+                5.4     5.7     6.0                                                6.3
+10.5
+                -50
+ 9.0            xₑ(m)
+        15   9    -10
+        y   e(m)  3
+                                           t(s)    t(s)
+                (b) Trajectory    (c) Image coordinates    (d) Local image coordinates
+
+                Roll      Pitch      Yaw
+
+
+
+
+
+
+
+
+
+
+                u(pixel)                                                            t(s)                           t(s)
+                (e) Target on image                                       (f) Interceptor attitude    (g) Local Interceptor attitude
+
+    Fig. 12. Interception process of moving target.
+
+    for image measurement delay and maintains target estimation           correcting delay. Despite the delay, the estimation remained
+    even with extended target loss.                                       accurate without impacting autonomous flight performance.
+          The movement of the target on the image is depicted in Fig.     The interceptor’s attitude variations, depicted in Fig. 12(f)–(g),
+    11(e), where the controller effectively maintains the target          demonstrate its excellent maneuverability.
+    within the image’s central area. The interceptor’s attitude                   In summary, the DKF-based state observer compensates for
+variation over time is illustrated in Fig. 11(f)–(g), with the delays in perception module imaging and processing. This
+maximum pitch angle reaching 50◦ during the interception integration allows the controller to access more accurate real-
+    process.                                                              time image measurements, enhancing control performance
+                                                                          despite lower imaging frame rates and potential target loss.
+    B. Moving Target Flight Experiments                                   C. Compared Flight Experiments
+    1) Design of Flight Experiments:        In the experiments illus-
+    trated in Fig. 12, a target attached to a multicopter moves in                  For comparison, we implemented simple experiments with
+    a circular path at 6 m/s, with its motion affected by wind.           a Position-based Visual Servo (PBVS) controller following the
+    Fig. 12(a) shows the interceptor tracking and approaching             pipeline of [12]. As shown in Fig. 13, the helium-filled balloon
+    the irregularly moving target, keeping it within its FOV until        floats about 2 m above the ground. It can be observed that the
+    interception. The interceptor’s trajectory, detailed in Fig. 12(b),   interceptor misses the target due to two reasons: (i) the PBVS
+    displays effective target locking and agile movements, reaching       controller’s inability to maintain target lock in the image, and
+    speeds up to 10.5 m/s. Additional experiments involving a                 (ii) wind disturbances leading to inaccurate and delayed 3-D
+    freely floating helium balloon are included in the linked video.      target position estimation.
+    2) Flight Data Analysis:            The recorded data of a flight
+    experiment using the filtered estimates are shown in Fig.             VII. CONCLUSION
+    12(c)–(e). The image coordinates plot reveals the DKF filter’s                This paper presents a high-speed autonomous interception
+    effectiveness in smoothing image measurement anomalies and            method for UAV intrusion, effectively overcoming the lim-
+
+
+
+
+
+
+
+
+
+
+    zₑ(m)
+
+
+
+
+v(pixel)
+
+
+
+
+
+
+
+
+
+
+    v(pixel)  u(pixel)
+
+
+
+
+
+
+
+
+
+
+    v(pixel)  u(pixel)
+
+    14
+
+
+                                                                                                 td          t      t  td
+    Time (s)                                                                     z˙1  = − nT n˙               + nTn˙
+                                                                                      = − ∥p1r∥ nT −I + n nTt vr − nT (eω × n                           )
+                        Interceptor        Target                                                             td         t         t                  td       (38)
+              0.2s                                                                    = − ∥p1r∥ nT −I + ntnTt vr − (ntd ×nt)Teω.
+                                                                                                              td
+
+                       TPV                                 FPV                              2) Derivative of L1:               The derivative of Eq. (12) along Eq.
+                                                                           (38) is
+                                                                           L˙1            z₁z˙₁
+              2.3s                                                               = kb₂ −zz₁₂                 1                       z
+                                                                                 = − kb₂ −¹z₁₂ ∥pᵣ∥ nᵀtd               −I+nₜnᵀₜ       vᵣ − kb₂ −¹ z₁₂ (ntd ×nₜ)ᵀᵉω.
+
+                       TPV                                 FPV             Due to vr = vrd + z2 = −k1pr + z2 = k1 ∥pr∥ nt + z2 (39)
+                                                                                                                                                              , Eq.
+                                                                           (39) is rewritten as
+
+                                                                                 = −kb₂ −¹zz₁₁₂           nᵀtd  −I+nₜnᵀₜ           nₜ − ∥pᵣ∥ nᵀtd −I+nₜnᵀₜ    z₂
+              5.2s                                                         L˙1         z                                                 1
+
+                       TPV                                 FPV                   =     kzb²₁−z₁² (nᵗᵈ×nᵗ)ᵀᵉω
+    Fig. 13.  Interception process of PBVS.                                            −kᵇ² −zz¹¹²        nᵀtd  −nₜ + nₜnᵀₜ nₜ   − ∥p1ᵣ∥ nᵀtd       −I+nₜnᵀₜ  z₂
+    itations of existing radio frequency interference techniques.                = − kᵇ²z−¹ z¹² (n1ᵗᵈ ×nnᵀᵗ)ᵀᵉω                      z
+    The main results include: (i) Design of an IBVS interception                       kb² −z₁² ∥pᵣ∥            td     −I+nₜnᵀₜ    z₂ − kb₂ −¹z₁₂ (ntd ×nₜ)ᵀᵉω.
+    controller, ensuring collinearity between the designed LOS                  3) Derivative of L                                                             (40)
+vector, the velocity vector, and the target unit vector, with tive of Eq. (17) is 3: Combining Eqs. (16), (40), the deriva-
+    proven stability of the angular velocity controller. (ii) Devel-                                 z
+    opment of a DKF observer to address issues of delayed, low              L˙  3               1
+    frame rate, and easily loss image feedback, enhancing feedback                 = − kb2 z− z12 (ntd ×nt)Teω − k1pTr pr + zT2 (ar + k1vr)
+    data quality. (iii) Successful validation of the method through                = − k2 −1 z2 (ntd ×nt)Teω − k1pTr pr − k2zT2 z2.
+    unique, high-speed autonomous flight experiments and HITL                               b            1                                                     (41)
+    simulations, achieving speeds over 20 m/s. Future work will                 4) Proof of Theorem 1:                       A total Lyapunov candidate function
+    focus on refining the interception strategy using game theory,         is designed as:
+    considering the strategies of intruding drones, and exploring
+    collaborative interceptions involving multiple interceptors and                            L = L3 + L4
+    multiple intruders.                                                              = 1 −nT nt + 21 pTr pr + 21 zT2 z2tr I − RTRe .                           (42)
+                                                                                                    td                                d               b
+                                       APPENDIX                            Combining Eqs. (25), (41), the derivative of Eq. (42) is
+    A. Detailed Derivations and Proof of Theorem 1                          L˙  = −k₁pzᵀᵣ pᵣ − k₂zᵀ₂ z₂
+                                                                                   − k₂ −¹ z₂ (ntd ×nₜ)ᵀᵉω + vex                   Rᵀd Rᵉb − RᵉbᵀR
+                1) Derivatives of Key Elements: First, the derivatives of              b         1                                                    d   T bω
+    its elements are considered to analyze the properties of                    = −k₁pᵀᵣ pᵣ − k₂zᵀ₂ z₂
+    the Lyapunov candidate function. By the property of the                        −                 z₁   (n    ×n
+                                                                                                                                      b     Rd             T  bω
+    derivative of     SO (3) [31],     n˙ td = eω × ntd, where eω  is the                          k² −z²       td    t)T Reb −vex     Rᵀd Rᵉb −Rᵉ T
+                                                                                            b        1
+    angular velocity under EFCS. The vector 2-norm is defined as
+    ∥pr∥ = ppTr pr, so the derivatives of nt and z1 are                         = −k₁pᵀᵣ pᵣ − k₂zᵀ₂ z₂ − wᵀsat (w, ωₘ)
+                                                                                = −k₁pᵀᵣ pᵣ − k₂zᵀ₂ z₂ − κωₘ (w) wᵀw
+                  n˙ t  = − p˙ r ∥pr∥ − p∥prpTr pr− 2¹ pTr p˙ r                 ≤ 0                                                                            (43)
+                                                r∥2                        where w = kb₂z−¹z₁₂ RebT (ntd ×nt)−vex                  RTd Reb −RebTRd            , and
+                        = − p˙ r   + prpTr p˙ r                            bω = sat (w, ωm).
+                              ∥pr∥     ∥pr∥3     !                   (37)       According to Lemma 1 in [36], we have
+
+                                                                                                                                         td      b
+                        =     − 1     I + prpTr      p˙                                           pr → 0,        nt ∈ S =   x |         nT x > 1 − k    ,
+                               ∥pr∥           ∥pr∥3      r                 provided that the initial state satisfies nt (0) ∈ S . This ensures
+                        = −I + ntnTt ∥p1r∥ vr,                             that the interceptor’s relative position to the target converges
+                                                                           to zero. Additionally, throughout the interception process, the
+
+15
+
+
+              target vector remains close to the designed LOS vector, ensuring          3) Image Measurement State Transfer:                                                                              The IBVS Eq. (6)
+the target remains locked within the interceptor’s FOV.                                                                                                     describes the relationship between the change of image feature
+                                                                                                                                                         points and the twist in CCS. Converting the twist in the equation
+                                                                                                                                                                  from CCS to BCS and discretizing it, we get the transfer
+B. DKF Propagation with IMU Measurements                                          equation of image feature as
+1) Quaternion Status Transfer:                    The discrete-time recurrence          ip                              "  − 1                            0        pp¯xi         #
+                                                                                                   ¯k =ip
+relation of state q is                                                                                 ¯k−1p¯+ p                         0p−ᶻᶜ − p1zc              pp¯ᶻᶻʸᶜᶜⁱ       RbcTRebTvr,k−1∆t
+                                     qk = qk−1 ⊗ ∆qk−1 = M (∆qk−1) qk−1   (44)                         +    1 + ¯xⁱ ¯py2ⁱ                          1 + ¯p2xi               p¯y              RbTbω
+                                                                                                                                                   −p¯        p¯               −p¯
+                   where M (∆qk−1) is given in Appendix C, bω is the estimated     The state transition matrix of the image featureyⁱ                   xi     yi               xi  i             c            ki−1∆t.(51)
+                                                                                                                                                                                                             p
+                value at time tk, and the relationship with the measured value    orientation quaternion q                                                                                                       ¯k to the
+of the gyroscope is Eq. (7).                                                                                                                1k−1           is
+So, Fqqₖk−1                       = M (∆qk−1). Because the estimated value and                             Fⁱqp¯k−1ᵏ                   = p                   M4vr       M5vr                     T∆t                  (52)
+              the bias of gyroscope have the same order and coefficient, their                                                              zc
+partial derivatives have the same form:                                           where M4, M5 is given in Appendix C.
+                                                                                                                                                         The state transition matrix of the image feature ip
+                               q          q                                                                                                                                                                      ¯k to the
+                               2
+ Fq                       =  −¹q        q22    q23q                              velocity vr,k−1 is
+                                                     2                                                                                                                i
+                              − q2³      − 2⁰        2     ∆t,                                                 " − 1                                   0          p¯x           #
+  bk                            20       23    −  1                     (45)           Fⁱp¯              =                        p                              p                        T           T
+      gyr,k−  1                         q       q                                          k                             z
+                               q                 2                                        v                                              c
+                              22        − q2¹  − q2⁰                                         r,k−1                                  0              − p1            pp¯zyci          Rbc          Reb    ∆t.           (53)
+                                                                                                                                                           zc             zc
+  Gqᵏ     = Fq                                                                                                                                                                                                   ¯k of the
+          bωk−1      bkgyr,k−1 .                                                                                                                           The state transition matrix of the image feature ip
+                                                                                  k-th frame to the image feature ip
+                 2) Position and Velocity Status Transfer:        For low-cost    is                                                                                                          ¯k−1 of the (k − 1)-th frame
+                 integrated navigation systems embedded in small multicopters,                              vz        c          + ¯p       ω
+               relative positions are generally used for navigation, while the    F                             p
+                  influence of coning and sculling errors is ignored [37]. The     iipp¯¯k−1     = I +           zc       −p¯ʸyⁱ ωˣᶜ −2¯pˣⁱ ωʸᶜ v                                   p¯ₓi ωₓc +ωzc                      ∆t.
+position transfer equation is written as                                                                                                 i     yc −ωzc                   pzzcc                  +2¯pyi ωₓc −p¯ₓi ωyc  (54)
+                                                                                                                                                                  The state transition matrix and the system noise driving
+                                  1                                               matrix of the image feature ip
+                                   pr,k = pr,k−1 + 2 (vr,k−1 + vr,k) ∆t.  (46)    are                             ¯kto the gyroscope bias                                                                         bgyr,k−1
+              The corresponding state transition matrix is                         F     ibp¯gyr,k−1k      = −            1 + ¯p¯xⁱ p¯py2ⁱ                         − 1 + ¯p2xi                 p¯yi             RbT,
+                                                                                                                                               yi                   −p¯xi p¯yi              −p¯xi            c        (55)
+      Fpvr,k                           = I ∆t.                            (47)          Gip¯k              = Fⁱp¯ᵏ                          .
+                              r,k−1                                                               bωk−1                           bgyr,k−1
+
+           Ignoring the angular velocity of the earth’s rotation, the velocity                                                                                   F The Eqs. (52)–(55) complete the state transition matrix
+               Eq. (9) is discretized into a transfer equation, and we can get     k                                                                                 and the system noise driving matrix Gk, and the state
+                                                                                  propagation can be realized according to the Eqs. (30)–(31).
+
+ vr,k = vr,k−1 + Reb · bak−1 + ge3 ∆t                                     (48)    C. State Recurrence Equations
+                  where ∆t is the period of the discrete system. Because there                                                                                                                                 ∆     
+                is a coordinate system transformation between the acceleration                                                                1           − ωˣᵇ₂∆t                         − ωʸᵇ∆ᵗ     − ωᶻ b     t
+                                                                                                                                                                                               2         ω  2
+                                                                                                                                            xb                 1                          z    ∆t                 ∆t  
+                      measurement in BCS and the velocity state in EFCS, there                                                           ω          ∆t                                 ω                    b2        
+                                                                                                                   M (∆q (k − 1)) =             2                                          b           − y
+                                                                                                                                        ω            t                    ∆                2               ∆t        
+                   is a transfer relationship between the acceleration and the                                                             yb2∆           − ωᶻᵇ        t                   1            ωx            ,
+                                                                                                                                         ω          ∆t         ω       2                         ∆t        b
+orientation quaternion, that is                                                                                                             zb2                         yb∆t       − ωˣ                    1²
+                                                                                                                                                            2                              b
+Fqvr,k     = 2              M ba     M b                                                             q₀           −q₃ q₂                                q₃     q₀          −q₁                 2      −q₂ q₁      q₀   
+ k−1                         1         2    a         M3ba     T∆t        (49)    M          q                                                         q     −                                       q₃        q₀ −q₁ 
+                                                                                        1         = −q¹₂  qq₂₁                   qq₃ , M                                     , M              =
+                                                                                                                      0                    2 = q2            q₁ −q₀ 
+where ba = axb         ayb    azb                      T = acc − bacc, M1, M2,                                −q₃ −q₀ q₁                                q₀¹ −qq²₃     qq₂³                     3      −qq₁₀ qq₃₂ −qq₃₂ ,
+M3 is given in Appendix C.                                                                              2¯pₓi q₀ + 2q₃                               2¯pₓ q            q                                  2       
+                      Due to the estimated value and the bias of accelerometer                             2¯p   q        − 2                                 i        3 − 2 0         −2¯pₓi q₂ −          q₁
+                                                                                                   M₄ =       xi     1                  q₂           2¯pₓ q                              2¯p     q     − 2
+                have the same order and coefficient, their partial derivatives                          2¯pₓi q₂ − 2q₁                                       2¯pₓⁱ q² + 2q2q¹                 xi    3      q₀     
+                                                                                                           2¯pₓi q₃ + 2q₀                             2¯pₓⁱ q¹ −            q²         −2¯pₓqi q₀−− 2q₃             ,
+have the same form:                                                                                     2¯pyi q₀ − 2q₂                               2¯pyⁱq₃⁰ + 2           3            2¯pₓi      1     2q₂     
+                                                                                                                                                                         + 2q₁         −2¯p          q    − 2q
+                    Fvbr,k        = −Re ∆t,                                                            
+                         acc,k−1           b                              (50)           M          5 =   2¯pyi qq₁ − 2q₃                                     2¯pyiⁱ q₂ + 2q₀              2¯pyʸqⁱ  2     q 0
+                                                                                                           2¯pyi      2               − 2q  0         2¯py q            q                        − pⁱ q³ + 2 1     
+      Gvₑar,k                        = Fvr,k     .                                                          py q                        2q                          i q1 − 2q3              2¯yi     0    + 2q  2   .
+                                                                                                           2¯
+                             k−1       bacc,k−1                                                                 i     3 −                   1         2¯pyi            0 − 2 2                  2¯pyi q₁ − 2q₃
+
+    16
+
+
+          REFERENCES                                                                      [23]  R. P. Guan, B. Ristic, L. Wang, and R. Evans, “Monte Carlo localisation
+                                                                                                of a mobile robot using a Doppler-Azimuth radar,” Automatica, vol. 97,
+ [1]  S. Lee and H. Son, “Antisway control of a multirotor with cable-                          pp. 161–166, 2018.
+     suspended payload,” IEEE Transactions on Control Systems Technology, [24] H. Zhu, J. Mi, Y. Li, K.-V. Yuen, and H. Leung, “VB-Kalman based
+      vol. 29, no. 6, pp. 2630–2638, 2021.                                                      localization for connected vehicles with delayed and lost measurements:
+ [2]  D. Floreano and R. J. Wood, “Science, technology and the future of                        Theory and experiments,” IEEE/ASME Transactions on Mechatronics,
+      small autonomous drones,” Nature, vol. 521, no. 7553, pp. 460–466,                        vol. 27, no. 3, pp. 1370–1378, 2022.
+      2015.                                                                               [25]  K. Gamagedara, T. Lee, and M. Snyder, “Quadrotor state estimation
+ [3]  M. Ritchie, F. Fioranelli, and H. Borrion, “Micro UAV crime prevention:                   with IMU and delayed real-time kinematic GPS,” IEEE Transactions on
+      Can we help Princess Leia?” in Crime Prevention in the 21st Century.                      Aerospace and Electronic Systems, vol. 57, no. 5, pp. 2661–2673, 2021.
+      Springer, 2017, pp. 359–376.                                                        [26]  J.-M. Kai, G. Allibert, M.-D. Hua, and T. Hamel, “Nonlinear feed-
+ [4]  X. Shi, C. Yang, W. Xie, C. Liang, Z. Shi, and J. Chen, “Anti-drone system                back control of quadrotors exploiting first-order drag effects,”  IFAC-
+      with multiple surveillance technologies: Architecture, implementation,                    PapersOnLine, vol. 50, no. 1, pp. 8189–8195, 2017, 20th IFAC World
+      and challenges,” IEEE Communications Magazine, vol. 56, no. 4, pp.                        Congress.
+      68–74, 2018.                                                                        [27]  Y. Song, A. Romero, M. M¨uller, V. Koltun, and D. Scaramuzza, “Reaching
+ [5]  J. Noh, Y. Kwon, Y. Son, H. Shin, D. Kim, J. Choi, and Y. Kim, “Tractor                   the limit in autonomous racing: Optimal control versus reinforcement
+      beam: Safe-hijacking of consumer drones with adaptive GPS spoofing,”                      learning,” Science Robotics, vol. 8, no. 82, p. eadg1462, 2023.
+     ACM Transactions on Privacy and Security, vol. 22, no. 2, pp. 1–26, [28] P. I. Corke and O. Khatib, Robotics, Vision and Control Fundamental
+      2019.                                                                                     Algorithms in MATLAB.    Berlin, Heidelberg: Springer, 2011, vol. 73.
+ [6] K. P¨arlin, M. M. Alam, and Y. Le Moullec, “Jamming of UAV remote [29] F. Chaumette and S. Hutchinson, “Visual servo control. I. Basic
+      control systems using software defined radio,” in 2018 International                      approaches,” IEEE Robotics & Automation Magazine, vol. 13, no. 4, pp.
+      Conference on Military Communications and Information Systems                             82–90, 2006.
+      (ICMCIS).  IEEE, 2018, pp. 1–6.                                                     [30]  Y. Yu, S. Yang, M. Wang, C. Li, and Z. Li, “High performance full
+ [7]  D. Dynamics, “Dronecatcher,” www.dronecatcher.nl, 2021.                                   attitude control of a quadrotor on SO(3),” in 2015 IEEE International
+ [8]  M. Z. Chaari and S. Al-Maadeed, “Testing the efficiency of laser                          Conference on Robotics and Automation (ICRA), 2015, pp. 1698–1703.
+     technology to destroy the rogue drones,” Security and Defence Quarterly, [31] R. M. Murray, Z. Li, and S. S. Sastry, A Mathematical Introduction to
+      vol. 32, no. 5, pp. 31–38, 2020.                                                          Robotic Manipulation. CRC Press, 2017.
+ [9] Y. Chen and N. O. P´erez-Arancibia, “Controller synthesis and perfor- [32] T. Lee, M. Leok, and N. H. McClamroch, “Geometric tracking control
+      mance optimization for aerobatic quadrotor flight,” IEEE Transactions                     of a quadrotor UAV on SE(3),” in 49th IEEE Conference on Decision
+      on Control Systems Technology, vol. 28, no. 6, pp. 2204–2219, 2020.                       and Control (CDC).    IEEE, 2010, pp. 5420–5425.
+[10] P. Foehn, D. Brescianini, E. Kaufmann, T. Cieslewski, M. Gehrig, [33] R. Fu, Q. Quan, M. Li, and K.-Y. Cai, “Practical distributed control
+      M. Muglikar, and D. Scaramuzza, “Alphapilot: Autonomous drone racing,”                    for cooperative multicopters in structured free flight concepts,” IEEE
+      Autonomous Robots, vol. 46, no. 1, pp. 307–320, 2022.                                     Transactions on Intelligent Transportation Systems, vol. 24, no. 4, pp.
+[11]  K. Yang and Q. Quan, “An autonomous intercept drone with image-based                      4203–4216, 2023.
+     visual servo,” in 2020 IEEE International Conference on Robotics and [34] X. Dai, C. Ke, Q. Quan, and K.-Y. Cai, “RFlySim: Automatic test
+      Automation (ICRA), 2020, pp. 2230–2236.                                                   platform for UAV autopilot systems with FPGA-based hardware-in-
+[12]  Y. Stasinchuk, M. Vrba, M. Petrl´ık, T. B´aˇca, V. Spurn`y, D. Hert, D. ˇZaitl´ık,        the-loop simulations,” Aerospace Science and Technology, vol. 114, p.
+     T. Nascimento, and M. Saska, “A multi-UAV system for detection and [35] 106727, 2021.
+      elimination of multiple targets,” in 2021 IEEE International Conference                   D. Shnidman, “Efficient computation of the circular error probability
+      on Robotics and Automation (ICRA).     IEEE, 2021, pp. 555–561.                           (CEP) integral,” IEEE Transactions on Automatic Control, vol. 40, no. 8,
+[13] M. Vrba, Y. Stasinchuk, T. B´aˇca, V. Spurn`y, M. Petrl´ık, D. Heˇrt, D. ˇZaitl´ık, [36] pp. 1472–1474, 1995.
+      and M. Saska, “Autonomous capture of agile flying objects using UAVs:                     K. P. Tee, S. S. Ge, and E. H. Tay, “Barrier lyapunov functions for the
+      The MBZIRC 2020 challenge,” Robotics and Autonomous Systems, vol.                         control of output-constrained nonlinear systems,” Automatica, vol. 45,
+      149, p. 103970, 2022.                                                               [37]  no. 4, pp. 918–927, 2009.
+[14]  H. Tao, D. Lin, S. He, T. Song, and R. Jin, “Optimal terminal-                            K. M. Roscoe, “Equivalency between strapdown inertial navigation coning
+      velocity-control guidance for intercepting non-cooperative maneuvering                    and sculling integrals/algorithms,” Journal of Guidance, Control, and
+      quadcopter,” Journal of Field Robotics, vol. 39, no. 4, pp. 457–472,                      Dynamics, vol. 24, no. 2, pp. 201–205, 2001.
+      2022.
+[15]  A. Loquercio, E. Kaufmann, R. Ranftl, A. Dosovitskiy, V. Koltun, and
+      D. Scaramuzza, “Deep drone racing: From simulation to reality with
+      domain randomization,” IEEE Transactions on Robotics, vol. 36, no. 1,
+      pp. 1–14, 2020.
+[16]  J. Fu, Y. Song, Y. Wu, F. Yu, and D. Scaramuzza, “Learning deep
+      sensorimotor policies for vision-based autonomous drone racing,” arXiv
+      preprint arXiv:2210.14985, 2022.
+[17]  J. Li, Z. Ning, S. He, C.-H. Lee, and S. Zhao, “Three-dimensional bearing-
+      only target following via observability-enhanced helical guidance,” IEEE
+      Transactions on Robotics, vol. 39, no. 2, pp. 1509–1526, 2023.
+[18]  D. Hanover, A. Loquercio, L. Bauersfeld, A. Romero, R. Penicka, Y. Song,
+      G. Cioffi, E. Kaufmann, and D. Scaramuzza, “Autonomous drone racing:
+      A survey,” arXiv e-prints, pp. arXiv–2301, 2023.
+[19]  W. Zhao, H. Liu, F. L. Lewis, K. P. Valavanis, and X. Wang, “Robust
+      visual servoing control for ground target tracking of quadrotors,” IEEE
+      Transactions on Control Systems Technology, vol. 28, no. 5, pp. 1980–
+      1987, 2020.
+[20]  H. Xie, A. F. Lynch, K. H. Low, and S. Mao, “Adaptive output-feedback
+      image-based visual servoing for quadrotor unmanned aerial vehicles,”
+      IEEE Transactions on Control Systems Technology, vol. 28, no. 3, pp.
+      1034–1041, 2020.
+[21]  G. Wang, J. Qin, Q. Liu, Q. Ma, and C. Zhang, “Image-based visual
+      servoing of quadrotors to arbitrary flight targets,” IEEE Robotics and
+      Automation Letters, vol. 8, no. 4, pp. 2022–2029, 2023.
+[22]  J. M. Pak, C. K. Ahn, P. Shi, Y. S. Shmaliy, and M. T. Lim, “Distributed
+      hybrid particle/FIR filtering for mitigating NLOS effects in TOA-based
+      localization using wireless sensor networks,” IEEE Transactions on
+      Industrial Electronics, vol. 64, no. 6, pp. 5182–5191, 2017.

@@ -1,0 +1,668 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>ControlCore — two-objective IBVS, visualized</title>
+<script>
+  MathJax = {
+    tex: {
+      inlineMath: [['$', '$'], ['\\(', '\\)']],
+      displayMath: [['$$', '$$'], ['\\[', '\\]']]
+    },
+    svg: { fontCache: 'global' }
+  };
+</script>
+<script async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-svg.js"></script>
+<style>
+  :root {
+    --bg: #0f1419;
+    --panel: #161c24;
+    --panel2: #1c232d;
+    --line: #2a3441;
+    --text: #d8dee9;
+    --muted: #8a96a8;
+    --bearing: #5fc7ec;     /* piece 1: bearing — blue */
+    --bearing-bg: #143040;
+    --closing: #f0a25a;     /* piece 2: closing velocity — orange */
+    --closing-bg: #3b2614;
+    --sum: #c39bff;
+    --sum-bg: #2a2240;
+    --accent: #ffd166;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0;
+    padding: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+    height: 100%;
+  }
+  body { display: flex; height: 100vh; overflow: hidden; }
+
+  /* ---- Main ---- */
+  main {
+    flex: 1;
+    overflow: auto;
+    padding: 24px 32px 64px;
+    transition: padding 0.2s ease;
+  }
+  h1 {
+    margin: 0 0 4px 0;
+    font-size: 22px;
+    font-weight: 600;
+    color: var(--text);
+  }
+  h1 .accent { color: var(--accent); }
+  .subtitle {
+    color: var(--muted);
+    font-size: 13px;
+    margin-bottom: 24px;
+  }
+  .subtitle code { color: var(--bearing); }
+
+  .legend {
+    display: flex;
+    gap: 18px;
+    align-items: center;
+    margin-bottom: 16px;
+    font-size: 12px;
+    color: var(--muted);
+  }
+  .legend .chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .legend .swatch {
+    width: 12px;
+    height: 12px;
+    border-radius: 3px;
+    display: inline-block;
+  }
+
+  /* ---- Diagram ---- */
+  .diagram {
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 24px;
+    position: relative;
+    overflow: visible;
+  }
+
+  .row {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 24px;
+    margin-bottom: 12px;
+    align-items: stretch;
+  }
+  .col-input { grid-column: 1 / 2; }
+  .col-bearing { grid-column: 2 / 3; }
+  .col-closing { grid-column: 3 / 4; }
+
+  .node {
+    border-radius: 8px;
+    padding: 12px 14px;
+    border: 1px solid var(--line);
+    background: var(--panel2);
+    position: relative;
+    margin-bottom: 14px;
+    transition: transform 0.15s ease, box-shadow 0.15s ease;
+  }
+  .node:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 4px 14px rgba(0,0,0,0.4);
+  }
+  .node .title {
+    font-size: 12px;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.6px;
+    margin-bottom: 4px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .node .eq {
+    font-size: 14px;
+    line-height: 1.4;
+    color: var(--text);
+    overflow-x: auto;
+  }
+  .node .eq.small { font-size: 13px; }
+  .node.bearing { border-left: 3px solid var(--bearing); }
+  .node.bearing .title { color: var(--bearing); }
+  .node.closing { border-left: 3px solid var(--closing); }
+  .node.closing .title { color: var(--closing); }
+  .node.sum { border-left: 3px solid var(--sum); }
+  .node.sum .title { color: var(--sum); }
+  .node.io {
+    border-left: 3px solid var(--muted);
+    background: #11161c;
+  }
+
+  /* numbered click indicator */
+  .pin {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    background: var(--accent);
+    color: #1a1a1a;
+    font-size: 12px;
+    font-weight: 700;
+    cursor: pointer;
+    user-select: none;
+    box-shadow: 0 0 0 0 rgba(255,209,102,0.5);
+    transition: box-shadow 0.3s ease, transform 0.15s ease;
+  }
+  .pin:hover { transform: scale(1.1); }
+  .pin.pulse {
+    animation: pulse 1.2s ease-out;
+  }
+  @keyframes pulse {
+    0%   { box-shadow: 0 0 0 0 rgba(255,209,102,0.7); }
+    100% { box-shadow: 0 0 0 16px rgba(255,209,102,0); }
+  }
+
+  /* arrows column-to-column / down-the-chain */
+  .arrow-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 24px;
+    height: 24px;
+    margin: -8px 0;
+  }
+  .arrow-row .a {
+    grid-column: span 1;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+  }
+  .arrow-row .a svg { display: block; }
+
+  /* big arrow into SUM */
+  .merge {
+    margin-top: 18px;
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 24px;
+    align-items: center;
+  }
+  .merge svg.merge-arrow { width: 100%; height: 70px; display: block; }
+
+  .output-row {
+    margin-top: 18px;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 24px;
+  }
+
+  /* ---- Expansion (derivation) boxes ---- */
+  details.deriv {
+    margin-top: 8px;
+    background: rgba(255,255,255,0.02);
+    border: 1px dashed var(--line);
+    border-radius: 6px;
+    padding: 6px 10px;
+    font-size: 12px;
+  }
+  details.deriv summary {
+    cursor: pointer;
+    color: var(--muted);
+    list-style: none;
+    user-select: none;
+  }
+  details.deriv summary::-webkit-details-marker { display: none; }
+  details.deriv summary::before {
+    content: "▸ ";
+    color: var(--accent);
+  }
+  details.deriv[open] summary::before { content: "▾ "; }
+  details.deriv .body {
+    margin-top: 8px;
+    color: var(--text);
+    line-height: 1.5;
+  }
+  details.deriv .body p { margin: 6px 0; }
+
+  /* ---- Sidebar ---- */
+  aside {
+    width: 25%;
+    min-width: 320px;
+    max-width: 480px;
+    background: var(--panel);
+    border-left: 1px solid var(--line);
+    overflow-y: auto;
+    transition: width 0.25s ease, min-width 0.25s ease, padding 0.25s ease;
+    padding: 16px 18px 64px;
+    position: relative;
+  }
+  aside.collapsed {
+    width: 36px;
+    min-width: 36px;
+    padding: 16px 0;
+    overflow: hidden;
+  }
+  aside.collapsed .sidebar-content { display: none; }
+  .sidebar-toggle {
+    position: absolute;
+    top: 12px;
+    left: 6px;
+    width: 24px;
+    height: 24px;
+    background: var(--panel2);
+    border: 1px solid var(--line);
+    color: var(--text);
+    border-radius: 4px;
+    font-size: 14px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .sidebar-toggle:hover { background: var(--line); }
+
+  .sidebar-content { padding-left: 28px; }
+  .sidebar-content h2 {
+    font-size: 14px;
+    margin: 0 0 12px 0;
+    color: var(--accent);
+    text-transform: uppercase;
+    letter-spacing: 0.6px;
+  }
+  .sidebar-entry {
+    padding: 10px 12px;
+    border-radius: 6px;
+    margin-bottom: 10px;
+    border: 1px solid transparent;
+    background: rgba(255,255,255,0.02);
+    transition: background 0.2s ease, border 0.2s ease;
+  }
+  .sidebar-entry.highlight {
+    background: rgba(255,209,102,0.08);
+    border-color: var(--accent);
+  }
+  .sidebar-entry .num {
+    display: inline-block;
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    background: var(--accent);
+    color: #1a1a1a;
+    font-size: 11px;
+    font-weight: 700;
+    text-align: center;
+    line-height: 20px;
+    margin-right: 6px;
+  }
+  .sidebar-entry .title {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text);
+    margin-bottom: 4px;
+  }
+  .sidebar-entry .text {
+    font-size: 12.5px;
+    line-height: 1.5;
+    color: #c0c8d4;
+  }
+  .sidebar-entry .text code {
+    background: rgba(255,255,255,0.06);
+    padding: 1px 4px;
+    border-radius: 3px;
+    font-size: 11.5px;
+  }
+  .sidebar-entry.bearing { border-left: 3px solid var(--bearing); }
+  .sidebar-entry.closing { border-left: 3px solid var(--closing); }
+  .sidebar-entry.sum { border-left: 3px solid var(--sum); }
+
+  .footer-note {
+    margin-top: 22px;
+    font-size: 11.5px;
+    color: var(--muted);
+    line-height: 1.5;
+    padding: 10px 12px;
+    border-top: 1px solid var(--line);
+  }
+
+  /* ---- Two-objectives summary box ---- */
+  .objectives {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+    margin-bottom: 20px;
+  }
+  .obj-card {
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 12px 14px;
+  }
+  .obj-card.bearing { border-top: 3px solid var(--bearing); }
+  .obj-card.closing { border-top: 3px solid var(--closing); }
+  .obj-card .label {
+    font-size: 11px;
+    text-transform: uppercase;
+    color: var(--muted);
+    letter-spacing: 0.6px;
+  }
+  .obj-card.bearing .label { color: var(--bearing); }
+  .obj-card.closing .label { color: var(--closing); }
+  .obj-card .goal {
+    margin-top: 4px;
+    font-size: 14px;
+  }
+  .obj-card .desc {
+    margin-top: 6px;
+    color: var(--muted);
+    font-size: 12px;
+    line-height: 1.5;
+  }
+</style>
+</head>
+<body>
+
+<main>
+  <h1><span class="accent">ControlCore</span> — two objectives, one actuator</h1>
+  <div class="subtitle">
+    Walking through <code>sims/paper_sim/controller/control_core.py</code> · paper Eqs. (12)–(28)
+  </div>
+
+  <div class="legend">
+    <span class="chip"><span class="swatch" style="background:var(--bearing)"></span> Piece 1 — bearing loop</span>
+    <span class="chip"><span class="swatch" style="background:var(--closing)"></span> Piece 2 — closing-velocity loop</span>
+    <span class="chip"><span class="swatch" style="background:var(--sum)"></span> Superposition</span>
+    <span class="chip"><span class="swatch" style="background:var(--accent)"></span> Click a numbered pin for the explanation</span>
+  </div>
+
+  <!-- Two objectives summary -->
+  <div class="objectives">
+    <div class="obj-card bearing">
+      <div class="label">Objective 1 — bearing</div>
+      <div class="goal">$1 - n_{td}^\top n_t < \epsilon$</div>
+      <div class="desc">Keep the designed LOS aligned with the actual LOS. A purely geometric goal — doesn't care about range or velocity.</div>
+    </div>
+    <div class="obj-card closing">
+      <div class="label">Objective 2 — closing range</div>
+      <div class="goal">$p_r \to 0$</div>
+      <div class="desc">Collapse the relative position. A dynamical goal — requires shaping acceleration via thrust direction.</div>
+    </div>
+  </div>
+
+  <!-- Diagram -->
+  <div class="diagram">
+    <!-- INPUT row -->
+    <div class="row">
+      <div class="node io col-input">
+        <div class="title">Input · ObserverState <span class="pin" data-pin="0">0</span></div>
+        <div class="eq">$p_r,\;v_r,\;R_{wb}$</div>
+      </div>
+      <div class="node bearing col-bearing">
+        <div class="title">Piece 1 · LOS unit vectors <span class="pin" data-pin="1">1</span></div>
+        <div class="eq">$n_t = -p_r / \lVert p_r \rVert,\quad n_{td} = R_{wb}\, n_{td}^b$</div>
+      </div>
+      <div class="node closing col-closing">
+        <div class="title">Piece 2 · Velocity error <span class="pin" data-pin="4">4</span></div>
+        <div class="eq">$z_2 = v_r - v_{rd},\;\; v_{rd} = -k_1 p_r$</div>
+        <details class="deriv">
+          <summary>Why does $v_{rd} = -k_1 p_r$ close range?</summary>
+          <div class="body">
+            <p>Take $L_2 = \tfrac{1}{2} p_r^\top p_r$. Then $\dot L_2 = p_r^\top v_r$.</p>
+            <p>Choose $v_{rd} = -k_1 p_r$. When $v_r$ tracks $v_{rd}$ exactly, $\dot L_2 = -k_1\|p_r\|^2 \le 0$, so $\|p_r\|$ decays exponentially.</p>
+            <p>Direction check: $-k_1 p_r = k_1 \|p_r\|\,n_t$ — magnitude proportional to range, aimed along the LOS toward the target.</p>
+          </div>
+        </details>
+      </div>
+    </div>
+
+    <!-- ARROWS down -->
+    <div class="arrow-row">
+      <div class="a"></div>
+      <div class="a"><svg width="20" height="24"><path d="M10 0 V20 M4 14 L10 20 L16 14" stroke="#5fc7ec" stroke-width="2" fill="none"/></svg></div>
+      <div class="a"><svg width="20" height="24"><path d="M10 0 V20 M4 14 L10 20 L16 14" stroke="#f0a25a" stroke-width="2" fill="none"/></svg></div>
+    </div>
+
+    <!-- 2nd row -->
+    <div class="row">
+      <div class="col-input"></div>
+      <div class="node bearing col-bearing">
+        <div class="title">Piece 1 · Barrier error <span class="pin" data-pin="2">2</span></div>
+        <div class="eq">$z_1 = 1 - n_{td}^\top n_t,\quad L_1 = \tfrac{1}{2}\log\!\dfrac{k_b^2}{k_b^2 - z_1^2}$</div>
+        <details class="deriv">
+          <summary>The barrier — what keeps the target on-screen</summary>
+          <div class="body">
+            <p>As $|z_1| \to k_b$, $L_1 \to \infty$. Any finite control effort can't push the system past the barrier, so the FOV constraint is enforced automatically — provided $z_1(0) < k_b$.</p>
+            <p>Derivative: $\dot L_1 = \dfrac{z_1}{k_b^2 - z_1^2}\,\dot z_1$. The barrier prefactor $z_1/(k_b^2 - z_1^2)$ is what appears in $b\omega_1$.</p>
+          </div>
+        </details>
+      </div>
+      <div class="node closing col-closing">
+        <div class="title">Piece 2 · Desired acceleration <span class="pin" data-pin="5">5</span></div>
+        <div class="eq">$a_d = -k_1 v_r - k_2 z_2 - p_r + \dfrac{m}{\lVert p_r\rVert}\,\dfrac{z_1}{k_b^2 - z_1^2}\,(\text{proj})\,n_{td}$</div>
+        <details class="deriv">
+          <summary>Where each term comes from</summary>
+          <div class="body">
+            <p>$-k_2 z_2$ — drives velocity-tracking error to zero (sets Lyapunov decrement $-k_2\|z_2\|^2$).</p>
+            <p>$-k_1 v_r - p_r$ — terms inherited from $\dot v_{rd}$ and the $\dot L_2$ cross-term.</p>
+            <p>Last term — bearing/range coupling. It cancels the $\dot L_1$ cross-coupling so Pieces 1 and 2 superpose cleanly (Appendix A).</p>
+          </div>
+        </details>
+      </div>
+    </div>
+
+    <div class="arrow-row">
+      <div class="a"></div>
+      <div class="a"><svg width="20" height="24"><path d="M10 0 V20 M4 14 L10 20 L16 14" stroke="#5fc7ec" stroke-width="2" fill="none"/></svg></div>
+      <div class="a"><svg width="20" height="24"><path d="M10 0 V20 M4 14 L10 20 L16 14" stroke="#f0a25a" stroke-width="2" fill="none"/></svg></div>
+    </div>
+
+    <!-- 3rd row -->
+    <div class="row">
+      <div class="col-input"></div>
+      <div class="node bearing col-bearing">
+        <div class="title">Piece 1 · Body-rate command (Eq. 13) <span class="pin" data-pin="3">3</span></div>
+        <div class="eq">$b\omega_1 = \dfrac{z_1}{k_b^2 - z_1^2}\, R_{wb}^\top (n_{td} \times n_t)$</div>
+      </div>
+      <div class="node closing col-closing">
+        <div class="title">Piece 2 · Desired thrust direction (Eq. 21) <span class="pin" data-pin="6">6</span></div>
+        <div class="eq">$n_{fd} \propto a_d - g - e_f^{\text{drag}}/m$</div>
+      </div>
+    </div>
+
+    <div class="arrow-row">
+      <div class="a"></div>
+      <div class="a"></div>
+      <div class="a"><svg width="20" height="24"><path d="M10 0 V20 M4 14 L10 20 L16 14" stroke="#f0a25a" stroke-width="2" fill="none"/></svg></div>
+    </div>
+
+    <div class="row">
+      <div class="col-input"></div>
+      <div class="col-bearing"></div>
+      <div class="node closing col-closing">
+        <div class="title">Piece 2 · Tilt → desired attitude (Eq. 22) <span class="pin" data-pin="7">7</span></div>
+        <div class="eq">$R_d = R_{\text{tilt}}(n_f, n_{fd})\, R_{wb}$</div>
+        <details class="deriv">
+          <summary>What is $R_{\text{tilt}}$?</summary>
+          <div class="body">
+            <p>The minimum-angle rotation that maps the current body-z $n_f$ onto the desired thrust direction $n_{fd}$. Built by Rodrigues' formula in <code>_tilt_rotation</code> using axis $n_f \times n_{fd}$.</p>
+          </div>
+        </details>
+      </div>
+    </div>
+
+    <div class="arrow-row">
+      <div class="a"></div>
+      <div class="a"></div>
+      <div class="a"><svg width="20" height="24"><path d="M10 0 V20 M4 14 L10 20 L16 14" stroke="#f0a25a" stroke-width="2" fill="none"/></svg></div>
+    </div>
+
+    <div class="row">
+      <div class="col-input"></div>
+      <div class="col-bearing"></div>
+      <div class="node closing col-closing">
+        <div class="title">Piece 2 · Body-rate command (Eq. 26) <span class="pin" data-pin="8">8</span></div>
+        <div class="eq">$b\omega_2 = -\mathrm{vex}(R_d^\top R_{wb} - R_{wb}^\top R_d)$</div>
+      </div>
+    </div>
+
+    <!-- MERGE into SUM -->
+    <div class="merge">
+      <div></div>
+      <svg class="merge-arrow" viewBox="0 0 200 70" preserveAspectRatio="none">
+        <path d="M40 0 Q 40 50 100 65" stroke="#5fc7ec" stroke-width="2.5" fill="none"/>
+        <path d="M160 0 Q 160 50 100 65" stroke="#f0a25a" stroke-width="2.5" fill="none"/>
+        <circle cx="100" cy="65" r="4" fill="#c39bff"/>
+      </svg>
+      <div></div>
+    </div>
+
+    <div class="row" style="grid-template-columns: 1fr;">
+      <div class="node sum" style="margin: 0 auto; max-width: 560px;">
+        <div class="title">Superposition + saturation (Eq. 28) <span class="pin" data-pin="9">9</span></div>
+        <div class="eq">$b\omega_d = \mathrm{sat}\big(b\omega_1 + b\omega_2,\;\omega_m\big)$</div>
+        <details class="deriv">
+          <summary>Why is the sum stable?</summary>
+          <div class="body">
+            <p>Appendix A shows the combined Lyapunov $L = L_1 + L_2 + \tfrac{1}{2}\|z_2\|^2$ has cross-terms that exactly cancel due to the last term in $a_d$. The result:</p>
+            <p>$\dot L_3 = -\dfrac{z_1}{k_b^2 - z_1^2}(n_{td}\times n_t)^\top {}^e\omega - k_1\|p_r\|^2 - k_2\|z_2\|^2$.</p>
+            <p>Three negative-definite terms. Each piece "pays for itself" in its own slot of the Lyapunov.</p>
+          </div>
+        </details>
+      </div>
+    </div>
+
+    <div class="arrow-row">
+      <div class="a"></div>
+      <div class="a"><svg width="20" height="24"><path d="M10 0 V20 M4 14 L10 20 L16 14" stroke="#c39bff" stroke-width="2" fill="none"/></svg></div>
+      <div class="a"></div>
+    </div>
+
+    <!-- OUTPUT -->
+    <div class="output-row">
+      <div class="node closing">
+        <div class="title">Thrust magnitude (Eq. 23) <span class="pin" data-pin="10">10</span></div>
+        <div class="eq small">$f_d = \mathrm{clip}\big(n_f^\top (m\,a_d - m g - e_f^{\text{drag}}),\;0,\;f_{\max}\big)$</div>
+      </div>
+      <div class="node io">
+        <div class="title">Output · CtbrCommand</div>
+        <div class="eq">$\big(t,\; f_d,\; b\omega_d\big)$</div>
+      </div>
+    </div>
+  </div>
+
+  <p style="color:var(--muted); font-size:12px; margin-top:18px; line-height:1.6;">
+    <strong style="color:var(--text);">The structural insight.</strong>
+    Both pieces emit body-rate commands because $b\omega$ is the only currency available on an underactuated multirotor — the body has to rotate for thrust to point anywhere except $+z_b$. But the <em>reasons</em> are unrelated: Piece 1 rotates the body to <em>aim the camera</em>; Piece 2 rotates the body to <em>aim the thrust vector</em> so that closing velocity tracks $v_{rd} = -k_1 p_r$. The Lyapunov analysis shows the two demands superpose cleanly.
+  </p>
+</main>
+
+<!-- ============ SIDEBAR ============ -->
+<aside id="sidebar">
+  <button class="sidebar-toggle" id="toggle" title="Collapse/expand">⟩</button>
+  <div class="sidebar-content">
+    <h2>Walkthrough</h2>
+
+    <div class="sidebar-entry" id="entry-0">
+      <div class="title"><span class="num">0</span>Observer state in</div>
+      <div class="text">Three quantities arrive each tick: relative position $p_r$, relative velocity $v_r$, and the vehicle attitude $R_{wb}$. Everything downstream is computed from these — the camera direction never appears as a raw measurement, only as <code>n_t</code> derived from $p_r$.</div>
+    </div>
+
+    <div class="sidebar-entry bearing" id="entry-1">
+      <div class="title"><span class="num">1</span>LOS unit vectors — the geometric inputs</div>
+      <div class="text">$n_t$ is the actual LOS (interceptor → target); $n_{td}$ is the designed LOS (camera optical axis, body-z, rotated into world). Piece 1's entire job is to make these two align. Both are <em>directions</em>, no magnitudes, no derivatives — that's why target acceleration $a_t$ cannot directly perturb this loop.</div>
+    </div>
+
+    <div class="sidebar-entry bearing" id="entry-2">
+      <div class="title"><span class="num">2</span>Barrier error $z_1$ and Lyapunov $L_1$</div>
+      <div class="text">$z_1 \in [0, 2]$ measures misalignment: $0$ when perfectly pointed, $2$ when antipodal. $L_1$ is a log-barrier — finite for $|z_1| < k_b$, infinite at the boundary. This is what guarantees the target never leaves the FOV cone, structurally, not just on average.</div>
+    </div>
+
+    <div class="sidebar-entry bearing" id="entry-3">
+      <div class="title"><span class="num">3</span>$b\omega_1$ — the bearing body-rate (Eq. 13)</div>
+      <div class="text">Pure kinematic servoing. The cross product $n_{td} \times n_t$ gives an axis in the world frame; $R_{wb}^\top$ pulls it into the body frame; the barrier prefactor scales aggressively as misalignment grows. This loop is <strong>immune to $a_t$</strong> — $\dot z_1$ depends on $v_r$ and $\,{}^e\omega$ only, never on target acceleration.</div>
+    </div>
+
+    <div class="sidebar-entry closing" id="entry-4">
+      <div class="title"><span class="num">4</span>Velocity error $z_2$ — the closing-velocity error</div>
+      <div class="text">In code: <code>z_2 = v_r + k_1 * p_r</code>. That's $z_2 = v_r - v_{rd}$ with $v_{rd} = -k_1 p_r$ — the <em>desired closing velocity</em>, proportional to range and pointed along the LOS toward the target. Everything downstream is "make $v_r$ track $v_{rd}$".</div>
+    </div>
+
+    <div class="sidebar-entry closing" id="entry-5">
+      <div class="title"><span class="num">5</span>$a_d$ — desired acceleration</div>
+      <div class="text">Four terms: $-k_2 z_2$ drives velocity tracking; $-k_1 v_r - p_r$ inherit from $\dot v_{rd}$; the final barrier-weighted term cancels the cross-coupling between Piece 1 and Piece 2 in the Lyapunov derivative. Under target maneuvering, an unmodeled $-a_t$ term shows up here — that's how $\|a_t\|$ enters the closing loop but not the bearing loop.</div>
+    </div>
+
+    <div class="sidebar-entry closing" id="entry-6">
+      <div class="title"><span class="num">6</span>$n_{fd}$ — desired thrust direction</div>
+      <div class="text">Invert the dynamics: to produce acceleration $a_d$ you need thrust direction $n_{fd} \propto a_d - g - \text{drag}$. This is the kinematic-to-attitude conversion that any underactuated thrust-vectoring vehicle must do.</div>
+    </div>
+
+    <div class="sidebar-entry closing" id="entry-7">
+      <div class="title"><span class="num">7</span>$R_d$ — desired attitude</div>
+      <div class="text">Apply the minimum-angle rotation that takes current body-z $n_f$ to desired thrust direction $n_{fd}$, composed with current attitude. Roll/yaw about thrust axis are free degrees — Piece 1 uses them for camera pointing.</div>
+    </div>
+
+    <div class="sidebar-entry closing" id="entry-8">
+      <div class="title"><span class="num">8</span>$b\omega_2$ — closing-velocity body-rate (Eq. 26)</div>
+      <div class="text">The body-rate that drives current attitude toward $R_d$. Note: the <em>purpose</em> here is closing velocity, not attitude — attitude is an intermediate variable. The chain is $v_{rd} \to z_2 \to a_d \to n_{fd} \to R_d \to b\omega_2$, four stages of inversion.</div>
+    </div>
+
+    <div class="sidebar-entry sum" id="entry-9">
+      <div class="title"><span class="num">9</span>Superposition + saturation</div>
+      <div class="text">$b\omega_1$ and $b\omega_2$ are two demands on the same actuator. The Lyapunov design (last term of $a_d$) makes the cross-terms cancel. Saturation at $\omega_m$ is where the practical FOV-tracking limit lives: if LOS rate exceeds $\omega_m$, Piece 1's command gets clipped and the target can drift out of frame — independent of Piece 2's health.</div>
+    </div>
+
+    <div class="sidebar-entry closing" id="entry-10">
+      <div class="title"><span class="num">10</span>Thrust magnitude $f_d$</div>
+      <div class="text">Project the required force $m a_d - mg - \text{drag}$ onto the current body-z to get a scalar thrust. Clipped to $[0, f_{\max}]$. When saturated, $a_d$ can't be realized and $z_2$ grows.</div>
+    </div>
+
+    <div class="footer-note">
+      <strong style="color:var(--text);">The asymmetry that matters.</strong>
+      Piece 1 is <em>kinematic</em> (directions, angular rates). Piece 2 is <em>dynamic</em> (accelerations). Target maneuvering is a dynamical disturbance — it hits Piece 2 and spares Piece 1. The benign failure mode: target stays centered on screen, but interceptor arrives with biased terminal velocity. The bad failure mode (target leaves frame) is gated by saturation on $b\omega_1$, a separate threshold.
+    </div>
+  </div>
+</aside>
+
+<script>
+  // Sidebar collapse
+  const sidebar = document.getElementById('sidebar');
+  const toggle  = document.getElementById('toggle');
+  toggle.addEventListener('click', () => {
+    sidebar.classList.toggle('collapsed');
+    toggle.textContent = sidebar.classList.contains('collapsed') ? '⟨' : '⟩';
+  });
+
+  // Pin click -> highlight + scroll sidebar entry
+  let lastHighlight = null;
+  document.querySelectorAll('.pin').forEach(pin => {
+    pin.addEventListener('click', () => {
+      const id = pin.getAttribute('data-pin');
+      const entry = document.getElementById('entry-' + id);
+      if (!entry) return;
+
+      if (sidebar.classList.contains('collapsed')) {
+        sidebar.classList.remove('collapsed');
+        toggle.textContent = '⟩';
+      }
+
+      if (lastHighlight) lastHighlight.classList.remove('highlight');
+      entry.classList.add('highlight');
+      lastHighlight = entry;
+
+      entry.scrollIntoView({ behavior: 'smooth', block: 'center' });
+
+      pin.classList.remove('pulse');
+      void pin.offsetWidth;  // restart animation
+      pin.classList.add('pulse');
+    });
+  });
+</script>
+
+</body>
+</html>

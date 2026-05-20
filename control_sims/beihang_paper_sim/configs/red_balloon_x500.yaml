@@ -1,0 +1,52 @@
+experiment:
+  name: red_balloon_beihang_ekf
+sim:
+  backend: rotorpy
+  # 3 s — drone reaches min-distance at ~2 s and diverges afterwards under
+  # the current controller, so 3 s captures the relevant interception arc
+  # without wasting steps on post-overshoot divergence.
+  duration_s: 3.0
+  # dt is the logger / inner-loop tick (200 Hz). beihang_paper_sim/diagram.py wires
+  # plant + IMU + logger at INNER_RATE_HZ and DKF + controller at OUTER_RATE_HZ.
+  dt: 0.005
+scenario:
+  seed: 1
+  distance_m: 8.0
+  closing_speed_mps: 1.0
+  balloon_speed_mps: 0.5
+  balloon_position_w: [0.0, 0.0, 3.0]
+  los_w: [1.0, 0.0, 0.0]
+vehicle:
+  model: x500
+  initial_position_w: [0.0, 0.0, 0.0]
+target:
+  id: red_balloon
+  kind: red_balloon
+  initial_position_w: [0.0, 0.0, 0.0]
+  velocity_w: [0.0, 0.0, 0.0]
+  radius_m: 0.2
+camera:
+  id: front
+  parent_id: interceptor
+  position_b: [0.0, 0.0, 0.0]
+  width_px: 1920
+  height_px: 1080
+  fx_px: 800.0
+  fy_px: 800.0
+  hfov_deg: 90.0
+  vfov_deg: 60.0
+  capture_rate_hz: 30.0
+perception:
+  processing_delay_s: 0.08
+  pixel_noise_std_px: [0.0, 0.0]
+  dropout_probability: 0.0
+  rng_seed: 1
+observer:
+  type: beihang_image_ekf
+  history_size: 50
+controller:
+  type: beihang_backstepping
+  max_rate_rps: 8.0
+  max_thrust_n: 40.0
+metrics:
+  catch_radius_m: 0.5

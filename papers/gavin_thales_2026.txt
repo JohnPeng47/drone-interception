@@ -1,0 +1,545 @@
+    NN open science
+
+
+
+
+
+
+Agile Interception of a Flying Target using Competitive
+                 Reinforcement Learning
+       Timothée Gavin, Simon Lacroix, Murat Bronz
+
+
+
+
+    » To cite this version:
+
+    Timothée Gavin, Simon Lacroix, Murat Bronz. Agile Interception of a Flying Target using Competitive Re-
+    inforcement Learning. Conference on Artificial Intelligence for Defence, AMIAD, Nov 2025, Rennes, France.
+    ⟨hal-05554100⟩
+
+
+
+
+
+
+
+
+
+       HAL Id: hal-05554100
+https://hal.science/hal-05554100v1
+
+     Submitted on 16 Mar 2026
+
+
+
+
+    HAL is a multi-disciplinary open access archive L’archive ouverte pluridisciplinaire HAL, est des-
+for the deposit and dissemination of scientific re- tinée au dépôt et à la diffusion de documents scien-
+search documents, whether they are published or not. tifiques de niveau recherche, publiés ou non, émanant
+The documents may come from teaching and research des établissements d’enseignement et de recherche
+institutions in France or abroad, or from public or pri- français ou étrangers, des laboratoires publics ou
+vate research centers. privés.
+
+        Distributed under a Creative Commons CC BY 4.0 - Attribution - International License
+
+        Agile Interception of a Flying Target using
+        Competitive Reinforcement Learning
+
+       Timoth´ee Gavin Simon Lacroix Murat Bronz
+        IAS RIS Dynamic Systems, OPTIM
+        Thales LAS LAAS CNRS F´ed´eration ENAC ISAE-SUPAERO ONERA, Universit´e de Toulouse
+       Rungis, France Toulouse, France Toulouse, France
+timothee.gavin@thalesgroup.com simon.lacroix@laas.fr murat.bronz@enac.fr
+
+
+
+    Abstract—This article     presents a solution to intercept        an
+             agile drone by another agile drone carrying a catching net.
+            We formulate the interception as a Competitive Reinforcement
+            Learning problem, where the interceptor and the target drone
+        are controlled by separate policies trained with Proximal Policy        4
+    Optimization (PPO). We     introduce a     high-fidelity  simulation        /
+        environment that integrates a realistic quadrotor dynamics model
+          and a low-level control architecture implemented in JAX, which
+            allows for fast parallelized execution on GPUs. We train the
+       agents using low-level control, collective thrust and body rates,
+       to achieve agile flights both for the interceptor and the target.
+             We compare the performance of the trained policies in terms
+            of catch rate, time to catch, and crash rate, against common
+        heuristic baselines and show that our solution outperforms these
+    baselines for interception of agile targets. Finally, we demonstrate
+          the performance of the trained policies in a scaled real-world        -
+    scenario using agile drones inside an indoor flight arena.
+                Index Terms—Reinforcement Learning, Multi-Agent Systems,
+    Interception, Agile Flight
+
+        I. INTRODUCTION                                                     Fig. 1: A competitive reinforcement learning approach to train
+               The interception of agile aerial targets using autonomous    both a pursuer and an evader drone for agile interception tasks.
+            drones is a challenging and increasingly relevant problem in    Both agents learn low-level control policies that enable them
+              robotics and security. The increasing presence of unmanned    to perform dynamic maneuvers in a high-fidelity simulation
+            aerial vehicles (UAVs) in unauthorized, restricted airspaces    environment.
+             poses significant safety and security risks and has spurred
+         interest in developing effective interception strategies [1] In
+       particular, scenarios such as airspace protection, infrastructure
+       security, and event safety require the ability to capture or neu-    typically involve navigating static or slowly moving gates,
+             tralize unauthorized drones with high precision and minimal    while interception requires reacting to an adversarial agent
+             collateral risk. Deploying interceptor drones equipped with    that actively attempts to evade capture.
+           nets is a promising approach, but it demands advanced control             Competitive Multi-Agent RL (MARL) have shown out-
+capabilities to match or exceed the agility of evasive targets. standing results in adversarial settings, such as games [5], [6].
+  Traditional interception methods often rely on accurate In this work, we formulate the agile interception problem as
+models, preplanned strategies, or predictable target behaviour a competitive multi-agent RL task, where both the interceptor
+[2]. However, modern quadrotor drones can perform highly (pursuer) and the target (evader) are controlled by independent
+dynamic manoeuvres, and will actively evade capture, ren- policies trained using Proximal Policy Optimization (PPO) in
+dering their trajectories unpredictable and challenging the a co-evolution framework. Our approach integrates a high-
+    effectiveness of classical methods [3].                                 fidelity quadrotor dynamics model, enabling both agents to
+                Recent advances in deep reinforcement learning (RL) have    learn agile, physically realistic manoeuvres from low-level
+           demonstrated the potential to learn complex, high-dimensional ~ control inputs. Through extensive simulation and real-world
+          control policies for drones directly from interaction with the    experiments, we show that RL training leads to robust and
+         environment. In particular in drone racing, RL-trained policies    adaptive interception and evading strategies, outperforming
+                  have achieved superhuman performance in highly dynamic    heuristic control approaches.
+           and agile flight tasks [4]. However, the drone racing problem    The main contributions of this paper are:
+
+  • A competitive MARL framework for agile drone inter- policies in adversarial settings. MARL has been explored for
+     ception, with both pursuer and evader learning from low- pursuit-evasion games in various contexts, including simulated
+     level control.                                                     environments like Multi-Agent Particle Environments (MPE)
+  • Integration of a realistic quadrotor dynamics model to [11] and initiatives like the DARPA AlphaDogfight Trials,
+     enable physically realistic and agile flight behaviors.            demonstrating the potential to learn sophisticated tactics [12].
+  • Empirical evaluation demonstrating superior performance For quadrotors, [13] present a RL approach for quadrotor
+     over standard baselines in simulation.                             interception in an urban environment, and [14] uses RL to
+          The remainder of the paper is organized as follows. Section   give low-level commands for interception, however both these
+    II reviews related work on interception and agile flight. Section   works consider only the pursuit side, assuming fixed evader
+        IV and III detail our agile flight simulation environment and   behaviours. The closest work to ours we found is [15] which
+            our training methodology. Section V presents experimental   uses RL to train both the pursuer and the evader in a co-
+             results and comparisons. Section VI and VII conclude and   evolution framework. However, like most RL approaches [13],
+    discuss future directions.                                          they use high-level control inputs (e.g., velocity commands)
+            II. RELATED-WORK ON THE AGILE INTERCEPTION                  and simplify the dynamics of the quadrotors, which limits
+                                                                        the agility of the learned behaviours. Overall, while RL has
+                             PROBLEM                                    demonstrated potential in interception tasks, existing work
+    A. Agile flight                                                     either ignore the adversarial aspect of a learning evader, or
+        Agile flights in multi-rotors drones are typically character-   often lacks the integration of highly dynamic capabilities in
+       ized by the ability to perform large-angle manoeuvres, sustain   both the pursuer and the evader.
+      high linear and angular accelerations, maintain precise control   C. Our approach
+        near dynamic limits and do so reliably in real-time, often in
+         complex and cluttered environments. Traditionally, achieving      Building upon the challenges highlighted in agile flight
+     such agility relied on trajectory optimization coupled with con-   and interception, our approach directly addresses the need
+        trollers like Model Predictive Control (MPC), often requiring   for highly dynamic capabilities in both the pursuer and the
+           pre-planned paths and accurate system models [7]. However,   evader. We recognize that interception is fundamentally a
+         these methods can be brittle when faced with unexpected dis-   dynamic, adversarial interaction requiring controllers that can
+         turbances of real-world flights. Reinforcement Learning (RL)   operate effectively near the physical limits of the hardware.
+      has emerged as a powerful alternative, enabling the learning of   While RL has demonstrated remarkable success in achieving
+      complex, non-linear control policies directly from interaction.   agile flight and has been applied to interception problems,
+            Research, such as work from [4] and [8], has demonstrated   to our knowledge, none have focused on training both an
+          RL’s capability to achieve highly dynamic and agile flights   agile pursuer and an agile evader using low-level commands
+          for quadrotors, pushing the boundaries of autonomous aerial   within a competitive RL framework. Our work fills this gap by
+             manoeuvring beyond what traditional methods could easily   formulating the problem as a competitive multi-agent RL task
+     achieve, particularly in tasks requiring aggressive, near-limits   where both agents learn physically plausible, agile manoeuvres
+    flight.                                                             through interaction in a realistic environment, to foster robust
+    B. Interception                                                     and adaptive strategies.
+           Traditional interception methods uses heuristic or optimal   III. AGILE FLIGHT SIMULATION ENVIRONMENT
+             control methods that often rely on accurate models, pre-   We use a high-fidelity simulator of the quadrotor dynamics.
+planned strategies, or predictable target behaviour. [2]. These The simulator models air-drag, the low-level control archi-
+approaches have been historically designed for the control tecture, the motor speeds, and the transmission delays. This
+of missiles and the interception of fixed-wing manned air- quadrotor model was taken from [16] which include a low-
+craft. Optimal control methods requires accurate model of level control architecture taking mass-normalized collective
+the pursuer and the evader to compute interception trajec- thrust and body rates as inputs. We also implemented a
+tories [9]. Such model may not be available or may be too high-level controller: an SE(3) controller [17], following the
+computationally expensive for real-time adaptation against implementation from [18]. This controller, combined with the
+unpredictable targets. Heuristic guidance laws, such as Pro- low-level quadrotor model, allow us to give alternate high-
+portional Navigation (PN) or Pure Pursuit, offer computa- level commands to the quadrotors, such as position, velocity, or
+tionally simpler alternatives and are widely used in missile acceleration commands. The control architecture is illustrated
+guidance. However, these methods often assume relatively in Figure 2. Our simulator also computes the collision between
+simple target manoeuvres and can struggle against highly quadrotors, the elements of the arena and the net carried by
+agile or adversarial evaders. Among recent works, [10] have the pursuers. This fidelity facilitates the transfer of policies
+proposed heuristic methods for drone interception of agile trained in simulation to the real world.
+     manoeuvring targets, but these still assume a predictable target        The simulation framework is entirely written using JAX
+         model. More recently, learning-based solutions, particularly   [19]. This Python library allows the code to be just-in-time
+               MARL have shown promise for developing complex control   compiled and lowered to GPU during runtime, resulting in
+
+    |
+
+         Controller | T, ωb       Attitude  ω
+    Xref | SE(3)      ‘                                          1
+             or      |            Autopilot     mot   Quadrotor  !
+           Policy                                                ]
+          Network
+                                           X = [p,⃗ V ,⃗a, R]    ]                                                                                                        Ad
+     |      100 Hz                                      1 kHz                                                                                                             AN
+
+      Fig. 2: Control architecture used for the quadrotor dynamics
+    simulation.                                                               Fig. 3: Schematic of the interception problem. Capture hap-
+                                                                              pens when the distance d between the evader’s centre comes
+     fast execution times of up to millions of steps per second by            within a capture distance of the pursuer’s net.
+    leveraging the parallelization capabilities of GPUs.
+                                  IV. INTERCEPTION OF AN AGILE TARGET USING   evader as quickly as possible, whereas the evader tries to evade
+                                            REINFORCEMENT LEARNING            capture. Capture occurs when the evader’s centre comes withina
+         Drone neutralisation methods are classified as kinetic or                                                                capture distance of the pursuer’s rigid, circular net of radius
+       non-kinetic [1]. Non-kinetic approaches, such as jamming or            R, which is mounted on the pursuer and aligned with its body
+      spoofing, are ineffective against autonomous drones. Kinetic            frame, and represented in Figure 3. Because a single pursuer
+     methods, including projectiles or collisions, and electromag-            cannot intercept a faster evader alone, we assume the pursuer’s
+      netic weapons, risk causing uncontrolled crashes and debris.            and the evader’s manoeuvring capabilities are identical. Target
+      Using a net, towed or projected by the pursuer, avoids these            detection, state estimation, and trajectory prediction are not
+    issues by safely capturing the target; here, we consider a net            addressed in this work.
+    taut to the pursuer and released upon capture.                                                                                      Both the evader and the pursuer are forbidden to exit the
+                                                                              boundaries of the arena. In this setting the evader can quickly
+    A. Reinforcement Learning                                                 learn to fly close to the arena walls to stay safe, exploiting
+  Reinforcement Learning is a type of machine learning the pursuer’s fear to avoid boundary violations. To discourage
+for sequential decision-making. In a rollout phase, an agent this behaviour and promote agile evasive flight in the central
+interacts with an uncertain environment which provides it with region, a narrow buffer zone is added adjacent to every wall;
+a partial observations of its state, takes a series of actions only the evader is penalized for entering this zone and thus,
+following a policy and receives a scalar feedback in the form the evader is constrained in a smaller volume in the centre of
+of rewards. These sequences of observe-act-reward, repeated the arena.
+     over time, form the rollouts. The collected rollouts are then                1) Observation, actions, and rewards:                                                      At time step t, each
+used to update the policy in a learning phase, which will then agent’s i ∈ (pursuer, evader) observation oi is composed
+be employed in the rollout phase of the next training iteration. of the following elements: self-state observation oselfi , ob-
+The goal of the agent is to learn a policy that maximizes the servation of the opponent oppi , and the observation of the
+    expected cumulative reward over time.                                     arena bounds and the ground                                                        oenvi  . The self-state observa-
+  Multi-Agent Reinforcement Learning (MARL) extends RL tion is oselfi = [vi, vec (Ri))] containing the agent’s linear
+to scenarios with multiple agents interacting in a shared velocity vi, and its rotation matrix Ri, with vec(·) being
+environment. MARL suffers from the curse of dimensionality the flattening function. The observation of the opponent is
+and non-stationarity, as the environment dynamics change as oppi = [po − pi, vo − vi] containing the position and velocity
+other agents learn and adapt their policies. Recent works of the opponent expressed relative to the agent in world coor-
+in MARL adopted centralized training with decentralized dinates. The observation of the arena bounds and the ground
+execution (CTDE) [11], where agents have access to global is oenvi = [norm (po − pi)]o∈bounds + ground and is composed of
+information during training but operate based on local observa- the Euclidean distances from the agent to each arena boundary
+tions during execution. In competitive settings, this alleviates and to the ground. We normalize the observations before
+non-stationarity by allowing the agents to access the state and feeding them to the neural network. Relative positions are
+    actions of their opponents during training.                               normalized by the maximum range of view kpi, and velocities
+                                                                              are normalized by a maximum velocity parameter for each
+    B. Pursuit-evasion problem                                                agent kvi.
+          We study a pursuit–evasion scenario with two quadrotors,                The                                                       control policies are trained  using  Proximal  Policy
+a pursuer and an evader, operating in an obstacle-free rect- Optimization (PPO) [20]. This Actor-Critic method uses two
+angular arena of size L × L × H . At the beginning of each neural networks for each agent: a policy network and a value
+episode, the agents’ initial positions are drawn uniformly at network.
+         random inside the arena. The pursuer seeks to capture the                                                                       The policy network produces an action ai for each agent,
+
+which is a vector of body rates aωi and a collective thrust athi . C. Training details
+              The value networks are only used during training time and    Rollouts are generated in parallel across 1024 environments.
+    have access to privileged information about the opponent’s             Episodes start from uniformly sampled initial positions in the
+    state, which is not available to the policy network. This              L × L × H arena; no domain–randomisation of the platform
+    alleviates the non-stationarity of the environment due to the          dynamics is applied. Episodes last up to T = 10 s (1000 time
+    simultaneous learning of both agents [11]. The input of the            steps) unless terminated earlier due to capture, crash, or arena
+    value  network  of    each  agent   is     the concatenation of the    exit.
+    position, velocity, and rotation matrix of each agent, as well as          Each policy network is a two-layer multilayer perceptron
+the action taken by the opponent at this time step. This input with 256 ReLU units per hidden layer. The output layer
+    is normalized before being fed to the neural network.                  produces the mean and standard-deviation of a multivariate
+by:The reward of the pursuer rP and the evader rE are given Gaussian, followed by a tanh squashing to obtain bounded
+        continuous actions. The value networks mirrors this architec-
+           rP =   rcatch − rdist − rcoll − rfail − rcmd,                   ture but ends with a linear output.
+           rE = −rcatch + rdist − rcoll − rfail − rcmd − rbnd.                 The entire pipeline is written in Python using JAX [19],
+        enabling just-in-time compilation and parallelized execution.
+in which rcatch rewards the pursuer for catching the evader, Running on a single machine equipped with an NVIDIA
+rdist penalizes the pursuer for being far from the evader, rfail RTX 4090 (24 GB VRAM), an AMD Ryzen 9 7950X3D
+penalizes any agent for crashing or going out of bounds, rcoll (16 cores, 4.2 GHz) and 128 GB RAM, the system collects
+penalizes any agent for colliding with the body of their oppo- and processes approximately 3.5 × 105 environment steps per
+nent, and rcmd discourages dynamically infeasible commands. second. We train for a total of 2 × 109 environment steps,
+Instead of terminating the episode upon collision between corresponding to roughly 1h35 of wall-clock training time.
+agents, we apply a soft continuous penalty rcoll to both agents, Training hyperparameters are listed in Table II.
+allowing for gradual learning of collision avoidance while
+    maintaining focus on the primary tasks of pursuit and evasion.                V. EXPERIMENTAL RESULTS
+    We still terminate the episode if any agent crashes on the             A. Training Results
+    ground or goes out of bounds and apply a hard penalty rfail.               Figure 4 compares the learning curves of the pursuer and
+However, neither the evader nor the pursuer receive a reward the evader. The pursuer cumulated return initially rises as the
+when the opponent reaches a failure state to promote actual drone learns to fly and avoid crashes and the first interception
+pursuit-evasion behaviours rather than forcing the opponent happens. Because the evader’s reward contains an additional
+to crash. Additionally, we add rbnd to the evader’s reward boundary term, its learning progress is intrinsically slower;
+function, which penalizes it for approaching the arena bounds. it does not reach high-speed flight as early as the pursuer.
+    Specifically, the reward terms are:                                    The pursuer therefore overfits to an increasingly predictable
+    rcatch = λcatch · 1catch,          rdist = λdist · pe − cnet 2,        evader. However, as the evader also learns to fly and evade,
+           rcoll = λcoll 1contact,     rfail = λfail 1fail,                the pursuer’s return decreases drastically as it can no longer
+                                                                           catch the evader. This also translates into the average episode
+    rcmd = λcmd ∥aω∥.                  rbnd = ϕbnd(dbnd),                  length which first increases as both agents learn to hover and
+in which the indicator functions return 1 when their condition avoid crashes, but soon falls sharply as the pursuer discovers
+is met : 1catch when catching the evader, 1contact for inter- a quick capture strategy. Eventually, the pursuer finds a new
+agent contact, 1fail for reaching a failure state because of a strategy to catch the evader again, the average episode length
+ground crash or leaving the arena bounds. cnet is the pursuer’s
+    catching net-centre   position,    and     aω are  the    commanded     TABLE II: Training hyperparameters.
+    body rates. ϕbnd        is a function that penalizes the evader for
+    approaching the arena bounds,                                           Hyperparameter                                    Value
+             triggering under a set threshold and growing exponentially     Number of parallel environments (per agent)        1024
+    the shorter the distance to the arena bounds dbnd. λcatch, λdist,       Rollout length                                     128
+    λcoll, λterm, λcmd        are positive hyperparameters that balance     Learning rate                                    5 × 10−4
+    the different reward terms and have been tuned to obtain the            Discount factor                                    0.99
+    desired behaviour and listed in Table I.                                Number of PPO epochs per training data batch        15
+                                                                            Number of minibatches per PPO epoch                 1
+                   TABLE I: Reward coefficients.                            Discount factor                                    0.99
+                                                                            Lambda value for GAE computation                   0.95
+                  Coefficient   Value   Coefficient    Value                Clipping value for PPO updates                     0.2
+                                                                            Entropy                                            0.01
+                  λcatch        10.0    λcoll           0.1                 Critic weight in loss function                     0.5
+                  λdist         0.001   λfail           30.0                Maximum norm of the gradients for a weight update  0.5
+                  λcmd          2e-04   λbnd            1.0                 Decay learning rates                              False
+                                                                            Total number of training steps                   4 × 109
+
+                                                                    TABLE III: Performances of the pursuer and the evader in a
+                                                                    40x40x14m (Large) and a 8x8x5m (Small) arena.
+
+                                                                                             Evader Mode
+                                                                         Pursuer mode    Small arena      Large arena
+                                                                         PP               Hov. APF DRL           Hov. APF DRL
+                                                                       Catch Rate (%)   96.4 19.5 58.3   100  15.9       24.6
+                                                                       Evade Rate (%)   0.0  47.9 40.0   0.0  66.6       74.6
+                                                                     of which timeout   0.0  0.0   0.8   0.0  0.0         1.1
+                                                                      Crash rates (%)
+                                                                              Pursuer   0.0  47.9 39.3   0.0  53.2       73.5
+                                                                               Evader    -   32.0  0.6   -    25.9        0.3
+                                                                               Double   3.6  0.6   1.0   0.0  0.3         0.5
+                                                                    Time to Catch (s)
+                                                                                 Mean   2.05 8.29 5.29   6.65 8.72       8.32
+    (a) Average cumulated reward over training.                          FRPN [10]Std   1.66 3.48 4.05   3.90 2.94       3.11
+                                                                                          Hov. APF DRL           Hov. APF DRL
+                                                                       Catch Rate (%)   97.4 19.6 37.7   97.5 68.8       49.2
+                                                                       Evade Rate (%)   0.1  43.1 59.9   0.0  1.0        47.3
+                                                                     of which timeout   0.0  1.2   0.1   0.0  0.0        20.2
+                                                                      Crash rates (%)
+                                                                              Pursuer   0.1  42.0 59.8   0.0  1.0        27.1
+                                                                               Evader    -   36.4  1.3   -    30.2        3.2
+                                                                               Double   2.5  0.8   1.1   2.5  0.0         0.3
+                                                                    Time to Catch (s)
+                                                                                 Mean   2.03 8.49 6.88   2.70 4.97       6.72
+                                                                                  Std   1.33 3.15 4.03   1.29 3.44       3.67
+                                                                     DRL (Ours)           Hov. APF DRL           Hov. APF DRL
+                                                                       Catch Rate (%)   90.7 71.8 78.8   20.7 34.0       66.5
+                                                                       Evade Rate (%)   6.6  6.9  16.5   75.6 50.4       31.9
+                                                                     of which timeout   1.0  0.3   2.3   74.0 8.1        14.7
+                                                                      Crash rates (%)
+    (b) Average episode length.                                               Pursuer   5.6  6.6  14.2   1.6  42.3       17.2
+                                                                               Evader    -   20.3  4.1   -    15.4        1.5
+Fig. 4: Comparison of learning curves and average episode                      Double   0.4  1.0   0.6   3.7  0.2         0.1
+length.                                                             Time to Catch (s)
+                                                                                 Mean   2.62 4.18 3.78   8.96 7.61       6.62
+                                                                                  Std   2.76 3.89 3.60   2.46 3.55       3.34
+                                                                     Hov.: Hovering, APF: Artificial Potential Field
+decreases and the return of the pursuer increases as it learns to    text in blue : best pursuer against this column’s evader
+catch the evader more consistently. This behaviour is typical        text in orange : best evader against this row’s pursuer
+of co-evolutionary learning [21], and happens multiple times
+during the training as both agent cycle through periods of          in the scope of this paper. The heuristic baselines give velocity
+adaptation and counter-adaptation. Both curves converge to a        or acceleration commands that are then converted to body rates
+near-stationary value, suggesting that the joint policy profile     and collective thrust using the SE(3) controller described in
+is approaching a Nash equilibrium.                                  Section III.
+B. Evaluation in Simulation                                                The main comparison metrics are the catch rate of the
+                                                                    pursuer, the evade rate of the evader, the time to catch and the
+We compare the performances of the trained policies with            crash rate. The catch rate is the percentage of episodes where
+baseline heuristic methods. For the pursuer, Pure-Pursuit (PP),     the pursuer successfully catches the evader before a timeout
+a classical interception strategy where the pursuer follows a       of 10 seconds. The evade rate is the percentage of episodes
+straight line towards the position of the evader, and Fast-         in which the evader avoids capture for 10 seconds or the
+Response Proportional Navigation [10] which is an evolution         pursuer crashes. We also identify three different crash rates:
+of Proportional Navigation for manoeuvring multi-rotors. For        pursuer crash rate and evader crash rate are the percentage of
+the evader, a hovering strategy where the evader tries to main-     episodes where either the pursuer or the evader crashes alone,
+tain a fixed position in space, and an Artificial Potential Field   and double-crash rate is the percentage of episodes where both
+strategy where the evader is repelled by the pursuer and the        agents crash simultaneously. Finally, the time to catch is the
+boundaries of the arena. We use the potential field formulation     time taken by the pursuer to catch the evader.
+from [22]. In the sake of comparison, these heuristic methods       Time-to-catch is naturally biased towards lower values as it
+only access the position and velocity of the opponent agent, as     only consider successful catches, thus a weaker pursuer can
+our RL policies only access this information. How to estimate       appear to have a better time to catch as it would only succeed
+the state of the evader in high-speed manoeuvring flights is not    in catching the easiest targets without crashing. To alleviate
+
+    -    /
+
+
+J
+
+
+ - \
+=" GP y
+        } \
+
+
+
+     |
+
+    Fig. 5: Evasive manoeuvres: from top left to bottom right, the evader ~~ Fig. 6: a high roll angle catch: the pursuer (blue)
+     (green) performs a vertical escape, a dive, a sharp turn, and a sudden   intercepts the evader (green) with a roll angle of
+     stop followed by a feint.                                                more than 45 degrees.
+
+    this issue, we use a right-censored metric for the time to catch:   effect is exacerbated in the smaller arena. In comparison, the
+    if the episode ends because of a crash or a timeout, the time       learned pursuer that was trained to avoid crashes shows a much
+    to catch is considered to be of 10 seconds.                         lower crash rate against the agile learned evader. The learned
+  We evaluate the performances of our strategies in two pursuer has also the highest catch rate and lowest time to catch
+different settings. First in a large arena of size 40 × 40 × 14 against the agile learned evader, showing that it has learned
+meters, with the evader constrained in a smaller volume of size effective interception strategies against agile manoeuvres while
+20 × 20 × 4 meters in the centre of the arena. In this setting, respecting arena boundaries and minimizing crashes. The low
+the agents can reach higher speeds and perform long-range time-to-catch shows that the learned pursuer succeeds against
+manoeuvres with low risk of crashing into the boundaries. This the hardest-to-catch, most time-consuming evaders where the
+is to the advantage of the heuristic pursuer baselines, which do other methods fail or crash.
+    not account for the presences of boundaries. Then in a smaller      However, the performances of the learned pursuers drop
+    arena of size 8×8×5 meters, with the evader constrained in a        significantly when facing the heuristic evaders, especially the
+    volume of size 6×6×4 meters in the centre of the arena, closer      hovering one. While the learned pursuer still display a low
+    to indoor voliere flight conditions. In this setting, the agents    crash rate, its catch rate is much lower than the heuristic
+    are more constrained by the boundaries and have to perform          pursuers in the larger arena. This suggests that the learned pur-
+    tighter manoeuvres. For each setting, a specific pursuer and an     suer has overfitted to the strategies of the agile learned evader
+    evader model was trained for this specific arena size. For each     encountered during training, and fails to find effective intercep-
+    combination of pursuer and evader strategies, we run 10,000         tion strategies against less agile evaders. This is especially true
+    episodes and report the averaged metrics in Table III.              against the hovering evader. It seems to be a very easy target
+  The learned evader outperforms the moving heuristic to catch, but this situation was likely not encountered during
+evaders in all settings, achieving a higher evade rate and training, as the evader was always trying to escape. Moreover,
+lower crash rate against all pursuers. The learned evader is the pursuer’s observation do not encode history information,
+particularly effective against the heuristic pursuers, which have and cannot infer that the evader is stationary from its current
+a high crash rate when facing agile manoeuvres. Against observed state (position, velocity). As a result, it did not learn
+FRPN in the larger arena where it is less crash-prone, half to exploit the lack of movement to optimize its interception
+of the successful evasions are due to timeouts, showing that strategy. In fact, it must expect it to flee at any moment. This
+the learned evader can consistently avoid capture for the full is less pronounced in the smaller arena, where the boundaries
+duration of the episode. This shows that we successfully further constrain the evader’s movements. It is likely that
+trained an agile evader that can exploit the full 3D space to the learned pursuer encountered more trajectories where the
+    avoid capture while avoiding crashes.                               evader was close to stationary during training, allowing it to
+          All the pursuer heuristic baselines performances drop when    learn some interception strategies against this type of target.
+    facing the agile learned evaders. Their crash rate is high, as it   As a result, the learned pursuer still achieves a higher catch
+    does not take into account for the presence of boundaries. This     rate and faster time to catch than the heuristic pursuers against
+
+Fig. 7: Simulation results: A full pursuit-evasion episode using the trained policies. The trajectory on the right is a shortened
+version of the full episode for more visibility. We can see the pursuer first missing the evader in a first attempt, then successfully
+catching it after a second attempt.
+
+all moving evaders in the smaller arena, primarily due to its D. Real-World Demonstration
+ability to avoid boundaries and crashes. We demonstrated the trained policies in a real-world sce-
+        nario in our indoor flight arena of size 8 × 8 × 5 meters.
+C. Qualitative Results in Simulation The policies have been directly transferred from simulation
+        to reality without any additional fine-tuning or adaptation.
+  In this section, we present qualitative results of our trained For this flight, the evader was simulated on a ground station
+policies in the small arena setting (8 × 8 × 5 m). computer, while the pursuer was flying a real quadcopter
+  As shown in Figure 5, the evader learned a diverse set of equipped with a Betaflight [23] flight controller. The flight logs
+agile evasive manoeuvres, including high accelerations, high were recorded, including and action commands, and analysed
+velocity flights, sudden stops, sharp turns, vertical movements, afterward to identify successful catches and the collisions
+and feints. In response, the pursuer learned to anticipate these between the pursuer and the evader. The state of the real
+manoeuvres. We observed the pursuer catching the evader with drone is estimated using a motion capture system (OptiTrack)
+very high roll and pitch angles (>45 degrees) (Figure 6). that provides accurate position and orientation data at 200 Hz
+Despite being not specifically enforced by the reward function and transferred to the simulation. The neural network policy
+to turn the heading towards the evader, the pursuer learned to was executed remotely on the ground station computer and
+do so in order to maximize the surface of the catching net the outputted control commands transferred to the drones via
+facing the evader, which increases the chances of a successful an RF link at 100 Hz. We adopted this Hardware-In-The-
+capture. Loop setup to ensure safety during the flights, but it is not
+        a limitation of our approach as the trained policies can be
+  It also learned to catch the evader using both sides of the executed on-board in a decentralized way.
+catching net, to intercept an evader that went behind it without The pursuer managed to fly without crashing or exiting the
+turning around. arena during 28 seconds, and successfully caught the evader 7
+  One trajectory obtained is shown in Figure 7. Both the times during this period. A portion of the recorded trajectory
+pursuer and the evader display agile manoeuvres in a very is shown in Figure 8.
+restricted arena, with velocities of up to ∼ 7.5 m/s. The The flight logs were analysed to identify the error between
+pursuer (in blue) is able to catch the evader (in green) after 13 the simulation and the real-world execution. At each time step,
+seconds of intense chase, showcasing the ability of the learned we computed the error between the expected next state from
+policies to sustain high intensity flights while avoiding crashes. the simulation and the actual next state recorded from the
+
+                                                                                                    VII. LIMITATIONS
+    Pursuer trajectory
+                                                                                            While our approach demonstrates promising results for agile
+                                                                                             drone interception, several limitations should be acknowl-
+                                                                        edged.
+    5                                                                                       First, the sim-to-real gap remains a significant challenge.
+                    Pa                                                                       Although our simulation uses quadrotor dynamics identified
+         {⁴  Z           >                                              from real flight data, trained   policies     remain     sensitive           to
+             =
+                                                                                        Uncertainties in parameters like mass, inertia, or motor limits
+         Fp 4                                                                               mismatches between the simulated model and actual hardware.
+                                                  a                                            can degrade real-world performance. Incorporating domain
+                                                  ©                                           randomization during training could improve robustness to
+                                                                        such discrepancies.
+              Ay                                                         Second,    we  observed       instances where agents                  appeared
+                                                                                             to overfit to certain interaction patterns. When opponents
+    Fig. 8: A portion of the real-world flight trajectory. The pursuer                     deviated from typical behaviors (e.g., flying erratically or
+    (blue) successfully caught the evader (green).                                         hovering), agents sometimes responded suboptimally or failed
+                                                                                      (e.g., crashing), rather than robustly pursuing their objectives.
+                                                                                         When training only against the latest version of the opponent,
+                                                                                         agents are prone to forget how to deal with previously encoun-
+    real-world flight with the actions given to the policy network.                     tered strategies, and it limits the generalization capabilities
+    With a period between time steps at 100Hz of 0.01 seconds,                             of the learned policies. Expanding the diversity of opponent
+    the position RMSE is 0.009 m on the xy plane and 0.003 m                               strategies met during training, for example via Self-Play or
+    on the z axis, while the velocity RMSE is 0.070 m/s on the                            Population-Based Training [6], could mitigate overfitting and
+    xy plane and 0.040 m/s on the z axis.                               improve generalization.
+                                                                                             Third, we assume perfect state information for both agents
+        VI. CONCLUSION                                                                    during training and execution. Incorporating realistic sensor
+        models and handling partial observability are important for
+  In this work, we addressed the challenging problem of real-world deployment, where robust perception of the target
+intercepting an agile aerial target using a pursuer drone in high-velocity flights and state estimation are required but
+equipped with a catching net. We formulated this task as were not addressed in this study.
+    a competitive multi-agent reinforcement learning problem,                                   Fourth, the current study focuses on a one-vs-one ”dog-
+    training independent policies for both the pursuer and the                           fight” scenario within a bounded, obstacle-free arena. Extend-
+    evader using PPO with low-level control inputs (collective                             ing the approach to handle multiple pursuers and/or evaders,
+    thrust and body rates). A key element of our approach was                            operate in cluttered environments, or address different objec-
+    the integration of a high-fidelity quadrotor dynamics model         tives like area defense requires further investigation.
+    and a multi-agent reinforcement learning framework for the                                 Finally, while we demonstrated feasibility in real-world
+    training of both the pursuer and the evader.                                        flights, the quantitative evaluation was primarily conducted in
+    Our simulation results demonstrated that the trained policies                             simulation. A more extensive real-world experimental cam-
+    outperformed classical heuristic baselines in simulated inter-                          paign would be necessary to rigorously quantify performance
+    ception tasks of agile evader, achieving higher catch rates and                       metrics like catch rate and time-to-catch under physical con-
+    demonstrating greater robustness against crashes, particularly      ditions.
+    when facing agile, learned opponents. Furthermore, the devel-
+    opment of our simulation environment entirely within the JAX                                       REFERENCES
+framework proved crucial, enabling massively parallelized
+execution and drastically accelerating the training process, [1] S. Park, H. T. Kim, S. Lee, H. Joo, and H. Kim, “Survey on Anti-Drone
+    which made extensive RL training computationally feasible.                      Systems: Components, Designs, and Challenges,” IEEE Access, vol. 9,
+        pp. 42 635–42 659, 2021.
+  While comprehensive quantitative evaluation in the physical ~~ [2] R. Yanushevsky, Modern Missile Guidance, 2nd ed. Boca Raton: CRC
+world remains challenging, we successfully demonstrated the [3] Press, Sep. 2018.
+    learned policies on agile quadrotors in our indoor flight arena,         T. H. Chung, G. A. Hollinger, and V. Isler, “Search and pursuit-evasion in
+                                                                                 mobile robotics,” Autonomous Robots, vol. 31, no. 4, pp. 299–316, Nov.
+    validating the potential for zero-shot sim-to-real transfer and          2011. [Online]. Available: https://doi.org/10.1007/s10514-011-9241-4
+    showcasing the practical applicability of our approach.              [4]       E. Kaufmann, L. Bauersfeld, A. Loquercio, M. M¨uller, V. Koltun, and
+    Overall, this research highlights the effectiveness of Multi-                  D. Scaramuzza, “Champion-level drone racing using deep reinforcement
+                                                                             learning,”        Nature, vol. 620, no. 7976, pp. 982–987, 2023. [Online].
+    Agent Competitive Reinforcement Learning for generating                  Available: https://doi.org/10.1038/s41586-023-06419-4
+highly agile and reactive control policies for complex robotic [5] “Mastering Chess and Shogi by Self-Play with a General Reinforcement
+    interaction tasks like drone interception.                               Learning   Algorithm,” Dec. 2017, arXiv:1712.01815   [cs].       [Online].
+                                                                             Available: http://arxiv.org/abs/1712.01815
+
+ [6]  “Dota 2 with Large Scale Deep Reinforcement Learning,” Dec. 2019,
+      arXiv:1912.06680 [cs].  [Online]. Available:  http://arxiv.org/abs/1912.
+      06680
+ [7]  D. Mellinger and V. Kumar, “Minimum snap trajectory generation
+      and control for quadrotors,” in 2011 IEEE international conference on
+      robotics and automation.   IEEE, 2011, pp. 2520–2525.
+ [8]  X. Wang, J. Zhou, Y. Feng, J. Mei, J. Chen, and S. Li, “Dashing
+      for the golden snitch: Multi-drone time-optimal motion planning with
+      multi-agent reinforcement learning,”    arXiv preprint arXiv:2409.16720,
+      2024. [Online]. Available: https://arxiv.org/abs/2409.16720
+ [9]  M. Geisert and N. Mansard, “Trajectory generation for quadrotor based
+      systems using numerical optimal control,” in     2016 IEEE international
+      conference on robotics and automation (ICRA).      IEEE, 2016, pp. 2958–
+      2964.
+[10]  M. Pliska, M. Vrba, T. B´aˇca, and M. Saska, “Towards safe mid-air
+      drone interception: Strategies for tracking & capture,” IEEE Robotics
+      and Automation Letters, 2024.
+[11]  R. Lowe, Y. WU, A. Tamar, J. Harb, O. Pieter Abbeel, and I. Mordatch,
+      “Multi-Agent Actor-Critic for Mixed Cooperative-Competitive Environ-
+      ments,” in Advances in Neural Information Processing Systems, vol. 30.
+      Curran Associates, Inc., 2017.
+[12]  A. P. Pope, J. S. Ide, D. Mi´covi´c, H. Diaz, J. C. Twedt, K. Alcedo,
+      T. T. Walker, D. Rosenbluth, L. Ritholtz, and D. Javorsek, “Hierarchical
+      reinforcement learning for air combat at darpa’s alphadogfight trials,”
+      IEEE Transactions on Artificial Intelligence, vol. 4, no. 6, pp. 1371–
+      1385, 2023.
+[13]  R. Zhang, Q. Zong, X. Zhang, L. Dou, and B. Tian, “Game of Drones:
+      Multi-UAV  Pursuit-Evasion    Game    With  Online   Motion     Planning
+      by  Deep   Reinforcement   Learning,” IEEE   Transactions    on   Neural
+      Networks and Learning Systems, vol. 34, no. 10, pp. 7900–7909, Oct.
+      2023. [Online]. Available: https://ieeexplore.ieee.org/abstract/document/
+      9712866
+[14]  J. Chen, C. Yu, G. Li, W. Tang, S. Ji, X. Yang, B. Xu, H. Yang, and
+      Y. Wang, “Online planning for multi-uav pursuit-evasion in unknown
+      environments using deep reinforcement learning,” 2024.
+[15]  J. Xiao  and M.   Feroskhan,  “Learning    Multi-Pursuit     Evasion for
+      Safe Targeted Navigation of Drones,” IEEE Transactions on Artificial
+      Intelligence, vol. 5, no. 12, pp. 6210–6224, Dec. 2024, arXiv:2304.03443
+      [cs]. [Online]. Available: http://arxiv.org/abs/2304.03443
+[16]  J. Heeg, Y. Song, and D. Scaramuzza, “Learning quadrotor control
+      from visual features using differentiable simulation,”    arXiv preprint
+      arXiv:2410.15979, 2024.
+[17]  T. Lee, M. Leok, and N. H. McClamroch, “Geometric tracking control
+      of a quadrotor uav on se (3),” in 49th IEEE conference on decision and
+      control (CDC).    IEEE, 2010, pp. 5420–5425.
+[18]  S. Folk, J. Paulos, and V. Kumar, “Rotorpy: A python-based multirotor
+      simulator with aerodynamics for education and research,” arXiv preprint
+      arXiv:2306.04485, 2023.
+[19]  J. Bradbury, R. Frostig, P. Hawkins, M. J. Johnson, C. Leary, D. Maclau-
+      rin, G. Necula, A. Paszke, J. VanderPlas, S. Wanderman-Milne, and
+      Q. Zhang, “JAX: composable transformations of Python+NumPy pro-
+      grams,” 2018.
+[20]  J. Schulman, F. Wolski, P. Dhariwal, A. Radford, and O. Klimov,
+      “Proximal Policy Optimization Algorithms,” Tech. Rep., Aug. 2017.
+[21]  T. Bansal, J. Pachocki, S. Sidor, I. Sutskever, and I. Mordatch, “Emergent
+      complexity via multi-agent competition,”      CoRR, vol. abs/1710.03748,
+      2017. [Online]. Available: http://arxiv.org/abs/1710.03748
+[22]  Z.  Zhang, D.   Zhang,  Q.  Zhang,   W.   Pan, and   T.   Hu,   “Dacoop-
+      a:  Decentralized adaptive  cooperative pursuit via  attention,”   2023.
+      [Online]. Available: https://arxiv.org/abs/2310.15699
+[23]  “The betaflight open source flight controller firmware project.” 2022.
+      [Online]. Available: https://github.com/betaflight/betaflight

@@ -1,0 +1,404 @@
+arXiv:2410.15979v3 [cs.RO] 15 Jan 2026
+
+
+
+
+
+
+
+
+
+
+              This paper has been accepted for publication at the
+IEEE International Conference on Robotics and Automation (ICRA), Atlanta, 2025.
+
+                Learning Quadrotor Control From Visual Features
+                        Using Differentiable Simulation
+
+    Johannes Heeg, Yunlong Song, Davide Scaramuzza
+
+
+                Abstract— The sample inefficiency of reinforcement learn-
+    ing (RL) remains a significant challenge in robotics. RL requires                                  1 University of
+    large-scale simulation and can still cause long training times,            5     =                 =  Zurich’
+    slowing research  and    innovation.   This issue is     particularly
+    pronounced in vision-based control tasks where reliable state
+    estimates are not accessible Differentiable simulation offers an                                          ESS
+    alternative by enabling gradient back-propagation through the
+    dynamics model, providing low-variance analytical policy gra-         |
+    dients and, hence, higher sample efficiency. However, its usage                                    E
+    for real-world robotic tasks has yet been limited. This work             —
+    demonstrates the great potential of differentiable simulation                NICE
+    for learning quadrotor control. We show that training in dif-
+    ferentiable simulation significantly outperforms model-free RL     ~~
+    in terms of both sample efficiency and training time, allowing
+    a policy to learn to recover a quadrotor in seconds when              =          State-based  BPTT
+    providing vehicle states and in minutes when relying solely on                %                PPO
+    visual features. The key to our success is two-fold. First, the use      10f  %  Vision-based  BPTT   *
+    of a simple surrogate model for gradient computation greatly                                       0
+    accelerates training without sacrificing control performance.                    “Training Time [min
+Second, combining state representation learning with policy
+learning enhances convergence speed in tasks where only visual Fig. 1: Learning quadrotor control from visual features.
+features are observable. These findings highlight the potential Top: Stabilizing a quadrotor from a hand throw. Bottom Left:
+of differentiable simulation for real-world robotics and offer a Backpropagation through time (BPTT) via differentiable
+    compelling alternative to conventional RL approaches.                 simulation outperforms PPO, enabling state-based control in
+    Video: https://youtu.be/LdgvGCLB9do                                   seconds and vision-based control in minutes. Bottom Right:
+    Code: https://github.com/uzh-rpg/rpg flightning                       A visualization of observed visual features using hardware-
+                                                                          in-the-loop simulation.
+                          I. INTRODUCTION
+                     Reinforcement Learning (RL) has become a cornerstone
+    in robotics research for designing powerful controllers. By           simulation more expensive due to the additional requirement
+    employing large-scale simulation, neural network controllers          of simulating the visual observations, a direct mapping from
+    trained with RL enabled impressive performance in many                visual input signals to control commands is more difficult
+    robotic tasks [1] like quadruped locomotion [2], robot soc-           to learn. First, the dimensionality of the inputs increases,
+    cer [3], or quadrotor control [4], [5]. The learning paradigm         requiring more samples to optimize the policy. Second, the
+    allows for the end-to-end design of control policies that             neural network must simultaneously build an implicit state
+    take various input modalities and optimize task-level objec-          representation and synthesize the control law.
+    tives [6]. However, the flexibility comes at the cost of low                Differentiable simulation offers an approach to improve
+sample efficiency, which slows down the development of new the sample efficiency in robot learning. By incorporating
+controllers. Successful implementations require massively the derivatives of the dynamics, policy gradients can be
+parallelized simulators and large compute resources. Yet, computed analytically. This method reduces the variance in
+training times can go up to hours or even days. This issue the policy parameter updates, which potentially decreases the
+makes iterating on the control architecture, environment number of samples needed to learn a new control task.
+    settings, and hyperparameter tuning tedious and delays new                  We investigate using differentiable simulation to learn
+    results and progress.                                                 vision-based quadrotor control. In our case study, the ob-
+  The sample efficiency problem becomes even more pro- jective is to stabilize a quadrotor from a manual throw using
+nounced in vision-based control tasks [7]. Not only is the only visual features extracted from camera observations (see
+  The authors are with the Robotics and Perception Group, Department of Figure 1). The task is challenging for several reasons. First,
+Informatics, University of Zurich, Switzerland (http://rpg.ifi.uzh. quadrotors are inherently underactuated and unstable sys-
+ch). This work was supported by the European Union’s Horizon Europe tems; without continuous and precise feedback control, they
+Research and Innovation Programme under grant agreement No. 101120732
+(AUTOASSESS) and the European Research Council (ERC) under grant ~~ quickly lose stability and crash. Second, state information
+    agreement No. 864042 (AGILEFLIGHT).                                   is only indirectly available through pixel coordinates in the
+
+     visual
+    features     A      action                     R
+    das                                            “IN
+     i
+        Li gradient |    | gradient  Qk gradient   reward
+        bag,
+        oan        Za
+    Fig. 2: Overview of policy training using differentiable simulation. A neural network policy takes actions based on visual
+    feature observations. The simulation state is then updated using differentiable quadrotor dynamics. Based on the next state,
+    new observations are computed with a differentiable camera model. For each state and action pair, the actor receives a
+    reward. The differentiability of the whole pipeline allows back-propagating the gradients from the rewards to the policy
+    parameters.
+
+
+    image plane, making the environment partially observable.            lead to new failure modes caused by compounding errors.
+    Finally, the control policy has to handle a wide initial state       Alternatively, an end-to-end learning approach is studied
+    distribution to recover from a manual throw.                         in [7] for drone racing. The authors demonstrate robust
+  In our study, we begin with a classical state-based control ~~ flight performance solely relying on visual inputs. Their
+task and then transition to vision-based control directly from experiments show that learning from visual inputs requires
+visual features (i.e., without state estimation). We compare much more samples and longer training times of around 24
+learning in differentiable simulation with PPO (Proximal hours.
+    Policy Optimization) [8], a popular model-free RL algorithm.              Most studies on differentiable simulation for policy opti-
+Remarkably, after just 23 seconds of training, our state-based mization in robotics have been limited to simulated exper-
+control policy trained in differentiable simulation success- iments [11]–[13], with only a few successes in real-world
+fully learns to stabilize the quadrotor from random initial applications, such as learning quadruped locomotion [14] and
+configurations. In comparison, PPO requires over five times vision-based drone swarm navigation [15]. In particular, [15]
+more samples and training time to achieve similar results. For ~~ demonstrates how a simple point-mass model can be used
+feature-based control, our network trained in differentiable to learn vision-based navigation policies for agile flight in
+simulation learns to stabilize the quadrotor based on observa- complex real-world environments. Their approach requires
+tions from visual features only. In contrast, PPO, even after state estimation and a low-level controller that can stabilize
+extensive training, converges to a sub-optimal reward that the quadrotor and track the acceleration commands from the
+is significantly lower than that of differentiable simulation, policy. Hence, there remains a research gap in exploring low-
+    highlighting its limitations in vision-based tasks.                  level quadrotor control that fully incorporates the complete
+              Contribution: The key contribution of our work is lever-   vehicle dynamics, which is important for leveraging the
+    aging differentiable simulation for quadrotor control, focus-        full potential of a quadrotor for agile maneuvers, such as
+    ing on controlling the vehicle from visual features only.            acrobatic flight or time-optimal flight.
+    We demonstrate that, first, differentiable simulation offers                Using a surrogate model for policy gradient computations
+    a significant advantage over model-free RL for both state-           was first studied in [16]. The authors propose using an
+    based and vision-based control tasks. Second, incorporating          approximate simulation model to compute gradients along
+    a simplified surrogate model in backward pass speeds up              real-world trajectories. They prove that the resulting policy
+    gradient computation without compromising on sample effi-            parameters lie close to a local optimum with respect to the
+    ciency and performance. Third, pretraining the control policy        true but unknown model. Another work [17] even considers
+    on an auxiliary representation task accelerates and stabilizes       the case in which the surrogate model only predicts the
+    the overall training process.                                        sign of the derivatives. Recently, [14] proposed a surrogate
+    II. RELATED WORK                                                     model for gradient computations in the context of quadruped
+                                                                         locomotion.
+               Model-free RL is popular method to learn quadrotor con-
+    trol policies, including stabilization [4], [9] and high-speed           III. METHOD
+    drone racing [6], [10]. For vision-based control, it is common
+    to split the design process into state estimator and controller           The key benefit of differentiable simulators is the possi-
+    design. In [10], the quadrotor state is estimated using a            bility of back-propagating gradients from objective functions
+    Kalman filter that receives measurements from a visual-              through the dynamics to optimization parameters. This fea-
+    inertial odometry module and additional visual features. The         ture can be used to train control policies with analytically
+    state estimate is then fed into a state-based policy that was        derived gradients. Our fully differentiable simulation pipeline
+    trained using RL. Splitting state estimation and control gives       for vision-based control is summarized in Figure 2. In the
+    rise to a modular structure. However, the composition can            following, we introduce how differentiable simulation can
+
+    be used for policy optimization and describe the pipeline in            Parallelized Environments             Steps per Second
+    more detail.                                                                           Rollout              BPTT Simple  BPTT Full
+    A. Policy Optimization via Differentiable Simulation                                            1      1,539        835        234
+                                                                                                   10     12,972      7,318      2,221
+                   The quadrotor is modeled as a discrete-time dynamical                          100     98,919     59,767     19,432
+    system, characterized by continuous state and control input                                 1,000    875,082    489,927    165,425
+    spaces, denoted as X         and U , respectively. At each time step                       10,000  4,907,277  2,132,523   −
+    t, the system state is xt ∈ X , and the corresponding control                             100,000  7,227,766         −    −
+input is ut ∈ U. An observation ot ∈ O is generated at each TABLE I: Simulation speeds with and without gradient
+time step based on the current state xt through an observation computation (BPTT) on an Nvidia Titan RTX (24 GB
+model h : X → O, such that ot = h(xt). The system VRAM). Using a simple model for the backward path (BPTT
+dynamics are governed by the function f : X × U → X , simple) keeps computation and memory costs low. For empty
+which describes the time-discretized evolution of the system entries, the computational graph required more memory than
+xt+1 = f (xt, ut). At each time step t, the robot receives accessible.
+a reward signal rt = r(xt, ut). The control policy is a
+deterministic differentiable function, a neural network, ut =
+πθ(ot). The policy takes the observation ot as the input and where [·]× is the skew symmetric matrix operator and vec(·)
+    outputs the control input ut.                                           indicates vectorization. For quadrotor control, the body rates
+                The objective function R(θ), the cumulative reward given    ω and the collective thrust c are the inputs to the system.
+    the policy parameters, is to be maximized to find the optimal
+    policy parameters θ∗ by means of gradient ascent                        C. JAX-based Differentiable Simulator
+                θ∗ = arg maxθ  R(θ)                                                  To enable back-propagating gradients through simulated
+                                                                            rollouts and exploit GPU-accelerated computing, the dif-
+                         NX
+                           −1              NX
+                R(θ) =       r(xt, ut) =    −1 r(xt, πθ(ot))                ferentiable simulation framework is entirely written using
+                                                                            JAX [19]. During runtime, the code is just-in-time compiled
+                         t=0              t=0                               and lowered to GPU, resulting in fast execution times of up
+                         NX
+                      =    −1 r(xt, πθ(h(xt)))                              to million of steps per second (Table I). Besides high learning
+                                                                            speeds, JAX supports automatic differentiation which can be
+                θk+1 ← t=0θk + α∇θR(θk),                                    used to compute analytical policy gradients.
+                                                                                     Inspired by the quadrotor simulator presented in [20],
+    where α is the learning rate.                                           our differentiable simulator models air-drag, the low-level
+  Back-propagation Through Time (BPTT): By taking control architecture, the motor speeds, and the transmission
+advantage of the structure of R(θ) and applying the chain delays. This fidelity allows the transfer of policies trained in
+rule along the temporal axis, the policy gradient is obtained simulation to the real world zero-shot.
+    through BPTT and reads                                                  D. Fast Surrogate Gradients
+    ∇θR(θ) =                                                                     Even though our simulator is fully differentiable, auto-
+                1 NX
+    N               −1 Xt ∂rt Yt        dxj      ∂xi + ∂rt ∂ut  ,         matic differentiation through a full low-level control stack is
+                 t=0     i=1 ∂xt j=i  dxj−1  ∂θ   ∂ut            ∂θ         not desirable. The high simulation frequency of the dynamics
+        model, 1000 Hz, and the different sub-models involved
+where the matrix of derivatives dxj /dxj−1 is the Jacobian result in an expansive computational graph for gradient
+of the close-loop dynamical system f (x, πθ(h(x))). For computation, leading to slower execution and larger memory
+a derivation of the BPTT gradient, the reader is referred demand.
+    to [18].                                                                     To circumvent this problem while keeping the high fidelity
+    B. Quadrotor Dynamics                                                   of our simulator, we use the simple dynamics model fˆ(x, u)
+             Let p, R, and v represent the position, orientation matrix,    (see equation (1)), to compute the gradients. While during
+    and linear velocity of the quadrotor, respectively, expressed           the forward path, the full model
+    in the world frame. Let ω denote the angular velocity of the                           xt+1 = f (xt, ut)
+    quadrotor expressed in the body frame, referred to as body              is used, during backpropagation, we set
+    rates. Additionally, let c represent the mass-normalized col-
+    lective thrust produced by all motors, and let c =     0      0  c ⊺     ∂x        ˆ        ˆ
+    denote the collective thrust vector and        g the gravity vector.     ∂xt+1t   := ∂xf     ,     ∂xt+1 := ∂f             .
+                                                                                                                 t
+    The simple quadrotor dynamics read                                                     (x                   ∂u ∂u
+                                                                                       t,u       t)        (xt,ut)
+                x˙    = d   p                 v                            This technique combines the realistic forward model with
+                       dt  vec(R) = vec(R[ω]×) ,                  (1)    a computationally cheap backward model and keeps the
+                             v               Rc + g                         overhead of BPTT low (Table I).
+
+        accelerations from only one frame, we include the pixel
+        coordinates from the past 5 frames and the last 3 actions
+        taken by the policy. The pixel coordinates are obtained
+        through a realistic camera model [22]. We implemented the
+        camera model in a differentiable fashion, allowing gradients
+        to be propagated through the observations.
+        4) Reward Function: Stabilizing the quadrotor means
+Fig. 3: Vision-based control. The actor observers only a regulating its state toward a hovering condition at a desired
+history of pixel coordinates of seven points on the ground position pdes. The desired behavior is encoded into the
+    and the last three actions taken.                                     reward function. At time t
+                                                                                   rt = rtpos + rtvel + rtact.
+    E. Pretraining on State Representation Learning                       where the individual terms are
+             Learning from visual features comes with additional chal-     rpos = −0.2 · L   (5 (p  − p
+    lenges for policy optimization using BPTT. First, the function          t      H     ·     t     des))
+    mapping from features to commands is more difficult for                rtvel = −0.1 · LH(vt) − 0.1 · LH(ωt)
+    a neural network to approximate. Second, the observation                   rtact = −0.5 · LH(ut − uhover) − 0.01 · LH(ut − ut−1).
+    model causes indirect gradient flow from the actions back to          Here, L
+    the states. Both challenges presumably decrease the sample                     H is the Huber loss and uhover = [9.81, 0, 0, 0]⊤, the
+    efficiency. We propose to pretrain the neural network pa-                  action required to withstand the gravity. We use the Huber
+    rameters on the state representation task, which is known to               loss to limit the magnitude of the gradient even for large
+    improve the convergence of reinforcement learning [21].               deviations to improve training stability.
+             The pretraining procedure comprises three steps. First, a                            IV. EXPERIMENTS
+    randomly initialized policy network  πθ         is used to collect             To assess the effectiveness of our approach, we aim to
+    a dataset D of pairs of simulation states and observations            address the following questions:
+    (xt, ot). Then, a neural network is trained to predict the              •      How does learning in differentiable simulation compare
+    underlying simulation state (the quadrotor state) from the                         to model-free RL in terms of sample efficiency and
+    visual observations. I.e., the neural network ψθ is trained to             training time?
+    minimize the mean squared error                                         •  Can flight control policies trained in differentiable sim-
+
+                                                                                          How does using a simple dynamics model for BPTT
+                  N1     X ∥xi − ψθ(oi)∥2.                                  •  ulation be deployed in the real world?
+        (xi,oi)∈D                                                              affect the learning?
+    Lastly, the resulting weights           θ are copied to the policy      •    Does pretraining state representations help improve pol-
+    network πθ. Note that the last layer is changed do to the                  icy learning in differentiable simulation?
+    different output modalities.                                               The task is to recover the quadrotor from a random initial
+    F. Training Details                                                    condition and stabilize it. In the first experiment, the actor
+  1) Policy: We parameterize the policy as a multi-layer has access to the quadrotor state. In the second one, only
+perceptron with two hidden layers. The size of the hidden visual features and past actions are observed (see III-F.3).
+layers is 512 for state-based and 1024 for vision-based We compare training in differentiable simulation using BPTT
+    control.                                                                    with PPO [8], a widely used model-free algorithms that is
+  2) Action Space: The policy network provides actions at well-known to work well when large-scale simulation can be
+50 Hz to the on-board flight controller. The actions are 4- exploited. In the experiments, we include runs with different
+dimensional and consist of desired mass-normalized collec- numbers of parallel environments to examine the gradient
+tive thrust and body rates u = [c, ωx, ωy, ωz]⊤. This control variance. All training procedures were run on a workstation
+modality keeps full control authority to the policy network with an Nvidia Titan RTX (24 GB VRAM).
+and does not need state estimation on the flight controller. A. Learning State-based Control
+    On the other hand, it requires the policy to not only steer                We train the control policy for 1000 iterations using BPTT
+    the quadrotor but rather stabilize it at all times which is not-             and PPO with 1 to 1000 parallel environments as shown in
+    trivial given the non-linear, unstable dynamics (1).                         Figure 4. We observe that using PPO, only the experiment
+  3) Observation Space: In our first experiment, we assume with 1000 parallel environments stably converges. On the
+the quadrotor state to be known resulting in an observation other hand, all BPTT runs with more than 1 environment
+o = [p⊤, vec(R)⊤, v]⊤. In our second experiment, learning converge to very similar high rewards, and even with 1 single
+to fly from visual features, the policy observes the pixel environment, the learning curve almost reaches the same
+coordinates of 7 features on the ground as indicated in performance. This result confirms the practical advantage of
+Figure 3. Since it is impossible to estimate velocities and a low-variance gradient estimate.
+
+                  PPO                             BPTT                                     PPO                        BPTT
+
+     I=                             Br                                                              _
+ i         gure                                |      Num 8                                         ;                             fv
+ =                                                                               =                                          j==   10
+              |                                |                    cee   100                                              [eee   100
+     ©        {2:15 min                        {0:23 min            ="    1000       ©     32:06                      9:11   —*   1000
+           0      500               1000 0                   500          1000       0    1000          2000 0       1000           2000
+                  Iterations                      Iterations                         Iterations                   Iterations
+
+              Reward Target     Samples [Mio.]    Time [min]                     Reward Target     Samples [Mio.]    Time [min]
+                                PPO   BPTT        PPO BPTT                                           PPO   BPTT      PPO   BPTT
+                   -15          8.4   2.55        0:25      0:05                      -15            32.1  2.25   |  4:10  0:07
+                   -11          14.7  3.45        0:44      0:07                      -11           118.2  3.9      15:21  0:13
+                    -7          22.8  5.4         1:09      0:11                       -7             −   11.25       −    0:37
+                   -5.3         44.4  8.25        2:14      0:17                      -5.3            −   179.85  | −     10:00
+Fig. 4: Comparisons of learning state-based control using                        Fig. 5: Comparisons of learning feature-based control using
+PPO and BPTT.                                                                    PPO and BPTT.
+
+
+          Regarding the training time, using 1000 parallel envi-
+ronments gives the best results for both methods. Here,                                         -       =
+PPO converges after 2:15 minutes, while BPTT needs only                                         —
+23 seconds.
+             The table in Figure 4 compares how many samples and                                LY      rd        FJ
+how much training time is needed to reach certain reward                                           a.  we         4
+targets (with 1000 parallel environments). We find that BPTT                                            J
+reaches all targets significantly faster and requires only a
+fraction of samples. In particular, BPTT demonstrates an                                           w— a.
+almost 8-times speed-up to reach the highest reward target                                        A   Wn
+-5.3 and requires less than 20% of samples.
+
+B. Feature-based Control without State Estimation
+         For the more challenging task of vision-based quadrotor                 Fig. 6: Feature-based control experiment (HITL). Visualiza-
+control, we pretrain the policy networks using state rep-                        tion of flight trajectories with randomly initialized drone
+resentation learning on 100,000 samples for 500 epochs                           configurations.
+(pretraining time is around 1:30 min) and subsequently run
+policy optimization for 2000 iterations. Unsurprisingly, the
+time to convergence is higher in all cases. Only BPTT with                       virtual observations, visualized in Figure 1. The HITL exper-
+100 or 1000 parallel environments manages to converge to a                       iments allow us to focus on testing the control performance
+performance close to the state-based case. Even disregarding                     without the need for a feature detection module. Note that
+the significantly lower reward of PPO policies at conver-                        even though the simulated observation model causes no sim-
+gence, the convergence time of BPTT, 9:11 min, is more                           to-real gap, the measurement noise of the motion capture
+than 3 times lower compared to 32:06 min, the convergence                        systems results in out-of-distribution observations.
+time of PPO. Furthermore, the table in Figure 5 displays                         Figure 6 illustrates the    deployment of a vision-based
+the wall-clock training time and simulation samples required                     control policy trained in differentiable simulation. The policy
+to reach the reward targets. Again, we observe much lower                        successfully navigates and stabilizes the quadrotor at the
+sample and time requirements. For the last target hit by PPO,                    desired goal position. Figure 1 shows a second experiment
+a reward of -11, BPTT was over 70 times faster and needed                        where the quadrotor is thrown manually resulting in diverse
+less than 4% of samples.                                                         and highly unstable initial states. As indicated by Figure 7,
+C. Sim-to-real Transfer                                                          both state-based and vision-based control policies success-
+                                                                                 fully perform the task in successive trials without failure. The
+          For real-world experiments, we use a lightweight drone                 state-based policy stabilizes the quadrotor faster and with less
+built with off-the-shelf components. Using hardware-in-the-                      oscillations around the desired position. In particular, in the
+loop (HITL) simulation, the pose of the physical quadrotor is                    third vision-based trial (denoted in red), the quadrotor came
+monitored by a motion capture system, and the actor receives                     close to the floor before approaching the goal position. This
+
+        State-based  Vision-based
+        —
+    15    oN “hae
+        =
+    05               17       “10  Id
+                     =        3EB
+
+
+           2                0            2         0                                           —— w/ Pre-training
+           y                                       y                                           == w/o Pre-training
+    Fig. 7: Real-world trajectories showing stabilization from a             —25 0 500         1000   1500 2000
+    manual throw. Each line represents an individual trial.
+
+                                                                     Fig. 9: Pre-training the neural network parameters on state
+                                                                     representation learning improves convergence and perfor-
+                                                                     mance during policy optimization.
+                                ~10
+
+    H  15                       15                                   make the first-order approximation of the policy optimization
+                                                                     objective more accurate in a larger vicinity of the current
+                                         ——        Full Model        parameters.
+       —20                      —20 ff   ==        Simple Model          V. CONCLUSION
+           0  -             100     0                  20            This  paper investigated  using  differentiable     simulation
+                                                                     to learn quadrotor control policies from state and visual
+    Fig. 8: Using a simple model for gradient computations           observations. We found that differentiable simulation can
+    reduces training time without sacrificing on performance.        accelerate policy training drastically, leading to more than
+                                                                     7 times faster training speeds and requiring less than 20% of
+                                                                     samples compared to model-free reinforcement learning. We
+    behavior indicates that the vision-based performance could       show that by using a simple dynamics model, computational
+    benefit from an improved observation noise model to reduce       costs can be significantly reduced without compromising
+    the sim-to-real gap.                                             on sample efficiency. Moreover, leveraging pretraining on
+    D. Ablation Studies                                              a state representation task helps convergence and improves
+                                                                     performance substantially.
+            1) Policy Optimization Using Surrogate Gradients: Using        Our work demonstrates the first application of differen-
+    a simpler dynamics model for the backward path directly          tiable simulation to low-level quadrotor control. We deploy
+    increases the number of simulation steps per second, as          the trained policies successfully in the real world on the
+    shown in Table I. However, using only a surrogate gradient       challenging task of stabilizing the quadrotor after a manual
+    might weaken the quality of the gradient and hence, decrease     throw without state estimation and only observing visual
+    sample efficiency. Figure 8 shows two runs with BPTT over        features.
+    200 iterations (100 environments) on the state-based control        Overall, the results suggest that differentiable simulation
+    task. Both runs use the same initial parameters and random       has the potential of introducing a paradigm shift for learning
+    seeds. The only difference is the quadrotor model. It clearly    in simulation. We believe that despite the increasing efforts
+    shows that the simple model speeds up training but does not      on developing high-fidelity differentiable simulators, using
+    sacrifice sample efficiency or performance.                      simple backward models will be faster and sufficient in many
+  2) State Representation Learning as Pretraining: Figure 9 cases and requires only limited engineering effort. Therefore,
+compares the BPTT training curves on the vision-based we hope to inspire the community to try differentiable
+control task with and without state representation pretrain- simulation and accelerate their research and innovation.
+ing using 1000 environments. We observe that pretraining
+improves both convergence and asymptotic performance sig-
+nificantly. Note, however, that even without pretraining, the
+performance surpasses the one of PPO on the same task.
+  We hypothesize that state representation pretraining is
+particularly useful when combined with differentiable simu-
+lation because it not only initializes the weights to provide
+a more meaningful internal representation but also improves
+the quality of the gradient. Possibly, the pretrained weights
+
+                                     REFERENCES                                          O. Bachem, “Brax–a differentiable physics engine for large scale rigid
+ [1]  C. Tang, B. Abbatematteo, J. Hu, R. Chandra, R. Mart´ın-Mart´ın, and         [12]  body simulation,” arXiv preprint arXiv:2106.13281, 2021.
+      P. Stone, “Deep Reinforcement Learning for Robotics: A Survey of                   J. Xu, V. Makoviychuk, Y. Narang, F. Ramos, W. Matusik, A. Garg,
+      Real-World Successes,” Aug. 2024, arXiv:2408.03539 [cs]. [Online].                 and M. Macklin, “Accelerated policy learning with parallel differen-
+      Available: http://arxiv.org/abs/2408.03539                                         tiable simulation,” in International Conference on Learning Represen-
+ [2]  J. Hwangbo,    J. Lee, A.    Dosovitskiy,     D. Bellicoso,   V.  Tsounis,   [13]  tations, 2021.
+      V. Koltun, and M. Hutter, “Learning agile and dynamic motor skills                 T. Howell, S. Le Cleac’h, J. Bruedigam, Z. Kolter, M. Schwager, and
+      for legged robots,” Science Robotics, vol. 4, no. 26, p. eaau5872, 2019.           Z. Manchester, “Dojo: A differentiable simulator for robotics,” arXiv
+ [3]  T. Haarnoja, B. Moran, G. Lever, S. H. Huang, D. Tirumala, J. Hump-          [14]  preprint arXiv:2203.00806, 2022.
+      lik, M. Wulfmeier, S. Tunyasuvunakool, N. Y. Siegel, R. Hafner,                    Y. Song, S. Kim, and D. Scaramuzza, “Learning quadruped locomotion
+      M. Bloesch, K. Hartikainen, A. Byravan, L. Hasenclever, Y. Tassa,                  using     differentiable               simulation,”   arXiv preprint                 arXiv:2403.14864,
+      F. Sadeghi, N. Batchelor, F. Casarini, S. Saliceti, C. Game, N. Sreen-       [15]  2024.
+      dra, K. Patel, M. Gwira, A. Huber, N. Hurley, F. Nori, R. Hadsell, and             Y. Zhang, Y. Hu, Y. Song, D. Zou, and W. Lin, “Back to newton’s
+      N. Heess, “Learning agile soccer skills for a bipedal robot with deep              laws: Learning vision-based agile flight via differentiable physics,”
+      reinforcement learning,” Science Robotics, vol. 9, no. 89, p. eadi8022,      [16]  arXiv preprint arXiv:2407.10648, 2024.
+      Apr. 2024.                                                                         P. Abbeel, M. Quigley, and A. Y. Ng, “Using inaccurate models in
+ [4]  J. Hwangbo, I. Sa, R. Siegwart, and M. Hutter, “Control of a quadrotor             reinforcement learning,” in Proceedings of the 23rd International Con-
+      with reinforcement learning,” IEEE Robotics and Automation Letters,                ference on Machine Learning - ICML ’06.                                      Pittsburgh, Pennsylvania:
+      vol. 2, no. 4, pp. 2096–2103, 2017.                                          [17]  ACM Press, 2006, pp. 1–8.
+ [5]  Y. Song,   M.  Steinweg,  E. Kaufmann,       and D. Scaramuzza,       “Au-         J. Z. Kolter and A. Y. Ng, “Policy search via the signed derivative,”
+      tonomous drone racing with deep reinforcement learning,” in           2021         in Robotics: Science and Systems V.                                      Robotics: Science and Systems
+      IEEE/RSJ International Conference on Intelligent Robots and Systems          [18]  Foundation, Jun. 2009.
+      (IROS).    IEEE, 2021, pp. 1205–1212.                                              L. Metz, C. D. Freeman, S. S. Schoenholz, and T. Kachman, “Gradi-
+ [6]  Y. Song, A. Romero, M. M¨uller, V. Koltun, and D. Scaramuzza,                [19]  ents are not all you need,”J.                                  arXiv preprint arXiv:2111.05803, 2021.
+      “Reaching the limit in autonomous racing: Optimal control versus                                           Bradbury, R.   Frostig, P.  Hawkins, M.                  J. Johnson, C. Leary,
+      reinforcement learning,” Science Robotics, vol. 8, no. 82, p. eadg1462,            D. Maclaurin, G. Necula, A. Paszke, J. VanderPlas, S. Wanderman-
+      2023.                                                                              Milne,                        and Q.   Zhang,   “JAX: composable     transformations                of
+ [7]  I. Geles, L. Bauersfeld, A. Romero, J. Xing, and D. Scaramuzza,                    Python+NumPy programs,” 2018. [Online]. Available: http://github.
+      “Demonstrating agile flight from pixels without state estimation,” RSS:      [20]  com/google/jax
+      Robotics, Science, and Systems, 2024.                                              Y. Song, S. Naji, E. Kaufmann, A. Loquercio, and D. Scaramuzza,
+ [8]  J. Schulman, F. Wolski, P. Dhariwal, A. Radford, and O. Klimov,                    “Flightmare: A flexible quadrotor simulator,” in Conference on Robot
+      “Proximal     Policy Optimization Algorithms,”     Aug.       2017,   9994   [21]  Learning (CoRL), 2020.
+      citations  (Semantic Scholar/arXiv)      [2023-11-26]     arXiv:1707.06347         T.     de     Bruin,              J.   Kober,   K.  Tuyls, and R. Babuˇska,               “Integrating
+      [cs]. [Online]. Available: http://arxiv.org/abs/1707.06347                         State Representation Learning Into Deep Reinforcement Learning,”
+ [9]  J. Eschmann, D. Albani, and G. Loianno, “Learning to fly in seconds,”              IEEE                        Robotics   and Automation  Letters,   vol. 3,   no.               3,   pp.
+      IEEE Robotics and Automation Letters, 2024.                                        1394–1401,                       Jul.  2018,    conference Name:  IEEE                  Robotics   and
+[10]  E. Kaufmann, L. Bauersfeld, A. Loquercio, M. M¨uller, V. Koltun, and               Automation Letters. [Online]. Available: https://ieeexplore.ieee.org/
+      D. Scaramuzza, “Champion-level drone racing using deep reinforce-            [22]  abstract/document/8276247
+      ment learning,” Nature, vol. 620, no. 7976, pp. 982–987, 2023.                     V. Usenko, N. Demmel, and D. Cremers, “The double sphere camera
+[11]  C. D. Freeman, E. Frey, A. Raichuk, S. Girgin, I. Mordatch, and                    model,”     in                   2018  International Conference   on 3D Vision                  (3DV),
+                                                                                         Sep. 2018, pp. 552–560, arXiv:1807.08957 [cs]. [Online]. Available:
+                                                                                         http://arxiv.org/abs/1807.08957
