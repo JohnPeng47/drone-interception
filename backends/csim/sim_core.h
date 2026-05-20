@@ -6,7 +6,7 @@
 
 #pragma once
 
-#include "dronelib.h"
+#include "sim_types.h"
 
 typedef struct {
     State state;

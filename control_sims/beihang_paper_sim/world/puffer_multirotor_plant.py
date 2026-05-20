@@ -7,7 +7,7 @@ from pydrake.common.value import AbstractValue
 from pydrake.systems.framework import LeafSystem
 
 from backends import PufferDroneBackend, SimOptions
-from backends.puffer_c import (
+from backends.csim.bindings import (
     initial_state_from_rotorpy,
     vehicle_params_from_quad_params,
 )

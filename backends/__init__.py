@@ -1,5 +1,5 @@
 from .input import InitialState, SimOptions, VehicleParams
-from .puffer_c import PufferDroneBackend
+from .csim.bindings import PufferDroneBackend
 from .rotorpy import RotorPyDroneBackend, RotorPyMultirotorPlant
 
 __all__ = [

@@ -9,7 +9,7 @@ from typing import Any
 
 import numpy as np
 
-from .input import (
+from ...input import (
     DEFAULT_MAX_OMEGA_RPS,
     DEFAULT_MAX_VEL_MPS,
     InitialState,
@@ -269,7 +269,7 @@ class PufferDroneBackend:
     def _min_rpm(self) -> float:
         if self.params.rpm_min is not None:
             return float(np.clip(self.params.rpm_min, 0.0, self.params.max_rpm))
-        # Match intercept_env/dronelib.h:rpm_min_for_centered_hover for the
+        # Match backends/csim/sim_core.c:rpm_min_for_centered_hover for the
         # legacy normalized action path when no vehicle lower bound is known.
         min_rpm = 2.0 * self._hover_rpm() - self.params.max_rpm
         return float(np.clip(min_rpm, 0.0, self.params.max_rpm))
@@ -280,13 +280,20 @@ def _load_lib() -> C.CDLL:
     if _LIB is not None:
         return _LIB
 
-    src = Path(__file__).resolve().parents[1] / "intercept_env" / "sim_core.c"
-    header = Path(__file__).resolve().parents[1] / "intercept_env" / "sim_core.h"
-    dronelib = Path(__file__).resolve().parents[1] / "intercept_env" / "dronelib.h"
+    csim_dir = Path(__file__).resolve().parents[1]
+    src = csim_dir / "sim_core.c"
+    header = csim_dir / "sim_core.h"
+    sim_types = csim_dir / "sim_types.h"
+    sim_math = csim_dir / "sim_math.h"
     build_dir = Path(__file__).resolve().parent / "_build"
     build_dir.mkdir(parents=True, exist_ok=True)
     lib_path = build_dir / "libpuffer_sim_core.so"
-    newest_source_mtime = max(src.stat().st_mtime, header.stat().st_mtime, dronelib.stat().st_mtime)
+    newest_source_mtime = max(
+        src.stat().st_mtime,
+        header.stat().st_mtime,
+        sim_types.stat().st_mtime,
+        sim_math.stat().st_mtime,
+    )
     if (not lib_path.exists()) or lib_path.stat().st_mtime < newest_source_mtime:
         subprocess.run(
             ["cc", "-std=gnu99", "-O3", "-fPIC", "-shared", str(src), "-lm", "-o", str(lib_path)],

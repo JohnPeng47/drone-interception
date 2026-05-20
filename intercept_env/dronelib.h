@@ -9,6 +9,8 @@
 #include <stdbool.h>
 #include <stdlib.h>
 
+#include "../backends/csim/sim_math.h"
+
 // Visualisation properties
 #define WIDTH 1080
 #define HEIGHT 720
@@ -71,14 +73,6 @@ struct Log {
 };
 
 typedef struct {
-    float w, x, y, z;
-} Quat;
-
-typedef struct {
-    float x, y, z;
-} Vec3;
-
-typedef struct {
     Vec3 pos;
     Vec3 vel;
     Quat orientation;
@@ -91,42 +85,6 @@ typedef struct {
     int index;
     int count;
 } Trail;
-
-typedef struct {
-    Vec3 pos;      // global position (x, y, z)
-    Vec3 vel;      // linear velocity (u, v, w)
-    Quat quat;     // roll/pitch/yaw (phi/theta/psi) as a quaternion
-    Vec3 omega;    // angular velocity (p, q, r)
-    float rpms[4]; // motor RPMs
-} State;
-
-typedef struct {
-    Vec3 vel;         // Derivative of position
-    Vec3 v_dot;       // Derivative of velocity
-    Quat q_dot;       // Derivative of quaternion
-    Vec3 w_dot;       // Derivative of angular velocity
-    float rpm_dot[4]; // Derivative of motor RPMs
-} StateDerivative;
-
-typedef struct {
-    float mass;       // kg
-    float ixx;        // kgm^2
-    float iyy;        // kgm^2
-    float izz;        // kgm^2
-    float arm_len;    // m
-    float k_thrust;   // thrust coefficient (T = k * rpm^2)
-    float k_ang_damp; // angular damping coefficient
-    float k_drag;     // yaw moment constant (torque-to-thrust ratio style)
-    float b_drag;     // linear drag coefficient
-    float gravity;    // m/s^2 (positive, world gravity points -z)
-    float max_rpm;    // RPM
-    float max_vel;    // m/s (observation clamp)
-    float max_omega;  // rad/s (observation clamp)
-    float k_mot;      // s (motor RPM time constant)
-    float rotor_pos_x[4]; // body-frame rotor x positions, optional
-    float rotor_pos_y[4]; // body-frame rotor y positions, optional
-    float rotor_dir[4];   // yaw moment signs, optional
-} Params;
 
 typedef struct {
     // core state and parameters
@@ -156,97 +114,6 @@ typedef struct {
     float ema_vel;
     float ema_omega;
 } Drone;
-
-static inline float clampf(float v, float min, float max) {
-    if (v < min) return min;
-    if (v > max) return max;
-    return v;
-}
-
-static inline float rndf(float a, float b, unsigned int* rng) {
-    return a + ((float)rand_r(rng) / (float)RAND_MAX) * (b - a);
-}
-
-static inline Vec3 add3(Vec3 a, Vec3 b) { return (Vec3){a.x + b.x, a.y + b.y, a.z + b.z}; }
-static inline Vec3 sub3(Vec3 a, Vec3 b) { return (Vec3){a.x - b.x, a.y - b.y, a.z - b.z}; }
-static inline Vec3 scalmul3(Vec3 a, float b) { return (Vec3){a.x * b, a.y * b, a.z * b}; }
-
-static inline Quat add_quat(Quat a, Quat b) {
-    return (Quat){a.w + b.w, a.x + b.x, a.y + b.y, a.z + b.z};
-}
-static inline Quat scalmul_quat(Quat a, float b) {
-    return (Quat){a.w * b, a.x * b, a.y * b, a.z * b};
-}
-
-static inline float dot3(Vec3 a, Vec3 b) { return a.x * b.x + a.y * b.y + a.z * b.z; }
-static inline float norm3(Vec3 a) { return sqrtf(dot3(a, a)); }
-
-static inline void clamp3(Vec3* vec, float min, float max) {
-    vec->x = clampf(vec->x, min, max);
-    vec->y = clampf(vec->y, min, max);
-    vec->z = clampf(vec->z, min, max);
-}
-
-static inline void clamp4(float a[4], float min, float max) {
-    a[0] = clampf(a[0], min, max);
-    a[1] = clampf(a[1], min, max);
-    a[2] = clampf(a[2], min, max);
-    a[3] = clampf(a[3], min, max);
-}
-
-static inline Quat quat_mul(Quat q1, Quat q2) {
-    Quat out;
-    out.w = q1.w * q2.w - q1.x * q2.x - q1.y * q2.y - q1.z * q2.z;
-    out.x = q1.w * q2.x + q1.x * q2.w + q1.y * q2.z - q1.z * q2.y;
-    out.y = q1.w * q2.y - q1.x * q2.z + q1.y * q2.w + q1.z * q2.x;
-    out.z = q1.w * q2.z + q1.x * q2.y - q1.y * q2.x + q1.z * q2.w;
-    return out;
-}
-
-static inline void quat_normalize(Quat* q) {
-    float n = sqrtf(q->w * q->w + q->x * q->x + q->y * q->y + q->z * q->z);
-    if (n > 0.0f) {
-        q->w /= n;
-        q->x /= n;
-        q->y /= n;
-        q->z /= n;
-    }
-}
-
-static inline Vec3 quat_rotate(Quat q, Vec3 v) {
-    Quat qv = (Quat){0.0f, v.x, v.y, v.z};
-    Quat tmp = quat_mul(q, qv);
-    Quat q_conj = (Quat){q.w, -q.x, -q.y, -q.z};
-    Quat res = quat_mul(tmp, q_conj);
-    return (Vec3){res.x, res.y, res.z};
-}
-
-static inline Quat quat_inverse(Quat q) { return (Quat){q.w, -q.x, -q.y, -q.z}; }
-
-static inline Quat rndquat(unsigned int* rng) {
-    float u1 = rndf(0.0f, 1.0f, rng);
-    float u2 = rndf(0.0f, 1.0f, rng);
-    float u3 = rndf(0.0f, 1.0f, rng);
-
-    float sqrt_1_minus_u1 = sqrtf(1.0f - u1);
-    float sqrt_u1 = sqrtf(u1);
-
-    float pi_2_u2 = 2.0f * (float)M_PI * u2;
-    float pi_2_u3 = 2.0f * (float)M_PI * u3;
-
-    Quat q;
-    q.w = sqrt_1_minus_u1 * sinf(pi_2_u2);
-    q.x = sqrt_1_minus_u1 * cosf(pi_2_u2);
-    q.y = sqrt_u1 * sinf(pi_2_u3);
-    q.z = sqrt_u1 * cosf(pi_2_u3);
-    return q;
-}
-
-static inline Quat quat_from_axis_angle(Vec3 axis, float angle) {
-    float half = angle * 0.5f;
-    float s = sinf(half);
-    return (Quat){cosf(half), axis.x * s, axis.y * s, axis.z * s};
-}
 
 static inline Target rndring(unsigned int* rng, float radius) {
     Target ring = (Target){0};
@@ -395,17 +262,6 @@ static inline void compute_derivatives(State* state, Params* params, float* acti
     for (int i = 0; i < 4; i++) {
         derivatives->rpm_dot[i] = rpm_dot[i];
     }
-}
-
-static inline void step(State* initial, StateDerivative* deriv, float dt, State* output) {
-    output->pos = add3(initial->pos, scalmul3(deriv->vel, dt));
-    output->vel = add3(initial->vel, scalmul3(deriv->v_dot, dt));
-    output->quat = add_quat(initial->quat, scalmul_quat(deriv->q_dot, dt));
-    output->omega = add3(initial->omega, scalmul3(deriv->w_dot, dt));
-    for (int i = 0; i < 4; i++) {
-        output->rpms[i] = initial->rpms[i] + deriv->rpm_dot[i] * dt;
-    }
-    quat_normalize(&output->quat);
 }
 
 static inline void rk4_step(State* state, Params* params, float* actions, float dt) {
