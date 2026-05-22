@@ -6,7 +6,8 @@ from pydrake.systems.framework import DiagramBuilder
 
 from backends import RotorPyMultirotorPlant
 
-from ..drake_compat import KinematicTargetSystem, SceneAssembler
+from .scene_assembler import SceneAssembler
+from .target_system import KinematicTargetSystem
 from ..targets import KinematicTarget
 from ..types import CameraRig
 from .puffer_sim_engine_system import PufferSimEngineSystem

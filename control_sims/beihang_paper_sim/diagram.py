@@ -13,7 +13,7 @@ high-rate attitude estimator and is deferred.
 Swaps in three paper-faithful blocks vs codex_sim:
     sensing/imu_system.py       paper Eqs. (7)–(10), Gaussian noise + Wiener biases
     estimation/dkf_observer.py  paper Algorithm 2, Eqs. (30)–(36), real EKF
-    controller/control_core.py  paper Eqs. (12)–(28), 2-step Lyapunov
+    controller/*_system.py     paper Eqs. (12)–(28), split by pipeline stage
 
 INITIAL PITCH OFFSET — important for catch rate.
 At t=0 the controller's desired thrust direction n_fd points up-and-forward
@@ -42,8 +42,6 @@ import math
 import numpy as np
 from pydrake.systems.framework import Diagram, DiagramBuilder
 
-from intercept_sim.sensors import GeometryCamera
-
 from .actuator.actuator_diagram import add_actuator
 from .config import (
     ExperimentConfig,
@@ -53,10 +51,12 @@ from .config import (
     target_from_config,
 )
 from .controller.controller_diagram import add_controller
-from .drake_compat import RunnerStepLogger, resolve_quad_params
+from .drake_compat import resolve_quad_params
 from .estimation.estimation_diagram import add_estimation
+from .logging import RunnerStepLogger
 from .noise_config import NoiseConfig
 from .sensing.sensing_diagram import add_sensing
+from intercept_sim.sensors import GeometryCamera
 from .world.world_diagram import add_world
 
 
@@ -189,8 +189,8 @@ def build_diagram_from_config(
 
     # ----- estimation → controller → actuator → world
     builder.Connect(estimation["core"].GetOutputPort("observer_state"),
-                    controller_group["core"].GetInputPort("observer_state"))
-    builder.Connect(controller_group["core"].GetOutputPort("ctbr_cmd"),
+                    controller_group["observer_input"].GetInputPort("observer_state"))
+    builder.Connect(controller_group["command"].GetOutputPort("ctbr_cmd"),
                     actuator["pixhawk"].GetInputPort("ctbr_cmd"))
     builder.Connect(actuator["pixhawk"].GetOutputPort("rate_cmd"),
                     world["plant"].GetInputPort("ctbr_cmd"))
@@ -206,7 +206,7 @@ def build_diagram_from_config(
                     logger.GetInputPort("measurements"))
     builder.Connect(estimation["core"].GetOutputPort("observer_state"),
                     logger.GetInputPort("observer_state"))
-    builder.Connect(controller_group["core"].GetOutputPort("ctbr_cmd"),
+    builder.Connect(controller_group["command"].GetOutputPort("ctbr_cmd"),
                     logger.GetInputPort("ctbr_cmd"))
 
     diagram = builder.Build()

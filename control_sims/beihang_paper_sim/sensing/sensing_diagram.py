@@ -14,7 +14,8 @@ from pydrake.systems.framework import DiagramBuilder
 
 from intercept_sim.sensors import FeaturePerceptionModel, GeometryCamera
 
-from ..drake_compat import FeaturePerceptionSystem, GeometryCameraSystem
+from .camera_system import CameraCaptureSystem
+from .perception_system import FeatureDetectionSystem
 from ..noise_config import NoiseConfig
 from .imu_system import ImuSystem
 
@@ -27,8 +28,8 @@ def add_sensing(
     dt: float,
     noise_config: NoiseConfig | None = None,
 ) -> dict:
-    camera_sys = builder.AddSystem(GeometryCameraSystem(camera, dt))
-    perception_sys = builder.AddSystem(FeaturePerceptionSystem(perception, dt))
+    camera_sys = builder.AddSystem(CameraCaptureSystem(camera, dt))
+    perception_sys = builder.AddSystem(FeatureDetectionSystem(perception, dt))
     imu = builder.AddSystem(ImuSystem(dt=dt, noise_config=noise_config))
 
     builder.Connect(camera_sys.GetOutputPort("capture"),
