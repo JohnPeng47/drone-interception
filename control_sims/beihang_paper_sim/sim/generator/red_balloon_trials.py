@@ -30,7 +30,7 @@ class RedBalloonTrialsGenerator(SimGenerator):
         self.duration_s = duration_s
         self.config_generator = RedBalloonConfigGenerator()
 
-    def sample(self, *, seed: int, **kwargs: Any) -> SimInstance:
+    def _sample_once(self, *, seed: int, **kwargs: Any) -> SimInstance:
         overrides: dict[str, Any] = {
             "perception": {"pixel_noise_std_px": [self.sigma_pixel_px, self.sigma_pixel_px]},
         }

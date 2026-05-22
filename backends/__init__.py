@@ -1,4 +1,4 @@
-from .generator import SimGenerator, SimInstance, TargetInitialState
+from .csim.generator import SimGenerator, SimInstance, TargetInitialState
 from .input import InitialState, SimOptions, VehicleParams
 from .csim.bindings import PufferDroneBackend, PufferSimEngineBackend
 from .rotorpy import RotorPyDroneBackend, RotorPyMultirotorPlant

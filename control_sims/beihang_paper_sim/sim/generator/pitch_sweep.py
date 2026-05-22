@@ -51,7 +51,7 @@ class PitchSweepGenerator(SimGenerator):
         self.omega_max = omega_max
         self.config_generator = RedBalloonConfigGenerator()
 
-    def sample(self, *, seed: int, pitch_deg: float | None = None, **kwargs: Any) -> SimInstance:
+    def _sample_once(self, *, seed: int, pitch_deg: float | None = None, **kwargs: Any) -> SimInstance:
         theta = self.angles_deg[0] if pitch_deg is None else float(pitch_deg)
         gains = dict(CONTROLLER_GAINS)
         if self.omega_max is not None:

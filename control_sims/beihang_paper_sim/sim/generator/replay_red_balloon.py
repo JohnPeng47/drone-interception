@@ -31,7 +31,7 @@ class ReplayRedBalloonGenerator(SimGenerator):
         self.out = out
         self.config_generator = RedBalloonConfigGenerator()
 
-    def sample(self, *, seed: int, **kwargs: Any) -> SimInstance:
+    def _sample_once(self, *, seed: int, **kwargs: Any) -> SimInstance:
         overrides = {
             "sim": {"backend": "puffer_c"},
             "vehicle": {"initial_pitch_offset_deg": 0.0},

@@ -38,7 +38,7 @@ class ClosingSpeedSweepGenerator(SimGenerator):
         self.out_root = out_root
         self.config_generator = RedBalloonConfigGenerator()
 
-    def sample(
+    def _sample_once(
         self,
         *,
         seed: int,

@@ -72,7 +72,7 @@ class RedBalloonConfigGenerator(SimGenerator):
     def __init__(self, base_config: dict[str, Any] | None = None):
         self._base_config = copy.deepcopy(base_config or RED_BALLOON_X500_CONFIG)
 
-    def sample(
+    def _sample_once(
         self,
         *,
         seed: int,
