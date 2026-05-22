@@ -176,16 +176,18 @@ So:
 
 ## Control Sim Integration
 
-`control_sims` should consume `SimInstance` directly or through a thin adapter:
+`backends/generator.py` owns the Python `SimGenerator` boundary. Concrete
+generators under `control_sims/beihang_paper_sim/sim/generator/` keep their
+scenario configs in code, implement `sample(seed=...) -> SimInstance`, and may
+override `run()` for deterministic control-sim execution.
 
 ```python
-instance = generator.sample(seed)
-experiment_config = to_beihang_experiment_config(instance, sim_config)
-diagram, logger = build_diagram_from_config(experiment_config)
+instance = generator.sample(seed=seed)
+diagram, logger = build_diagram_from_config(instance.raw_config)
 ```
 
-This lets the current Beihang code continue using `ExperimentConfig` while the
-scenario generation logic moves out of `shared/intercept_sim/.../red_balloon.py`.
+`ExperimentConfig` is removed. The Drake builder consumes plain resolved config
+dicts, and the red-balloon geometry is now local to the generator package.
 
 ## RL / Puffer Integration: Option B
 
@@ -304,7 +306,8 @@ problem, move to variable-length records later.
    - `DroneVehicleParams -> Params`
    - `DroneInitialState -> State`
    - `TargetConfig -> TargetSim`
-4. Add `SimGenerator` and red-balloon distribution adapter.
+4. Add `SimGenerator` and red-balloon distribution adapter. DONE for
+   `control_sims/beihang_paper_sim`.
 5. Add binary writer/reader tests for `intercept_scenarios.bin`.
 6. Move RL env sources under `rl/env/intercept`.
 7. Update RL env to embed `SimEngine` and load/sample scenario records.

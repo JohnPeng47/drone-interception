@@ -44,11 +44,11 @@ from pydrake.systems.framework import Diagram, DiagramBuilder
 
 from .actuator.actuator_diagram import add_actuator
 from .config import (
-    ExperimentConfig,
     camera_from_config,
     initial_rotorpy_state,
     perception_from_config,
     target_from_config,
+    validate_experiment_config,
 )
 from .controller.controller_diagram import add_controller
 from .drake_compat import resolve_quad_params
@@ -109,11 +109,12 @@ def _apply_initial_pitch_offset(raw: dict) -> None:
 
 
 def build_diagram_from_config(
-    config: ExperimentConfig,
+    raw_config: dict,
     controller_gains: dict | None = None,
     noise_config: NoiseConfig | None = None,
 ) -> tuple[Diagram, RunnerStepLogger]:
-    raw = config.raw
+    validate_experiment_config(raw_config)
+    raw = raw_config
     # Pre-pitch the drone before initial_rotorpy_state reads the quat —
     # see INITIAL_PITCH_OFFSET_DEG docstring above for why this matters.
     _apply_initial_pitch_offset(raw)
@@ -153,7 +154,7 @@ def build_diagram_from_config(
         vehicle=vehicle, initial_state=initial_state, dt=inner_dt,
         target=target, camera_rig=camera_rig,
         backend=backend, quad_params=quad_params,
-        intercept_radius_m=config.catch_radius_m,
+        intercept_radius_m=float(raw["metrics"]["catch_radius_m"]),
     )
     sensing = add_sensing(
         builder,
