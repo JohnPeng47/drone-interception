@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from pathlib import Path
 from typing import Any
 
 from backends.csim.bindings.types import SimInstance, TargetInitialState
@@ -103,3 +104,55 @@ class SimGenerator(ABC):
 
     def run(self) -> Any:
         raise NotImplementedError(f"{type(self).__name__} does not implement run()")
+
+
+class PregeneratedSimGenerator(SimGenerator):
+    """SimGenerator backed by already-resolved SimInstance records."""
+
+    def __init__(self, instances: list[SimInstance] | tuple[SimInstance, ...]):
+        self.instances = tuple(instances)
+        self._by_seed: dict[int, SimInstance] = {}
+        for instance in self.instances:
+            if instance.seed in self._by_seed:
+                raise ValueError(f"Duplicate SimInstance seed {instance.seed}")
+            self._by_seed[instance.seed] = instance
+
+    @classmethod
+    def from_disk(cls, path: str | Path) -> "PregeneratedSimGenerator":
+        return cls(cls.sample_many_from_disk(path))
+
+    @staticmethod
+    def sample_many_from_disk(
+        path: str | Path,
+        *,
+        count: int | None = None,
+        offset: int = 0,
+    ) -> list[SimInstance]:
+        from .instance_store import read_sim_instances
+
+        instances = read_sim_instances(path)
+        offset = int(offset)
+        if offset < 0:
+            raise ValueError("offset must be non-negative")
+        if count is None:
+            return instances[offset:]
+        count = int(count)
+        if count < 0:
+            raise ValueError("count must be non-negative")
+        return instances[offset:offset + count]
+
+    def sample(self, *, seed: int, **kwargs: Any) -> SimInstance:
+        if kwargs:
+            raise TypeError(f"{type(self).__name__}.sample does not accept kwargs")
+        try:
+            return self._by_seed[int(seed)]
+        except KeyError as exc:
+            raise KeyError(f"No pregenerated SimInstance for seed {seed}") from exc
+
+    def sample_many(self, *, count: int, seed_start: int = 1, **kwargs: Any) -> list[SimInstance]:
+        if kwargs:
+            raise TypeError(f"{type(self).__name__}.sample_many does not accept kwargs")
+        return [self.sample(seed=seed) for seed in range(int(seed_start), int(seed_start) + int(count))]
+
+    def _sample_once(self, *, seed: int, **kwargs: Any) -> SimInstance:
+        return self.sample(seed=seed, **kwargs)

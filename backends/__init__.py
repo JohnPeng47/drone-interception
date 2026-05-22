@@ -2,7 +2,6 @@ from .csim.bindings import PufferDroneBackend, PufferSimEngineBackend
 from .csim.bindings.types import (
     CameraConfig,
     CameraIntrinsics,
-    InitialState,
     PursuerInitialState,
     PursuerParams,
     SimConfig,
@@ -13,17 +12,16 @@ from .csim.bindings.types import (
     TargetControllerConfig,
     TargetInitialState,
     TargetState,
-    VehicleParams,
 )
-from .csim.generator import SimGenerator
+from .csim.generator import PregeneratedSimGenerator, SimGenerator, read_sim_instances, write_sim_instances
 from .rotorpy import RotorPyDroneBackend, RotorPyMultirotorPlant
 
 __all__ = [
     "CameraConfig",
     "CameraIntrinsics",
-    "InitialState",
     "PufferDroneBackend",
     "PufferSimEngineBackend",
+    "PregeneratedSimGenerator",
     "PursuerInitialState",
     "PursuerParams",
     "RotorPyDroneBackend",
@@ -37,5 +35,6 @@ __all__ = [
     "TargetControllerConfig",
     "TargetInitialState",
     "TargetState",
-    "VehicleParams",
+    "read_sim_instances",
+    "write_sim_instances",
 ]

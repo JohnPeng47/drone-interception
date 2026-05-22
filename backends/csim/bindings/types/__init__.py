@@ -3,13 +3,11 @@ from .sim_engine import SimConfig, SimInstance, SimOptions
 from .sim_types import (
     DEFAULT_MAX_OMEGA_RPS,
     DEFAULT_MAX_VEL_MPS,
-    InitialState,
     PUFFER_ACTION_DT,
     PUFFER_ACTION_SUBSTEPS,
     PUFFER_DT,
     PursuerInitialState,
     PursuerParams,
-    VehicleParams,
 )
 from .target_sim import (
     TargetBehaviorConfig,
@@ -24,7 +22,6 @@ __all__ = [
     "CameraIntrinsics",
     "DEFAULT_MAX_OMEGA_RPS",
     "DEFAULT_MAX_VEL_MPS",
-    "InitialState",
     "PUFFER_ACTION_DT",
     "PUFFER_ACTION_SUBSTEPS",
     "PUFFER_DT",
@@ -38,5 +35,4 @@ __all__ = [
     "TargetControllerConfig",
     "TargetInitialState",
     "TargetState",
-    "VehicleParams",
 ]

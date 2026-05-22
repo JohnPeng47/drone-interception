@@ -12,13 +12,12 @@ import numpy as np
 from .types import (
     DEFAULT_MAX_OMEGA_RPS,
     DEFAULT_MAX_VEL_MPS,
-    InitialState,
+    PursuerInitialState,
     PursuerParams,
     SimConfig,
     SimInstance,
     SimOptions,
     TargetConfig,
-    VehicleParams,
 )
 
 
@@ -196,12 +195,12 @@ class _CSimEngine(C.Structure):
 _LIB: C.CDLL | None = None
 
 
-def vehicle_params_from_quad_params(quad_params: dict[str, Any]) -> VehicleParams:
+def vehicle_params_from_quad_params(quad_params: dict[str, Any]) -> PursuerParams:
     rotor_pos = quad_params.get("rotor_pos", {})
     arm_len = _infer_x_arm_len(rotor_pos)
     rotor_positions = _rotor_positions_array(rotor_pos)
     rotor_directions = np.asarray(quad_params.get("rotor_directions", np.ones(4)), dtype=float).reshape(4)
-    return VehicleParams(
+    return PursuerParams(
         mass_kg=float(quad_params["mass"]),
         ixx=float(quad_params["Ixx"]),
         iyy=float(quad_params["Iyy"]),
@@ -228,8 +227,8 @@ def vehicle_params_from_quad_params(quad_params: dict[str, Any]) -> VehicleParam
     )
 
 
-def initial_state_from_rotorpy(state: dict[str, np.ndarray]) -> InitialState:
-    return InitialState(
+def initial_state_from_rotorpy(state: dict[str, np.ndarray]) -> PursuerInitialState:
+    return PursuerInitialState(
         position_w=np.asarray(state["x"], dtype=float).copy(),
         velocity_w=np.asarray(state.get("v", np.zeros(3)), dtype=float).copy(),
         quat_xyzw=np.asarray(state.get("q", np.array([0.0, 0.0, 0.0, 1.0])), dtype=float).copy(),
@@ -249,7 +248,7 @@ class PufferDroneBackend:
         self._lib = _load_lib()
         self._sim = _CPursuerSim()
 
-    def reset(self, initial_state: InitialState | dict[str, np.ndarray]) -> dict[str, np.ndarray]:
+    def reset(self, initial_state: PursuerInitialState | dict[str, np.ndarray]) -> dict[str, np.ndarray]:
         if isinstance(initial_state, dict):
             initial_state = initial_state_from_rotorpy(initial_state)
         rotor_speeds = initial_state.rotor_speeds
@@ -422,7 +421,7 @@ class PufferSimEngineBackend(PufferDroneBackend):
 
     def reset(
         self,
-        initial_state: InitialState | SimInstance | dict[str, np.ndarray],
+        initial_state: PursuerInitialState | SimInstance | dict[str, np.ndarray],
         targets: list[Any] | tuple[Any, ...] = (),
         cameras: list[Any] | tuple[Any, ...] = (),
         intercept_radius_m: float | None = None,

@@ -9,7 +9,6 @@ from .puffer_c import (
 from .types import (
     CameraConfig,
     CameraIntrinsics,
-    InitialState,
     PursuerInitialState,
     PursuerParams,
     SimConfig,
@@ -20,13 +19,11 @@ from .types import (
     TargetControllerConfig,
     TargetInitialState,
     TargetState,
-    VehicleParams,
 )
 
 __all__ = [
     "CameraConfig",
     "CameraIntrinsics",
-    "InitialState",
     "PufferDroneBackend",
     "PufferSimEngineBackend",
     "PursuerInitialState",
@@ -39,7 +36,6 @@ __all__ = [
     "TargetControllerConfig",
     "TargetInitialState",
     "TargetState",
-    "VehicleParams",
     "initial_state_from_rotorpy",
     "vehicle_params_from_quad_params",
 ]

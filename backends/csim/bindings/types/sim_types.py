@@ -42,7 +42,3 @@ class PursuerInitialState:
     body_rates_b: np.ndarray
     rotor_speeds: np.ndarray | None = None
     wind_w: np.ndarray | None = None
-
-
-VehicleParams = PursuerParams
-InitialState = PursuerInitialState

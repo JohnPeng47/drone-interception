@@ -276,30 +276,28 @@ sim_engine_get_target_state(&agent->engine, 0);
 
 ## Binary Scenario Format
 
-Use an explicit versioned header so C can reject stale files:
+Python now has a versioned `SimInstance` table format in
+`backends/csim/generator/instance_store.py`. It stores a binary header followed
+by packed binary `SimInstance` records:
 
 ```c
 typedef struct {
-    uint32_t magic;
+    char magic[8];        // "CSIMINST"
     uint32_t version;
     uint32_t num_records;
-    uint32_t max_targets;
-} ScenarioTableHeader;
+    uint64_t payload_bytes;
+} SimInstanceTableHeader;
 ```
 
-Then fixed-size records for the first implementation:
+Records store the resolved simulation fields only: seed, `PursuerInitialState`,
+targets, cameras, and optional `SimConfig`. Numeric values are written as
+little-endian `float32`/integer fields, and IDs/kinds are length-prefixed UTF-8
+strings. Arbitrary `raw_config` and `metadata` are intentionally not stored in
+this compact table.
 
-```c
-typedef struct {
-    uint32_t seed;
-    State pursuer_initial;      // C quaternion is wxyz
-    int num_targets;
-    TargetSim targets[SIM_MAX_TARGETS];
-} ScenarioRecord;
-```
-
-This intentionally matches the current C interfaces. If table size becomes a
-problem, move to variable-length records later.
+Use `write_sim_instances(path, instances)` to write tables and
+`read_sim_instances(path)` or `PregeneratedSimGenerator.sample_many_from_disk`
+to load them.
 
 ## Implementation Steps
 
@@ -312,7 +310,8 @@ problem, move to variable-length records later.
    - `TargetConfig -> TargetSim`
 4. Add `SimGenerator` and red-balloon distribution adapter. DONE for
    `control_sims/beihang_paper_sim`.
-5. Add binary writer/reader tests for `intercept_scenarios.bin`.
+5. Add binary writer/reader tests for `intercept_scenarios.bin`. DONE for the
+   Python `SimInstance` table.
 6. Move RL env sources under `rl/env/intercept`.
 7. Update RL env to embed `SimEngine` and load/sample scenario records.
 8. Add `rl/scripts/prepare_puffer_env.sh` to copy `rl/env/intercept` and
