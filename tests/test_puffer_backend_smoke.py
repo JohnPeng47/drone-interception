@@ -2,11 +2,11 @@ from __future__ import annotations
 
 import numpy as np
 
-from backends import InitialState, PufferDroneBackend, PufferSimEngineBackend, VehicleParams
+from backends import PursuerInitialState, PursuerParams, PufferDroneBackend, PufferSimEngineBackend
 
 
 def test_backend_hover_smoke():
-    params = VehicleParams(
+    params = PursuerParams(
         mass_kg=0.027,
         ixx=3.85e-6,
         iyy=3.85e-6,
@@ -18,7 +18,7 @@ def test_backend_hover_smoke():
     )
     backend = PufferDroneBackend(params)
     state = backend.reset(
-        InitialState(
+        PursuerInitialState(
             position_w=np.zeros(3),
             velocity_w=np.zeros(3),
             quat_xyzw=np.array([0.0, 0.0, 0.0, 1.0]),
@@ -39,7 +39,7 @@ def test_backend_hover_smoke():
 
 
 def test_motor_speed_and_state_clamps_are_enforced():
-    params = VehicleParams(
+    params = PursuerParams(
         mass_kg=0.027,
         ixx=3.85e-6,
         iyy=3.85e-6,
@@ -54,7 +54,7 @@ def test_motor_speed_and_state_clamps_are_enforced():
     )
     backend = PufferDroneBackend(params)
     state = backend.reset(
-        InitialState(
+        PursuerInitialState(
             position_w=np.zeros(3),
             velocity_w=np.array([10.0, -10.0, 10.0]),
             quat_xyzw=np.array([0.0, 0.0, 0.0, 1.0]),
@@ -71,7 +71,7 @@ def test_motor_speed_and_state_clamps_are_enforced():
 
 
 def test_sim_engine_tracks_intercept_metrics():
-    params = VehicleParams(
+    params = PursuerParams(
         mass_kg=0.027,
         ixx=3.85e-6,
         iyy=3.85e-6,
@@ -83,7 +83,7 @@ def test_sim_engine_tracks_intercept_metrics():
     )
     backend = PufferSimEngineBackend(params)
     snapshot = backend.reset(
-        InitialState(
+        PursuerInitialState(
             position_w=np.zeros(3),
             velocity_w=np.zeros(3),
             quat_xyzw=np.array([0.0, 0.0, 0.0, 1.0]),
@@ -107,7 +107,7 @@ def test_sim_engine_tracks_intercept_metrics():
 
 
 def test_sim_engine_emits_camera_outputs():
-    params = VehicleParams(
+    params = PursuerParams(
         mass_kg=0.027,
         ixx=3.85e-6,
         iyy=3.85e-6,
@@ -119,7 +119,7 @@ def test_sim_engine_emits_camera_outputs():
     )
     backend = PufferSimEngineBackend(params)
     snapshot = backend.reset(
-        InitialState(
+        PursuerInitialState(
             position_w=np.zeros(3),
             velocity_w=np.zeros(3),
             quat_xyzw=np.array([0.0, 0.0, 0.0, 1.0]),

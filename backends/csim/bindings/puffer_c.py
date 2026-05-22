@@ -9,11 +9,15 @@ from typing import Any
 
 import numpy as np
 
-from ...input import (
+from .types import (
     DEFAULT_MAX_OMEGA_RPS,
     DEFAULT_MAX_VEL_MPS,
     InitialState,
+    PursuerParams,
+    SimConfig,
+    SimInstance,
     SimOptions,
+    TargetConfig,
     VehicleParams,
 )
 
@@ -36,7 +40,7 @@ class _CState(C.Structure):
     ]
 
 
-class _CParams(C.Structure):
+class _CPursuerParams(C.Structure):
     _fields_ = [
         ("mass", C.c_float),
         ("ixx", C.c_float),
@@ -59,7 +63,7 @@ class _CParams(C.Structure):
 
 
 class _CPursuerSim(C.Structure):
-    _fields_ = [("state", _CState), ("params", _CParams)]
+    _fields_ = [("state", _CState), ("params", _CPursuerParams)]
 
 
 SIM_MAX_TARGETS = 16
@@ -237,7 +241,7 @@ def initial_state_from_rotorpy(state: dict[str, np.ndarray]) -> InitialState:
 
 
 class PufferDroneBackend:
-    def __init__(self, params: VehicleParams, options: SimOptions | None = None):
+    def __init__(self, params: PursuerParams, options: SimOptions | None = None):
         self.params = params
         self.options = options or SimOptions()
         self.mass_kg = params.mass_kg
@@ -405,10 +409,11 @@ class PufferDroneBackend:
 class PufferSimEngineBackend(PufferDroneBackend):
     """Python adapter for the C SimEngine pursuer plus target world."""
 
-    def __init__(self, params: VehicleParams, options: SimOptions | None = None):
-        self.params = params
-        self.options = options or SimOptions()
-        self.mass_kg = params.mass_kg
+    def __init__(self, params: PursuerParams | SimConfig, options: SimOptions | None = None):
+        self.config = params if isinstance(params, SimConfig) else None
+        self.params = params.pursuer if isinstance(params, SimConfig) else params
+        self.options = options or (params.options if isinstance(params, SimConfig) else SimOptions())
+        self.mass_kg = self.params.mass_kg
         self.dt = self.options.backend_dt * self.options.action_substeps
         self._lib = _load_lib()
         self._engine = _CSimEngine()
@@ -417,11 +422,28 @@ class PufferSimEngineBackend(PufferDroneBackend):
 
     def reset(
         self,
-        initial_state: InitialState | dict[str, np.ndarray],
-        targets: list[Any] | tuple[Any, ...],
+        initial_state: InitialState | SimInstance | dict[str, np.ndarray],
+        targets: list[Any] | tuple[Any, ...] = (),
         cameras: list[Any] | tuple[Any, ...] = (),
-        intercept_radius_m: float = 0.0,
+        intercept_radius_m: float | None = None,
     ) -> dict[str, Any]:
+        if isinstance(initial_state, SimInstance):
+            instance = initial_state
+            initial_state = instance.pursuer_initial
+            targets = instance.targets
+            cameras = instance.cameras
+            if intercept_radius_m is None:
+                intercept_radius_m = (
+                    instance.config.intercept_radius_m
+                    if instance.config is not None
+                    else (
+                        self.config.intercept_radius_m
+                        if self.config is not None
+                        else 0.0
+                    )
+                )
+        if intercept_radius_m is None:
+            intercept_radius_m = self.config.intercept_radius_m if self.config is not None else 0.0
         if isinstance(initial_state, dict):
             initial_state = initial_state_from_rotorpy(initial_state)
         rotor_speeds = initial_state.rotor_speeds
@@ -581,7 +603,6 @@ def _load_lib() -> C.CDLL:
     ]
     headers = [
         csim_dir / "sim_core.h",
-        csim_dir / "pursuer_sim.h",
         csim_dir / "target_sim.h",
         csim_dir / "sim_engine.h",
         csim_dir / "camera_sim.h",
@@ -606,7 +627,7 @@ def _load_lib() -> C.CDLL:
         )
 
     lib = C.CDLL(str(lib_path))
-    lib.pursuer_sim_init.argtypes = [C.POINTER(_CPursuerSim), _CParams, _CState]
+    lib.pursuer_sim_init.argtypes = [C.POINTER(_CPursuerSim), _CPursuerParams, _CState]
     lib.pursuer_sim_init.restype = None
     lib.pursuer_sim_reset.argtypes = [C.POINTER(_CPursuerSim), _CState]
     lib.pursuer_sim_reset.restype = None
@@ -618,7 +639,7 @@ def _load_lib() -> C.CDLL:
     lib.pursuer_sim_step_motor_speeds_dt.restype = None
     lib.pursuer_sim_get_state.argtypes = [C.POINTER(_CPursuerSim)]
     lib.pursuer_sim_get_state.restype = _CState
-    lib.sim_engine_init.argtypes = [C.POINTER(_CSimEngine), _CParams, _CState]
+    lib.sim_engine_init.argtypes = [C.POINTER(_CSimEngine), _CPursuerParams, _CState]
     lib.sim_engine_init.restype = None
     lib.sim_engine_reset.argtypes = [C.POINTER(_CSimEngine), _CState]
     lib.sim_engine_reset.restype = None
@@ -654,7 +675,7 @@ def _load_lib() -> C.CDLL:
     return lib
 
 
-def _params_to_c(p: VehicleParams) -> _CParams:
+def _params_to_c(p: PursuerParams) -> _CPursuerParams:
     rotor_positions = (
         np.zeros((4, 3), dtype=float)
         if p.rotor_positions_b is None
@@ -665,7 +686,7 @@ def _params_to_c(p: VehicleParams) -> _CParams:
         if p.rotor_directions is None
         else np.asarray(p.rotor_directions, dtype=float).reshape(4)
     )
-    return _CParams(
+    return _CPursuerParams(
         C.c_float(p.mass_kg),
         C.c_float(p.ixx),
         C.c_float(p.iyy),
@@ -712,20 +733,62 @@ def _state_from_c(state: _CState) -> dict[str, np.ndarray]:
 
 
 def _target_spec_from_python(target: Any, index: int = 0) -> dict[str, Any]:
+    behavior_kind = TARGET_BEHAVIOR_WAYPOINTS
+    waypoints = None
+    duration = 0.0
+    loop = 0
+    controller_kind = TARGET_CONTROLLER_LINEAR
+    kp = 0.0
+    kv = 0.0
+    max_accel = 0.0
     if isinstance(target, dict):
         pos = target.get("position_w", target.get("initial_position_w", target.get("pos")))
         vel = target.get("velocity_w", target.get("vel"))
         target_id = target.get("id", target.get("target_id", str(index)))
         kind = target.get("kind", "target")
         radius = target.get("radius_m", target.get("radius", 0.0))
+    elif isinstance(target, TargetConfig):
+        pos = target.initial.position_w
+        vel = target.initial.velocity_w
+        target_id = target.id
+        kind = target.kind
+        radius = target.radius_m
+        waypoints = target.behavior.waypoints
+        duration = target.behavior.duration_s
+        loop = int(target.behavior.loop)
+        kp = target.controller.kp
+        kv = target.controller.kv
+        max_accel = target.controller.max_accel_mps2
     else:
-        pos = getattr(target, "initial_position_w", getattr(target, "position_w", None))
-        vel = getattr(target, "velocity_w", None)
+        initial = getattr(target, "initial", None)
+        pos = (
+            getattr(initial, "position_w", None)
+            if initial is not None
+            else getattr(target, "initial_position_w", getattr(target, "position_w", None))
+        )
+        vel = (
+            getattr(initial, "velocity_w", None)
+            if initial is not None
+            else getattr(target, "velocity_w", None)
+        )
         target_id = getattr(target, "target_id", getattr(target, "id", str(index)))
         kind = getattr(target, "kind", "target")
         radius = getattr(target, "radius_m", getattr(target, "radius", 0.0))
+        behavior = getattr(target, "behavior", None)
+        controller = getattr(target, "controller", None)
+        if behavior is not None:
+            waypoints = getattr(behavior, "waypoints", None)
+            duration = getattr(behavior, "duration_s", getattr(behavior, "duration", duration))
+            loop = int(bool(getattr(behavior, "loop", loop)))
+        if controller is not None:
+            kp = getattr(controller, "kp", kp)
+            kv = getattr(controller, "kv", kv)
+            max_accel = getattr(controller, "max_accel_mps2", getattr(controller, "max_accel", max_accel))
     if pos is None or vel is None:
         raise ValueError(f"Target {index} must provide position and velocity")
+    waypoints = () if waypoints is None else tuple(waypoints)
+    if not waypoints:
+        waypoints = (np.asarray(pos, dtype=float).reshape(3).copy(),)
     return {
         "c_id": int(index),
         "id": str(target_id),
@@ -733,14 +796,14 @@ def _target_spec_from_python(target: Any, index: int = 0) -> dict[str, Any]:
         "radius_m": float(radius),
         "position_w": np.asarray(pos, dtype=float).reshape(3).copy(),
         "velocity_w": np.asarray(vel, dtype=float).reshape(3).copy(),
-        "behavior_kind": TARGET_BEHAVIOR_WAYPOINTS,
-        "waypoints": (np.asarray(pos, dtype=float).reshape(3).copy(),),
-        "duration": 0.0,
-        "loop": 0,
-        "controller_kind": TARGET_CONTROLLER_LINEAR,
-        "kp": 0.0,
-        "kv": 0.0,
-        "max_accel": 0.0,
+        "behavior_kind": behavior_kind,
+        "waypoints": tuple(np.asarray(wp, dtype=float).reshape(3).copy() for wp in waypoints),
+        "duration": float(duration),
+        "loop": int(loop),
+        "controller_kind": controller_kind,
+        "kp": float(kp),
+        "kv": float(kv),
+        "max_accel": float(max_accel),
     }
 
 

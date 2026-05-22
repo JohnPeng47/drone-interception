@@ -6,7 +6,13 @@ from typing import Any
 import numpy as np
 from scipy.spatial.transform import Rotation
 
-from backends import InitialState, SimGenerator, SimInstance, TargetInitialState
+from backends import (
+    PursuerInitialState,
+    SimGenerator,
+    SimInstance,
+    TargetConfig,
+    TargetState,
+)
 
 
 RED_BALLOON_X500_CONFIG: dict[str, Any] = {
@@ -98,7 +104,7 @@ class RedBalloonConfigGenerator(SimGenerator):
         return SimInstance(
             seed=int(seed),
             pursuer_initial=_pursuer_initial(raw["vehicle"]),
-            target_initial=_target_initial(raw["target"]),
+            targets=(_target_config(raw["target"]),),
             raw_config=raw,
             metadata={
                 "scenario": "red_balloon",
@@ -181,8 +187,8 @@ class RedBalloonConfigGenerator(SimGenerator):
         raw["perception"]["rng_seed"] = int(scenario["seed"])
 
 
-def _pursuer_initial(vehicle: dict[str, Any]) -> InitialState:
-    return InitialState(
+def _pursuer_initial(vehicle: dict[str, Any]) -> PursuerInitialState:
+    return PursuerInitialState(
         position_w=_array(vehicle["initial_position_w"], length=3),
         velocity_w=_array(vehicle.get("initial_velocity_w", [0.0, 0.0, 0.0]), length=3),
         quat_xyzw=_array(vehicle.get("initial_quat_xyzw", [0.0, 0.0, 0.0, 1.0]), length=4),
@@ -192,11 +198,15 @@ def _pursuer_initial(vehicle: dict[str, Any]) -> InitialState:
     )
 
 
-def _target_initial(target: dict[str, Any]) -> TargetInitialState:
-    return TargetInitialState(
-        position_w=_array(target["initial_position_w"], length=3),
-        velocity_w=_array(target.get("velocity_w", [0.0, 0.0, 0.0]), length=3),
+def _target_config(target: dict[str, Any]) -> TargetConfig:
+    return TargetConfig(
+        id=str(target.get("id", "target")),
+        kind=str(target.get("kind", "target")),
         radius_m=float(target["radius_m"]),
+        initial=TargetState(
+            position_w=_array(target["initial_position_w"], length=3),
+            velocity_w=_array(target.get("velocity_w", [0.0, 0.0, 0.0]), length=3),
+        ),
     )
 
 

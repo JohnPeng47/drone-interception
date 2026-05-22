@@ -6,9 +6,9 @@
 #define ACTION_SUBSTEPS 5
 #define ACTION_DT (DT * (float)ACTION_SUBSTEPS)
 
-static int has_rotor_geometry(const Params* params);
+static int has_rotor_geometry(const PursuerParams* params);
 
-static inline float rpm_min_for_centered_hover(const Params* p) {
+static inline float rpm_min_for_centered_hover(const PursuerParams* p) {
     // choose min_rpm so that action=0 -> (min+max)/2 == hover
     float hover = sqrtf((p->mass * p->gravity) / (4.0f * p->k_thrust));
     float min_rpm = 2.0f * hover - p->max_rpm;
@@ -17,7 +17,7 @@ static inline float rpm_min_for_centered_hover(const Params* p) {
     return min_rpm;
 }
 
-static void compute_derivatives(State* state, Params* params, float* actions,
+static void compute_derivatives(State* state, PursuerParams* params, float* actions,
                                 StateDerivative* derivatives) {
     float min_rpm = rpm_min_for_centered_hover(params);
 
@@ -99,7 +99,7 @@ static void compute_derivatives(State* state, Params* params, float* actions,
     }
 }
 
-static void rk4_step(State* state, Params* params, float* actions, float dt) {
+static void rk4_step(State* state, PursuerParams* params, float* actions, float dt) {
     StateDerivative k1, k2, k3, k4;
     State temp_state;
 
@@ -141,7 +141,7 @@ static void rk4_step(State* state, Params* params, float* actions, float dt) {
     quat_normalize(&state->quat);
 }
 
-static int has_rotor_geometry(const Params* params) {
+static int has_rotor_geometry(const PursuerParams* params) {
     for (int i = 0; i < 4; i++) {
         if (fabsf(params->rotor_pos_x[i]) > 1e-9f || fabsf(params->rotor_pos_y[i]) > 1e-9f) {
             return 1;
@@ -150,7 +150,7 @@ static int has_rotor_geometry(const Params* params) {
     return 0;
 }
 
-static void compute_derivatives_cmd_rpms(State* state, Params* params, float* cmd_rpms,
+static void compute_derivatives_cmd_rpms(State* state, PursuerParams* params, float* cmd_rpms,
                                          StateDerivative* derivatives) {
     float rpm_dot[4];
     for (int i = 0; i < 4; i++) {
@@ -224,7 +224,7 @@ static void compute_derivatives_cmd_rpms(State* state, Params* params, float* cm
     }
 }
 
-static void rk4_step_cmd_rpms(State* state, Params* params, float* cmd_rpms, float dt) {
+static void rk4_step_cmd_rpms(State* state, PursuerParams* params, float* cmd_rpms, float dt) {
     StateDerivative k1, k2, k3, k4;
     State temp_state;
 
@@ -266,7 +266,7 @@ static void rk4_step_cmd_rpms(State* state, Params* params, float* cmd_rpms, flo
     quat_normalize(&state->quat);
 }
 
-void pursuer_sim_init(PursuerSim* sim, Params params, State initial) {
+void pursuer_sim_init(PursuerSim* sim, PursuerParams params, State initial) {
     sim->params = params;
     sim->state = initial;
     quat_normalize(&sim->state.quat);

@@ -1,28 +1,9 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from dataclasses import dataclass, field
 from typing import Any
 
-import numpy as np
-
-from backends.input import InitialState
-
-
-@dataclass(frozen=True)
-class TargetInitialState:
-    position_w: np.ndarray
-    velocity_w: np.ndarray
-    radius_m: float
-
-
-@dataclass(frozen=True)
-class SimInstance:
-    seed: int
-    pursuer_initial: InitialState
-    target_initial: TargetInitialState
-    raw_config: dict[str, Any]
-    metadata: dict[str, Any] = field(default_factory=dict)
+from backends.csim.bindings.types import SimInstance, TargetInitialState
 
 
 class SimGenerator(ABC):
@@ -55,7 +36,9 @@ class SimGenerator(ABC):
                 instance = SimInstance(
                     seed=instance.seed,
                     pursuer_initial=instance.pursuer_initial,
-                    target_initial=instance.target_initial,
+                    targets=instance.targets,
+                    cameras=instance.cameras,
+                    config=instance.config,
                     raw_config=instance.raw_config,
                     metadata=metadata,
                 )
@@ -90,7 +73,9 @@ class SimGenerator(ABC):
                 instance = SimInstance(
                     seed=instance.seed,
                     pursuer_initial=instance.pursuer_initial,
-                    target_initial=instance.target_initial,
+                    targets=instance.targets,
+                    cameras=instance.cameras,
+                    config=instance.config,
                     raw_config=instance.raw_config,
                     metadata=metadata,
                 )

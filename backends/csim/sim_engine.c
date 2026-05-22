@@ -46,7 +46,7 @@ static void sim_engine_update_metrics(SimEngine* engine) {
     }
 }
 
-void sim_engine_init(SimEngine* engine, Params params, State pursuer_initial) {
+void sim_engine_init(SimEngine* engine, PursuerParams params, State pursuer_initial) {
     pursuer_sim_init(&engine->pursuer, params, pursuer_initial);
     engine->num_targets = 0;
     engine->num_cameras = 0;

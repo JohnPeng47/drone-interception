@@ -2,8 +2,8 @@
 
 #pragma once
 
-#include "pursuer_sim.h"
 #include "camera_sim.h"
+#include "sim_types.h"
 #include "target_sim.h"
 
 #define SIM_MAX_TARGETS 16
@@ -29,7 +29,7 @@ typedef struct {
     InterceptMetrics metrics;
 } SimEngine;
 
-void sim_engine_init(SimEngine* engine, Params params, State pursuer_initial);
+void sim_engine_init(SimEngine* engine, PursuerParams params, State pursuer_initial);
 void sim_engine_reset(SimEngine* engine, State pursuer_initial);
 void sim_engine_set_intercept_radius(SimEngine* engine, float intercept_radius_m);
 void sim_engine_clear_targets(SimEngine* engine);

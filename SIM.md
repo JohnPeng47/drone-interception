@@ -8,13 +8,13 @@ This note tracks the plan for consolidating scenario generation across
 
 `backends/csim` now has three layers:
 
-- `pursuer_sim.h` / `pursuer_sim.c`: low-level quadrotor physics via `PursuerSim`.
+- `sim_types.h` / `pursuer_sim.c`: low-level quadrotor physics via `PursuerSim`.
 - `target_sim.h` / `target_sim.c`: target actor state, behavior, and controller.
 - `sim_engine.h` / `sim_engine.c`: multi-actor orchestration via `SimEngine`.
 
 The intended ownership boundary is:
 
-- `PursuerSim` owns only the pursuer vehicle state and `Params`.
+- `PursuerSim` owns only the pursuer vehicle state and `PursuerParams`.
 - `TargetSim` owns target state, radius, behavior config, and controller config.
 - `SimEngine` owns one pursuer plus zero or more targets and advances both.
 - RL owns rewards, observations, resets, episode bookkeeping, and PufferLib glue.
@@ -25,16 +25,17 @@ The intended ownership boundary is:
 Move the public Python sim data models into:
 
 ```text
-backends/csim/bindings/input.py
+backends/csim/bindings/types/
 ```
 
-Then remove the older top-level `backends/input.py` once call sites are updated.
+`backends/input.py` remains a compatibility re-export until all older call sites
+have moved to the canonical names.
 
 Use explicit names:
 
 ```python
 @dataclass(frozen=True)
-class DroneVehicleParams:
+class PursuerParams:
     mass_kg: float
     ixx: float
     iyy: float
@@ -56,7 +57,7 @@ class DroneVehicleParams:
 
 
 @dataclass(frozen=True)
-class DroneInitialState:
+class PursuerInitialState:
     position_w: np.ndarray
     velocity_w: np.ndarray
     quat_xyzw: np.ndarray
@@ -66,7 +67,7 @@ class DroneInitialState:
 
 
 @dataclass(frozen=True)
-class SimRuntimeOptions:
+class SimOptions:
     backend_dt: float = PUFFER_DT
     action_substeps: int = PUFFER_ACTION_SUBSTEPS
     command_mode: str = "ctbr"
@@ -76,9 +77,9 @@ class SimRuntimeOptions:
 
 Keep the roles separate:
 
-- `DroneVehicleParams`: physical vehicle model.
-- `DroneInitialState`: per-scenario pursuer initial state.
-- `SimRuntimeOptions`: stepping/action-mode settings.
+- `PursuerParams`: physical pursuer model.
+- `PursuerInitialState`: per-scenario pursuer initial state.
+- `SimOptions`: stepping/action-mode settings.
 
 Do not put vehicle params inside the initial state. They vary on a different
 axis. If we later need per-episode vehicle randomization, add an optional
@@ -154,8 +155,11 @@ builder is constant velocity with no controller.
 @dataclass(frozen=True)
 class SimInstance:
     seed: int
-    pursuer_initial: DroneInitialState
+    pursuer_initial: PursuerInitialState
     targets: tuple[TargetConfig, ...]
+    cameras: tuple[CameraConfig, ...] = ()
+    config: SimConfig | None = None
+    raw_config: dict[str, object] = field(default_factory=dict)
     metadata: dict[str, object]
 ```
 
@@ -164,15 +168,15 @@ class SimInstance:
 ```python
 @dataclass(frozen=True)
 class SimConfig:
-    vehicle: DroneVehicleParams
-    runtime: SimRuntimeOptions
-    scenario_distribution: ScenarioDistributionConfig
+    pursuer: PursuerParams
+    options: SimOptions = field(default_factory=SimOptions)
+    intercept_radius_m: float = 0.0
 ```
 
 So:
 
-- `SimConfig` owns vehicle params, runtime options, and sampling distribution.
-- `SimInstance` owns initial state and target configs for one episode/scenario.
+- `SimConfig` owns run-level pursuer params, runtime options, and intercept settings.
+- `SimInstance` owns initial state, target configs, and camera configs for one episode/scenario.
 
 ## Control Sim Integration
 
@@ -203,15 +207,15 @@ rl/generated/intercept_manifest.json
 
 `intercept.ini` contains run-level/static fields:
 
-- vehicle params (`DroneVehicleParams`)
-- runtime options (`SimRuntimeOptions`)
+- vehicle params (`PursuerParams`)
+- runtime options (`SimOptions`)
 - reward params
 - scenario table path
 - scenario table count/version/checksum
 
 `intercept_scenarios.bin` contains many fixed `SimInstance` records:
 
-- `DroneInitialState` mapped to C `State`
+- `PursuerInitialState` mapped to C `State`
 - one or more `TargetConfig` records mapped to C `TargetSim` init data
 - seed/metadata id where useful
 
@@ -224,7 +228,7 @@ The RL env should eventually store:
 
 ```c
 typedef struct {
-    Params vehicle_params;
+    PursuerParams vehicle_params;
     float backend_dt;
     int action_substeps;
     int command_mode;
@@ -299,12 +303,12 @@ problem, move to variable-length records later.
 
 ## Implementation Steps
 
-1. Fill `backends/csim/bindings/input.py` with the renamed Python dataclasses.
+1. Fill `backends/csim/bindings/types/` with the renamed Python dataclasses.
 2. Update `backends/csim/bindings/puffer_c.py` and call sites to use the new
    names, keeping compatibility aliases temporarily if needed.
 3. Add Python conversion helpers:
-   - `DroneVehicleParams -> Params`
-   - `DroneInitialState -> State`
+   - `PursuerParams -> PursuerParams`
+   - `PursuerInitialState -> State`
    - `TargetConfig -> TargetSim`
 4. Add `SimGenerator` and red-balloon distribution adapter. DONE for
    `control_sims/beihang_paper_sim`.
@@ -324,7 +328,7 @@ problem, move to variable-length records later.
 - Should straight-line targets be represented as free constant velocity or as a
   waypoint reference with linear controller?
 > Waypoint reference with v > 0 and max_accel = 0
-- Should `rpm_min` be added to C `Params`, or continue deriving it from hover
+- Should `rpm_min` be added to C `PursuerParams`, or continue deriving it from hover
   RPM for normalized motor actions?
 > derived
 - Should `k_w` remain Python-only until CTBR actions are supported in RL?
