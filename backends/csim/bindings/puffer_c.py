@@ -1,4 +1,4 @@
-"""ctypes binding for the shared Puffer C drone simulation core."""
+"""ctypes binding for the shared Puffer C simulation core."""
 
 from __future__ import annotations
 
@@ -58,8 +58,76 @@ class _CParams(C.Structure):
     ]
 
 
-class _CDroneSim(C.Structure):
+class _CPursuerSim(C.Structure):
     _fields_ = [("state", _CState), ("params", _CParams)]
+
+
+SIM_MAX_TARGETS = 16
+SIM_MAX_WAYPOINTS = 64
+TARGET_CONTROLLER_LINEAR = 0
+TARGET_BEHAVIOR_WAYPOINTS = 0
+
+
+class _CTargetState(C.Structure):
+    _fields_ = [("pos", _CVec3), ("vel", _CVec3)]
+
+
+class _CTargetReference(C.Structure):
+    _fields_ = [("pos", _CVec3), ("vel", _CVec3)]
+
+
+class _CTargetCommand(C.Structure):
+    _fields_ = [("accel", _CVec3)]
+
+
+class _CTargetControllerConfig(C.Structure):
+    _fields_ = [
+        ("kind", C.c_int),
+        ("kp", C.c_float),
+        ("kv", C.c_float),
+        ("max_accel", C.c_float),
+    ]
+
+
+class _CTargetBehaviorConfig(C.Structure):
+    _fields_ = [
+        ("kind", C.c_int),
+        ("num_waypoints", C.c_int),
+        ("waypoints", _CVec3 * SIM_MAX_WAYPOINTS),
+        ("duration", C.c_float),
+        ("loop", C.c_int),
+    ]
+
+
+class _CTargetSim(C.Structure):
+    _fields_ = [
+        ("id", C.c_int),
+        ("radius", C.c_float),
+        ("state", _CTargetState),
+        ("behavior", _CTargetBehaviorConfig),
+        ("controller", _CTargetControllerConfig),
+    ]
+
+
+class _CInterceptMetrics(C.Structure):
+    _fields_ = [
+        ("distance_m", C.c_float),
+        ("min_distance_m", C.c_float),
+        ("intercepted", C.c_int),
+        ("intercept_time_s", C.c_float),
+        ("target_index", C.c_int),
+    ]
+
+
+class _CSimEngine(C.Structure):
+    _fields_ = [
+        ("pursuer", _CPursuerSim),
+        ("targets", _CTargetSim * SIM_MAX_TARGETS),
+        ("num_targets", C.c_int),
+        ("t", C.c_float),
+        ("intercept_radius_m", C.c_float),
+        ("metrics", _CInterceptMetrics),
+    ]
 
 
 _LIB: C.CDLL | None = None
@@ -116,7 +184,7 @@ class PufferDroneBackend:
         self.mass_kg = params.mass_kg
         self.dt = self.options.backend_dt * self.options.action_substeps
         self._lib = _load_lib()
-        self._sim = _CDroneSim()
+        self._sim = _CPursuerSim()
 
     def reset(self, initial_state: InitialState | dict[str, np.ndarray]) -> dict[str, np.ndarray]:
         if isinstance(initial_state, dict):
@@ -131,7 +199,7 @@ class PufferDroneBackend:
             "w": np.asarray(initial_state.body_rates_b, dtype=float),
             "rotor_speeds": np.asarray(rotor_speeds, dtype=float),
         })
-        self._lib.drone_sim_init(C.byref(self._sim), _params_to_c(self.params), c_state)
+        self._lib.pursuer_sim_init(C.byref(self._sim), _params_to_c(self.params), c_state)
         out = _state_from_c(self._sim.state)
         out["wind"] = (
             np.zeros(3, dtype=float)
@@ -148,9 +216,9 @@ class PufferDroneBackend:
     ) -> dict[str, np.ndarray]:
         dt = self.dt if dt is None else float(dt)
         wind = np.asarray(state.get("wind", np.zeros(3)), dtype=float).copy()
-        self._lib.drone_sim_reset(C.byref(self._sim), _state_to_c(state))
+        self._lib.pursuer_sim_reset(C.byref(self._sim), _state_to_c(state))
         action_arr = (C.c_float * 4)(*np.clip(np.asarray(motor_action, dtype=float), -1.0, 1.0).reshape(4))
-        self._lib.drone_sim_step_motor_dt(
+        self._lib.pursuer_sim_step_motor_dt(
             C.byref(self._sim),
             action_arr,
             C.c_float(dt),
@@ -168,10 +236,10 @@ class PufferDroneBackend:
     ) -> dict[str, np.ndarray]:
         dt = self.dt if dt is None else float(dt)
         wind = np.asarray(state.get("wind", np.zeros(3)), dtype=float).copy()
-        self._lib.drone_sim_reset(C.byref(self._sim), _state_to_c(state))
+        self._lib.pursuer_sim_reset(C.byref(self._sim), _state_to_c(state))
         speeds = np.clip(np.asarray(cmd_motor_speeds, dtype=float).reshape(4), self._min_rpm(), self.params.max_rpm)
         speed_arr = (C.c_float * 4)(*speeds.astype(np.float32))
-        self._lib.drone_sim_step_motor_speeds_dt(
+        self._lib.pursuer_sim_step_motor_speeds_dt(
             C.byref(self._sim),
             speed_arr,
             C.c_float(dt),
@@ -269,10 +337,132 @@ class PufferDroneBackend:
     def _min_rpm(self) -> float:
         if self.params.rpm_min is not None:
             return float(np.clip(self.params.rpm_min, 0.0, self.params.max_rpm))
-        # Match backends/csim/sim_core.c:rpm_min_for_centered_hover for the
+        # Match backends/csim/pursuer_sim.c:rpm_min_for_centered_hover for the
         # legacy normalized action path when no vehicle lower bound is known.
         min_rpm = 2.0 * self._hover_rpm() - self.params.max_rpm
         return float(np.clip(min_rpm, 0.0, self.params.max_rpm))
+
+
+class PufferSimEngineBackend(PufferDroneBackend):
+    """Python adapter for the C SimEngine pursuer plus target world."""
+
+    def __init__(self, params: VehicleParams, options: SimOptions | None = None):
+        self.params = params
+        self.options = options or SimOptions()
+        self.mass_kg = params.mass_kg
+        self.dt = self.options.backend_dt * self.options.action_substeps
+        self._lib = _load_lib()
+        self._engine = _CSimEngine()
+        self._target_specs: tuple[dict[str, Any], ...] = ()
+
+    def reset(
+        self,
+        initial_state: InitialState | dict[str, np.ndarray],
+        targets: list[Any] | tuple[Any, ...],
+        intercept_radius_m: float = 0.0,
+    ) -> dict[str, Any]:
+        if isinstance(initial_state, dict):
+            initial_state = initial_state_from_rotorpy(initial_state)
+        rotor_speeds = initial_state.rotor_speeds
+        if rotor_speeds is None:
+            rotor_speeds = np.full(4, self._hover_rpm(), dtype=float)
+
+        wind = (
+            np.zeros(3, dtype=float)
+            if initial_state.wind_w is None
+            else np.asarray(initial_state.wind_w, dtype=float).copy()
+        )
+        c_state = _state_to_c({
+            "x": np.asarray(initial_state.position_w, dtype=float),
+            "v": np.asarray(initial_state.velocity_w, dtype=float),
+            "q": _normalize(np.asarray(initial_state.quat_xyzw, dtype=float)),
+            "w": np.asarray(initial_state.body_rates_b, dtype=float),
+            "rotor_speeds": np.asarray(rotor_speeds, dtype=float),
+        })
+        self._lib.sim_engine_init(C.byref(self._engine), _params_to_c(self.params), c_state)
+        self._lib.sim_engine_set_intercept_radius(
+            C.byref(self._engine),
+            C.c_float(float(intercept_radius_m)),
+        )
+        self._target_specs = tuple(_target_spec_from_python(target, i) for i, target in enumerate(targets))
+        self._set_engine_targets(self._target_specs)
+        return self._snapshot_from_engine(wind)
+
+    def step_ctbr(
+        self,
+        snapshot: dict[str, Any],
+        command: Any,
+        dt: float | None = None,
+    ) -> dict[str, Any]:
+        if hasattr(command, "thrust_n"):
+            thrust_n = float(command.thrust_n)
+            body_rates_b = np.asarray(command.body_rates_b, dtype=float)
+        else:
+            thrust_n = float(command["thrust_n"])
+            body_rates_b = np.asarray(command["body_rates_b"], dtype=float)
+
+        dt = self.dt if dt is None else float(dt)
+        vehicle_state = _copy_numeric_state(snapshot["vehicle_state"])
+        wind = np.asarray(vehicle_state.get("wind", np.zeros(3)), dtype=float).copy()
+        self._lib.sim_engine_init(
+            C.byref(self._engine),
+            _params_to_c(self.params),
+            _state_to_c(vehicle_state),
+        )
+        self._lib.sim_engine_set_intercept_radius(
+            C.byref(self._engine),
+            C.c_float(float(snapshot.get("intercept_radius_m", 0.0))),
+        )
+        metrics = snapshot.get("metrics")
+        if metrics is not None:
+            self._engine.metrics = _metrics_to_c(metrics)
+        target_specs = _target_specs_from_snapshot(
+            snapshot.get("target_states", ()),
+            self._target_specs,
+        )
+        self._set_engine_targets(target_specs)
+
+        cmd_speeds = self.ctbr_to_motor_speeds(vehicle_state, thrust_n, body_rates_b)
+        speed_arr = (C.c_float * 4)(*cmd_speeds.astype(np.float32))
+        self._lib.sim_engine_step_motor_speeds_dt(
+            C.byref(self._engine),
+            speed_arr,
+            C.c_float(dt),
+            C.c_int(max(1, int(self.options.action_substeps))),
+        )
+        return self._snapshot_from_engine(wind)
+
+    def _set_engine_targets(self, specs: tuple[dict[str, Any], ...]) -> None:
+        c_targets = [_target_to_c(spec) for spec in specs]
+        if not c_targets:
+            self._lib.sim_engine_clear_targets(C.byref(self._engine))
+            return
+        arr_type = _CTargetSim * len(c_targets)
+        count = self._lib.sim_engine_set_targets(
+            C.byref(self._engine),
+            arr_type(*c_targets),
+            C.c_int(len(c_targets)),
+        )
+        if count != len(c_targets):
+            raise ValueError(f"SimEngine accepted {count} targets out of {len(c_targets)}")
+
+    def _snapshot_from_engine(self, wind: np.ndarray) -> dict[str, Any]:
+        vehicle = _state_from_c(self._lib.sim_engine_get_pursuer_state(C.byref(self._engine)))
+        vehicle["wind"] = np.asarray(wind, dtype=float).copy()
+        targets = []
+        count = int(self._lib.sim_engine_get_num_targets(C.byref(self._engine)))
+        for i in range(count):
+            state = self._lib.sim_engine_get_target_state(C.byref(self._engine), C.c_int(i))
+            spec = self._target_specs[i] if i < len(self._target_specs) else {}
+            targets.append(_target_snapshot_from_c(state, spec, self._engine.targets[i]))
+        return {
+            "vehicle_state": vehicle,
+            "target_states": tuple(targets),
+            "intercept_radius_m": float(self._engine.intercept_radius_m),
+            "metrics": _metrics_from_c(
+                self._lib.sim_engine_get_metrics(C.byref(self._engine))
+            ),
+        }
 
 
 def _load_lib() -> C.CDLL:
@@ -281,38 +471,73 @@ def _load_lib() -> C.CDLL:
         return _LIB
 
     csim_dir = Path(__file__).resolve().parents[1]
-    src = csim_dir / "sim_core.c"
-    header = csim_dir / "sim_core.h"
-    sim_types = csim_dir / "sim_types.h"
-    sim_math = csim_dir / "sim_math.h"
+    sources = [
+        csim_dir / "pursuer_sim.c",
+        csim_dir / "target_sim.c",
+        csim_dir / "sim_engine.c",
+    ]
+    headers = [
+        csim_dir / "sim_core.h",
+        csim_dir / "pursuer_sim.h",
+        csim_dir / "target_sim.h",
+        csim_dir / "sim_engine.h",
+        csim_dir / "sim_types.h",
+        csim_dir / "sim_math.h",
+    ]
     build_dir = Path(__file__).resolve().parent / "_build"
     build_dir.mkdir(parents=True, exist_ok=True)
     lib_path = build_dir / "libpuffer_sim_core.so"
     newest_source_mtime = max(
-        src.stat().st_mtime,
-        header.stat().st_mtime,
-        sim_types.stat().st_mtime,
-        sim_math.stat().st_mtime,
+        *(path.stat().st_mtime for path in sources),
+        *(path.stat().st_mtime for path in headers),
     )
     if (not lib_path.exists()) or lib_path.stat().st_mtime < newest_source_mtime:
         subprocess.run(
-            ["cc", "-std=gnu99", "-O3", "-fPIC", "-shared", str(src), "-lm", "-o", str(lib_path)],
+            [
+                "cc", "-std=gnu99", "-O3", "-fPIC", "-shared",
+                *(str(src) for src in sources),
+                "-lm", "-o", str(lib_path),
+            ],
             check=True,
         )
 
     lib = C.CDLL(str(lib_path))
-    lib.drone_sim_init.argtypes = [C.POINTER(_CDroneSim), _CParams, _CState]
-    lib.drone_sim_init.restype = None
-    lib.drone_sim_reset.argtypes = [C.POINTER(_CDroneSim), _CState]
-    lib.drone_sim_reset.restype = None
-    lib.drone_sim_step_motor.argtypes = [C.POINTER(_CDroneSim), C.POINTER(C.c_float)]
-    lib.drone_sim_step_motor.restype = None
-    lib.drone_sim_step_motor_dt.argtypes = [C.POINTER(_CDroneSim), C.POINTER(C.c_float), C.c_float, C.c_int]
-    lib.drone_sim_step_motor_dt.restype = None
-    lib.drone_sim_step_motor_speeds_dt.argtypes = [C.POINTER(_CDroneSim), C.POINTER(C.c_float), C.c_float, C.c_int]
-    lib.drone_sim_step_motor_speeds_dt.restype = None
-    lib.drone_sim_get_state.argtypes = [C.POINTER(_CDroneSim)]
-    lib.drone_sim_get_state.restype = _CState
+    lib.pursuer_sim_init.argtypes = [C.POINTER(_CPursuerSim), _CParams, _CState]
+    lib.pursuer_sim_init.restype = None
+    lib.pursuer_sim_reset.argtypes = [C.POINTER(_CPursuerSim), _CState]
+    lib.pursuer_sim_reset.restype = None
+    lib.pursuer_sim_step_motor.argtypes = [C.POINTER(_CPursuerSim), C.POINTER(C.c_float)]
+    lib.pursuer_sim_step_motor.restype = None
+    lib.pursuer_sim_step_motor_dt.argtypes = [C.POINTER(_CPursuerSim), C.POINTER(C.c_float), C.c_float, C.c_int]
+    lib.pursuer_sim_step_motor_dt.restype = None
+    lib.pursuer_sim_step_motor_speeds_dt.argtypes = [C.POINTER(_CPursuerSim), C.POINTER(C.c_float), C.c_float, C.c_int]
+    lib.pursuer_sim_step_motor_speeds_dt.restype = None
+    lib.pursuer_sim_get_state.argtypes = [C.POINTER(_CPursuerSim)]
+    lib.pursuer_sim_get_state.restype = _CState
+    lib.sim_engine_init.argtypes = [C.POINTER(_CSimEngine), _CParams, _CState]
+    lib.sim_engine_init.restype = None
+    lib.sim_engine_reset.argtypes = [C.POINTER(_CSimEngine), _CState]
+    lib.sim_engine_reset.restype = None
+    lib.sim_engine_set_intercept_radius.argtypes = [C.POINTER(_CSimEngine), C.c_float]
+    lib.sim_engine_set_intercept_radius.restype = None
+    lib.sim_engine_clear_targets.argtypes = [C.POINTER(_CSimEngine)]
+    lib.sim_engine_clear_targets.restype = None
+    lib.sim_engine_set_targets.argtypes = [C.POINTER(_CSimEngine), C.POINTER(_CTargetSim), C.c_int]
+    lib.sim_engine_set_targets.restype = C.c_int
+    lib.sim_engine_add_target.argtypes = [C.POINTER(_CSimEngine), _CTargetSim]
+    lib.sim_engine_add_target.restype = C.c_int
+    lib.sim_engine_step_motor_dt.argtypes = [C.POINTER(_CSimEngine), C.POINTER(C.c_float), C.c_float, C.c_int]
+    lib.sim_engine_step_motor_dt.restype = None
+    lib.sim_engine_step_motor_speeds_dt.argtypes = [C.POINTER(_CSimEngine), C.POINTER(C.c_float), C.c_float, C.c_int]
+    lib.sim_engine_step_motor_speeds_dt.restype = None
+    lib.sim_engine_get_pursuer_state.argtypes = [C.POINTER(_CSimEngine)]
+    lib.sim_engine_get_pursuer_state.restype = _CState
+    lib.sim_engine_get_num_targets.argtypes = [C.POINTER(_CSimEngine)]
+    lib.sim_engine_get_num_targets.restype = C.c_int
+    lib.sim_engine_get_target_state.argtypes = [C.POINTER(_CSimEngine), C.c_int]
+    lib.sim_engine_get_target_state.restype = _CTargetState
+    lib.sim_engine_get_metrics.argtypes = [C.POINTER(_CSimEngine)]
+    lib.sim_engine_get_metrics.restype = _CInterceptMetrics
     _LIB = lib
     return lib
 
@@ -372,6 +597,143 @@ def _state_from_c(state: _CState) -> dict[str, np.ndarray]:
         "w": np.array([state.omega.x, state.omega.y, state.omega.z], dtype=float),
         "rotor_speeds": np.array(list(state.rpms), dtype=float),
     }
+
+
+def _target_spec_from_python(target: Any, index: int = 0) -> dict[str, Any]:
+    if isinstance(target, dict):
+        pos = target.get("position_w", target.get("initial_position_w", target.get("pos")))
+        vel = target.get("velocity_w", target.get("vel"))
+        target_id = target.get("id", target.get("target_id", str(index)))
+        kind = target.get("kind", "target")
+        radius = target.get("radius_m", target.get("radius", 0.0))
+    else:
+        pos = getattr(target, "initial_position_w", getattr(target, "position_w", None))
+        vel = getattr(target, "velocity_w", None)
+        target_id = getattr(target, "target_id", getattr(target, "id", str(index)))
+        kind = getattr(target, "kind", "target")
+        radius = getattr(target, "radius_m", getattr(target, "radius", 0.0))
+    if pos is None or vel is None:
+        raise ValueError(f"Target {index} must provide position and velocity")
+    return {
+        "c_id": int(index),
+        "id": str(target_id),
+        "kind": str(kind),
+        "radius_m": float(radius),
+        "position_w": np.asarray(pos, dtype=float).reshape(3).copy(),
+        "velocity_w": np.asarray(vel, dtype=float).reshape(3).copy(),
+        "behavior_kind": TARGET_BEHAVIOR_WAYPOINTS,
+        "waypoints": (np.asarray(pos, dtype=float).reshape(3).copy(),),
+        "duration": 0.0,
+        "loop": 0,
+        "controller_kind": TARGET_CONTROLLER_LINEAR,
+        "kp": 0.0,
+        "kv": 0.0,
+        "max_accel": 0.0,
+    }
+
+
+def _target_specs_from_snapshot(
+    snapshots: tuple[dict[str, Any], ...] | list[dict[str, Any]],
+    base_specs: tuple[dict[str, Any], ...],
+) -> tuple[dict[str, Any], ...]:
+    specs: list[dict[str, Any]] = []
+    for i, snap in enumerate(snapshots):
+        base = dict(base_specs[i]) if i < len(base_specs) else {
+            "c_id": i,
+            "id": str(i),
+            "kind": "target",
+            "radius_m": 0.0,
+            "behavior_kind": TARGET_BEHAVIOR_WAYPOINTS,
+            "waypoints": (np.asarray(snap["position_w"], dtype=float).reshape(3).copy(),),
+            "duration": 0.0,
+            "loop": 0,
+            "controller_kind": TARGET_CONTROLLER_LINEAR,
+            "kp": 0.0,
+            "kv": 0.0,
+            "max_accel": 0.0,
+        }
+        base["position_w"] = np.asarray(snap["position_w"], dtype=float).reshape(3).copy()
+        base["velocity_w"] = np.asarray(snap["velocity_w"], dtype=float).reshape(3).copy()
+        specs.append(base)
+    return tuple(specs)
+
+
+def _target_to_c(spec: dict[str, Any]) -> _CTargetSim:
+    waypoints = (_CVec3 * SIM_MAX_WAYPOINTS)()
+    waypoint_values = tuple(spec.get("waypoints", (spec["position_w"],)))
+    num_waypoints = min(len(waypoint_values), SIM_MAX_WAYPOINTS)
+    for i in range(num_waypoints):
+        waypoints[i] = _vec3(waypoint_values[i])
+    state = _CTargetState(
+        _vec3(spec["position_w"]),
+        _vec3(spec["velocity_w"]),
+    )
+    behavior = _CTargetBehaviorConfig(
+        C.c_int(int(spec.get("behavior_kind", TARGET_BEHAVIOR_WAYPOINTS))),
+        C.c_int(num_waypoints),
+        waypoints,
+        C.c_float(float(spec.get("duration", 0.0))),
+        C.c_int(int(spec.get("loop", 0))),
+    )
+    controller = _CTargetControllerConfig(
+        C.c_int(int(spec.get("controller_kind", TARGET_CONTROLLER_LINEAR))),
+        C.c_float(float(spec.get("kp", 0.0))),
+        C.c_float(float(spec.get("kv", 0.0))),
+        C.c_float(float(spec.get("max_accel", 0.0))),
+    )
+    return _CTargetSim(
+        C.c_int(int(spec["c_id"])),
+        C.c_float(float(spec["radius_m"])),
+        state,
+        behavior,
+        controller,
+    )
+
+
+def _target_snapshot_from_c(
+    state: _CTargetState,
+    spec: dict[str, Any],
+    target: _CTargetSim | None = None,
+) -> dict[str, Any]:
+    return {
+        "c_id": int(spec.get("c_id", 0)),
+        "id": str(spec.get("id", spec.get("c_id", 0))),
+        "kind": str(spec.get("kind", "target")),
+        "radius_m": float(spec.get("radius_m", 0.0)),
+        "position_w": np.array([state.pos.x, state.pos.y, state.pos.z], dtype=float),
+        "velocity_w": np.array([state.vel.x, state.vel.y, state.vel.z], dtype=float),
+    }
+
+
+def _metrics_from_c(metrics: _CInterceptMetrics) -> dict[str, float | int | bool | None]:
+    intercepted = bool(metrics.intercepted)
+    return {
+        "distance_m": float(metrics.distance_m),
+        "min_distance_m": float(metrics.min_distance_m),
+        "intercepted": intercepted,
+        "intercept_time_s": float(metrics.intercept_time_s) if intercepted else None,
+        "target_index": int(metrics.target_index),
+    }
+
+
+def _metrics_to_c(metrics: dict[str, Any]) -> _CInterceptMetrics:
+    intercepted = bool(metrics.get("intercepted", False))
+    return _CInterceptMetrics(
+        C.c_float(float(metrics.get("distance_m", 0.0))),
+        C.c_float(float(metrics.get("min_distance_m", float("inf")))),
+        C.c_int(1 if intercepted else 0),
+        C.c_float(float(metrics.get("intercept_time_s", -1.0) if intercepted else -1.0)),
+        C.c_int(int(metrics.get("target_index", -1))),
+    )
+
+
+def _vec3(value: np.ndarray | list[float] | tuple[float, ...]) -> _CVec3:
+    arr = np.asarray(value, dtype=float).reshape(3)
+    return _CVec3(C.c_float(arr[0]), C.c_float(arr[1]), C.c_float(arr[2]))
+
+
+def _copy_numeric_state(state: dict[str, np.ndarray]) -> dict[str, np.ndarray]:
+    return {key: np.asarray(value, dtype=float).copy() for key, value in state.items()}
 
 
 def _infer_x_arm_len(rotor_pos: dict[str, np.ndarray]) -> float:

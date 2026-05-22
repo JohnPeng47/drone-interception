@@ -40,11 +40,11 @@ ensure_paths()
 from pydrake.systems.analysis import Simulator   # noqa: E402
 
 from intercept_sim.analysis import compute_metrics   # noqa: E402
-from intercept_sim.experiments.config import ExperimentConfig   # noqa: E402
 from intercept_sim.experiments.red_balloon import (   # noqa: E402
     build_red_balloon_config, load_red_balloon_scenario, RedBalloonScenario,
 )
 
+from control_sims.beihang_paper_sim.config import ExperimentConfig   # noqa: E402
 from control_sims.beihang_paper_sim.diagram import build_diagram_from_config   # noqa: E402
 from control_sims.beihang_paper_sim.noise_config import NoiseConfig   # noqa: E402
 

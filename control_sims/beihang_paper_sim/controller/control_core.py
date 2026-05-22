@@ -1,6 +1,6 @@
 """ControlCore — paper Eqs. (12)–(28), 2-step Lyapunov backstepping.
 
-In:  ObserverState (intercept_sim.types) — uses image_feature.uv_norm,
+In:  ObserverState — uses image_feature.uv_norm,
      relative_position_w, relative_velocity_w, vehicle_rotation_wb,
      vehicle_state['v'] (interceptor absolute velocity for drag).
 Out: CtbrCommand(t, thrust_n, body_rates_b).
@@ -28,9 +28,8 @@ from __future__ import annotations
 import numpy as np
 from pydrake.systems.framework import LeafSystem
 
-from intercept_sim.types import CameraRig, CtbrCommand
-
 from ..drake_compat import ctbr_value, hover_ctbr, observer_state_value
+from ..types import CameraRig, CtbrCommand
 
 
 DEFAULT_GAINS = {

@@ -3,7 +3,7 @@ from __future__ import annotations
 import numpy as np
 
 from backends.rotorpy import RotorPyDroneBackend
-from intercept_sim.types import CtbrCommand
+from control_sims.beihang_paper_sim.types import CtbrCommand
 
 
 class _FakeVehicle:

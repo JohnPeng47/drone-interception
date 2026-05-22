@@ -266,22 +266,22 @@ static void rk4_step_cmd_rpms(State* state, Params* params, float* cmd_rpms, flo
     quat_normalize(&state->quat);
 }
 
-void drone_sim_init(DroneSim* sim, Params params, State initial) {
+void pursuer_sim_init(PursuerSim* sim, Params params, State initial) {
     sim->params = params;
     sim->state = initial;
     quat_normalize(&sim->state.quat);
 }
 
-void drone_sim_reset(DroneSim* sim, State initial) {
+void pursuer_sim_reset(PursuerSim* sim, State initial) {
     sim->state = initial;
     quat_normalize(&sim->state.quat);
 }
 
-void drone_sim_step_motor(DroneSim* sim, float actions[4]) {
-    drone_sim_step_motor_dt(sim, actions, ACTION_DT, ACTION_SUBSTEPS);
+void pursuer_sim_step_motor(PursuerSim* sim, float actions[4]) {
+    pursuer_sim_step_motor_dt(sim, actions, ACTION_DT, ACTION_SUBSTEPS);
 }
 
-void drone_sim_step_motor_dt(DroneSim* sim, float actions[4], float dt, int substeps) {
+void pursuer_sim_step_motor_dt(PursuerSim* sim, float actions[4], float dt, int substeps) {
     clamp4(actions, -1.0f, 1.0f);
     if (substeps < 1) substeps = 1;
     float sub_dt = dt / (float)substeps;
@@ -295,7 +295,7 @@ void drone_sim_step_motor_dt(DroneSim* sim, float actions[4], float dt, int subs
     }
 }
 
-void drone_sim_step_motor_speeds_dt(DroneSim* sim, float cmd_rpms[4], float dt, int substeps) {
+void pursuer_sim_step_motor_speeds_dt(PursuerSim* sim, float cmd_rpms[4], float dt, int substeps) {
     if (substeps < 1) substeps = 1;
     float sub_dt = dt / (float)substeps;
     for (int s = 0; s < substeps; s++) {
@@ -308,6 +308,6 @@ void drone_sim_step_motor_speeds_dt(DroneSim* sim, float cmd_rpms[4], float dt, 
     }
 }
 
-State drone_sim_get_state(DroneSim* sim) {
+State pursuer_sim_get_state(PursuerSim* sim) {
     return sim->state;
 }

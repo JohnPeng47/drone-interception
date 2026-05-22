@@ -8,9 +8,8 @@ from __future__ import annotations
 
 from pydrake.systems.framework import DiagramBuilder
 
-from intercept_sim.types import CameraRig
-
 from .control_core import ControlCore
+from ..types import CameraRig
 
 
 def add_controller(

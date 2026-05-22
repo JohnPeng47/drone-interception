@@ -7,13 +7,11 @@
 #define SIM_MAX_WAYPOINTS 64
 
 typedef enum {
-    TARGET_CONTROLLER_NONE = 0,
-    TARGET_CONTROLLER_LINEAR = 1,
+    TARGET_CONTROLLER_LINEAR = 0,
 } TargetControllerKind;
 
 typedef enum {
-    TARGET_BEHAVIOR_HOLD = 0,
-    TARGET_BEHAVIOR_WAYPOINTS_LINEAR = 1,
+    TARGET_BEHAVIOR_WAYPOINTS = 0,
 } TargetBehaviorKind;
 
 typedef struct {

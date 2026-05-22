@@ -5,11 +5,11 @@ from __future__ import annotations
 from pydrake.systems.framework import DiagramBuilder
 
 from backends import RotorPyMultirotorPlant
-from intercept_sim.targets import KinematicTarget
-from intercept_sim.types import CameraRig
 
 from ..drake_compat import KinematicTargetSystem, SceneAssembler
-from .puffer_multirotor_plant import PufferMultirotorPlant
+from ..targets import KinematicTarget
+from ..types import CameraRig
+from .puffer_sim_engine_system import PufferSimEngineSystem
 
 
 def add_world(
@@ -22,22 +22,33 @@ def add_world(
     camera_rig: CameraRig,
     backend: str = "rotorpy",
     quad_params: dict | None = None,
+    intercept_radius_m: float = 0.0,
 ) -> dict:
     backend = str(backend)
     if backend == "rotorpy":
         plant = builder.AddSystem(RotorPyMultirotorPlant(vehicle, initial_state, dt))
+        target_sys = builder.AddSystem(KinematicTargetSystem(target))
+        scene = builder.AddSystem(SceneAssembler(camera_rig))
+
+        builder.Connect(plant.GetOutputPort("vehicle_state_dict"),
+                        scene.GetInputPort("vehicle_state_dict"))
+        builder.Connect(target_sys.GetOutputPort("target_state"),
+                        scene.GetInputPort("target_state"))
+
+        return {"plant": plant, "target": target_sys, "scene": scene}
     elif backend == "puffer_c":
         if quad_params is None:
             raise ValueError("quad_params is required when backend='puffer_c'")
-        plant = builder.AddSystem(PufferMultirotorPlant(quad_params, initial_state, dt))
+        world = builder.AddSystem(
+            PufferSimEngineSystem(
+                quad_params=quad_params,
+                initial_state=initial_state,
+                dt=dt,
+                target=target,
+                camera_rig=camera_rig,
+                intercept_radius_m=intercept_radius_m,
+            )
+        )
+        return {"plant": world, "target": world, "scene": world}
     else:
         raise ValueError(f"Unsupported beihang_paper_sim world backend: {backend}")
-    target_sys = builder.AddSystem(KinematicTargetSystem(target))
-    scene = builder.AddSystem(SceneAssembler(camera_rig))
-
-    builder.Connect(plant.GetOutputPort("vehicle_state_dict"),
-                    scene.GetInputPort("vehicle_state_dict"))
-    builder.Connect(target_sys.GetOutputPort("target_state"),
-                    scene.GetInputPort("target_state"))
-
-    return {"plant": plant, "target": target_sys, "scene": scene}

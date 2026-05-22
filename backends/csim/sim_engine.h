@@ -2,20 +2,31 @@
 
 #pragma once
 
-#include "drone_sim.h"
+#include "pursuer_sim.h"
 #include "target_sim.h"
 
 #define SIM_MAX_TARGETS 16
 
 typedef struct {
-    DroneSim pursuer;
+    float distance_m;
+    float min_distance_m;
+    int intercepted;
+    float intercept_time_s;
+    int target_index;
+} InterceptMetrics;
+
+typedef struct {
+    PursuerSim pursuer;
     TargetSim targets[SIM_MAX_TARGETS];
     int num_targets;
     float t;
+    float intercept_radius_m;
+    InterceptMetrics metrics;
 } SimEngine;
 
 void sim_engine_init(SimEngine* engine, Params params, State pursuer_initial);
 void sim_engine_reset(SimEngine* engine, State pursuer_initial);
+void sim_engine_set_intercept_radius(SimEngine* engine, float intercept_radius_m);
 void sim_engine_clear_targets(SimEngine* engine);
 int sim_engine_set_targets(SimEngine* engine, const TargetSim* targets, int num_targets);
 int sim_engine_add_target(SimEngine* engine, TargetSim target);
@@ -24,3 +35,4 @@ void sim_engine_step_motor_speeds_dt(SimEngine* engine, float cmd_rpms[4], float
 State sim_engine_get_pursuer_state(const SimEngine* engine);
 int sim_engine_get_num_targets(const SimEngine* engine);
 TargetState sim_engine_get_target_state(const SimEngine* engine, int target_index);
+InterceptMetrics sim_engine_get_metrics(const SimEngine* engine);

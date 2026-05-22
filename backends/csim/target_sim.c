@@ -37,8 +37,7 @@ TargetState target_sim_get_state(const TargetSim* target) {
 
 TargetReference target_sim_reference(const TargetSim* target, float t) {
     const TargetBehaviorConfig* behavior = &target->behavior;
-    if (behavior->kind != TARGET_BEHAVIOR_WAYPOINTS_LINEAR ||
-            behavior->num_waypoints <= 0) {
+    if (behavior->num_waypoints <= 0) {
         return hold_reference(target);
     }
 
@@ -77,10 +76,6 @@ TargetReference target_sim_reference(const TargetSim* target, float t) {
 
 TargetCommand target_sim_compute_command(const TargetSim* target, TargetReference ref) {
     const TargetControllerConfig* controller = &target->controller;
-    if (controller->kind != TARGET_CONTROLLER_LINEAR) {
-        return (TargetCommand){(Vec3){0.0f, 0.0f, 0.0f}};
-    }
-
     Vec3 pos_error = sub3(ref.pos, target->state.pos);
     Vec3 vel_error = sub3(ref.vel, target->state.vel);
     Vec3 accel = add3(scalmul3(pos_error, controller->kp),

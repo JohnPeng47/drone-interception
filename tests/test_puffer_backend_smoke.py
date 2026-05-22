@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from backends import InitialState, PufferDroneBackend, VehicleParams
+from backends import InitialState, PufferDroneBackend, PufferSimEngineBackend, VehicleParams
 
 
 def test_backend_hover_smoke():
@@ -68,3 +68,39 @@ def test_motor_speed_and_state_clamps_are_enforced():
     assert np.max(next_state["rotor_speeds"]) <= params.max_rpm
     assert np.max(np.abs(next_state["v"])) <= params.max_vel_mps
     assert np.max(np.abs(next_state["w"])) <= params.max_omega_rps
+
+
+def test_sim_engine_tracks_intercept_metrics():
+    params = VehicleParams(
+        mass_kg=0.027,
+        ixx=3.85e-6,
+        iyy=3.85e-6,
+        izz=5.9675e-6,
+        arm_len_m=0.0396,
+        k_thrust=3.16e-10,
+        k_yaw=0.005964552,
+        max_rpm=21702.0,
+    )
+    backend = PufferSimEngineBackend(params)
+    snapshot = backend.reset(
+        InitialState(
+            position_w=np.zeros(3),
+            velocity_w=np.zeros(3),
+            quat_xyzw=np.array([0.0, 0.0, 0.0, 1.0]),
+            body_rates_b=np.zeros(3),
+        ),
+        targets=(
+            {
+                "position_w": np.array([0.25, 0.0, 0.0]),
+                "velocity_w": np.zeros(3),
+                "radius_m": 0.2,
+            },
+        ),
+        intercept_radius_m=0.5,
+    )
+
+    assert snapshot["metrics"]["intercepted"] is True
+    assert snapshot["metrics"]["intercept_time_s"] == 0.0
+    np.testing.assert_allclose(snapshot["metrics"]["distance_m"], 0.25, atol=1e-6)
+    np.testing.assert_allclose(snapshot["metrics"]["min_distance_m"], 0.25, atol=1e-6)
+    assert snapshot["metrics"]["target_index"] == 0

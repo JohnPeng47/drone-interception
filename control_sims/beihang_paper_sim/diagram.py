@@ -42,16 +42,16 @@ import math
 import numpy as np
 from pydrake.systems.framework import Diagram, DiagramBuilder
 
-from intercept_sim.experiments.config import ExperimentConfig
-from intercept_sim.experiments.runner import (
-    _camera_from_config,
-    _initial_rotorpy_state,
-    _perception_from_config,
-    _target_from_config,
-)
 from intercept_sim.sensors import GeometryCamera
 
 from .actuator.actuator_diagram import add_actuator
+from .config import (
+    ExperimentConfig,
+    camera_from_config,
+    initial_rotorpy_state,
+    perception_from_config,
+    target_from_config,
+)
 from .controller.controller_diagram import add_controller
 from .drake_compat import RunnerStepLogger, resolve_quad_params
 from .estimation.estimation_diagram import add_estimation
@@ -113,26 +113,29 @@ def build_diagram_from_config(
     controller_gains: dict | None = None,
     noise_config: NoiseConfig | None = None,
 ) -> tuple[Diagram, RunnerStepLogger]:
-    from rotorpy.vehicles.multirotor import Multirotor
-
     raw = config.raw
-    # Pre-pitch the drone before _initial_rotorpy_state reads the quat —
+    # Pre-pitch the drone before initial_rotorpy_state reads the quat —
     # see INITIAL_PITCH_OFFSET_DEG docstring above for why this matters.
     _apply_initial_pitch_offset(raw)
     quad_params = resolve_quad_params(raw["vehicle"])
-    initial_state = _initial_rotorpy_state(raw["vehicle"], quad_params)
-    vehicle = Multirotor(
-        quad_params,
-        initial_state=initial_state,
-        control_abstraction="cmd_ctbr",
-        aero=bool(raw["vehicle"].get("aero", False)),
-        integrator_kwargs=raw["vehicle"].get(
-            "integrator_kwargs", {"method": "RK45", "rtol": 1e-6, "atol": 1e-9}
-        ),
-    )
-    target = _target_from_config(raw["target"])
-    camera_rig = _camera_from_config(raw["camera"])
-    perception = _perception_from_config(raw["perception"])
+    initial_state = initial_rotorpy_state(raw["vehicle"], quad_params)
+    backend = str(raw.get("sim", {}).get("backend", "rotorpy"))
+    vehicle = None
+    if backend == "rotorpy":
+        from rotorpy.vehicles.multirotor import Multirotor
+
+        vehicle = Multirotor(
+            quad_params,
+            initial_state=initial_state,
+            control_abstraction="cmd_ctbr",
+            aero=bool(raw["vehicle"].get("aero", False)),
+            integrator_kwargs=raw["vehicle"].get(
+                "integrator_kwargs", {"method": "RK45", "rtol": 1e-6, "atol": 1e-9}
+            ),
+        )
+    target = target_from_config(raw["target"])
+    camera_rig = camera_from_config(raw["camera"])
+    perception = perception_from_config(raw["perception"])
     perception.pixel_to_norm = np.array([
         1.0 / float(raw["camera"]["fx_px"]),
         1.0 / float(raw["camera"]["fy_px"]),
@@ -145,12 +148,12 @@ def build_diagram_from_config(
     nc = noise_config or NoiseConfig()
     builder = DiagramBuilder()
 
-    backend = str(raw.get("sim", {}).get("backend", "rotorpy"))
     world = add_world(
         builder,
         vehicle=vehicle, initial_state=initial_state, dt=inner_dt,
         target=target, camera_rig=camera_rig,
         backend=backend, quad_params=quad_params,
+        intercept_radius_m=config.catch_radius_m,
     )
     sensing = add_sensing(
         builder, camera=geometry_camera, perception=perception, dt=inner_dt,

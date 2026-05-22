@@ -4,9 +4,8 @@ from __future__ import annotations
 
 from pydrake.systems.framework import DiagramBuilder
 
-from intercept_sim.types import CameraRig
-
 from ..noise_config import NoiseConfig
+from ..types import CameraRig
 from .dkf_observer import DkfObserver
 
 

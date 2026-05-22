@@ -41,9 +41,8 @@ from ..drake_compat import (
     scene_value,
     vehicle_state_value,
 )
-from intercept_sim.types import CameraRig, ImageFeatureMeasurement, ObserverState
-
 from ..noise_config import NoiseConfig
+from ..types import CameraRig, ImageFeatureMeasurement, ObserverState
 
 
 # ---------------------------------------------------------------------------

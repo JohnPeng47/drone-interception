@@ -20,8 +20,6 @@ vehicle:
   model: x500
   initial_position_w: [0.0, 0.0, 0.0]
 target:
-  id: red_balloon
-  kind: red_balloon
   initial_position_w: [0.0, 0.0, 0.0]
   velocity_w: [0.0, 0.0, 0.0]
   radius_m: 0.2
