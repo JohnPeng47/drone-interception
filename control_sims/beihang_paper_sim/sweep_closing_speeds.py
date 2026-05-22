@@ -6,7 +6,7 @@
 Noise: beihang_paper_sim default NoiseConfig + 1.0 px perception centroid noise
 (standard centroid-quality assumption). The pitch (20°) and k_1 (0.1) are
 inherited from beihang_paper_sim defaults — see diagram.py and
-controller/control_core.py respectively. We deliberately do NOT override
+controller/*_system.py respectively. We deliberately do NOT override
 them here.
 
 Outputs aggregate.json + per-trial summary under
@@ -179,7 +179,7 @@ def main():
               f"catch={catch_frac*100:.0f}%  ({cell_wall:.0f}s)\n")
 
     aggregate["config"] = {
-        "k_1": "beihang_paper_sim default (control_core.DEFAULT_GAINS['k_1'] = 0.1)",
+        "k_1": "beihang_paper_sim default (control_math.DEFAULT_GAINS['k_1'] = 0.1)",
         "init_pitch_deg": "beihang_paper_sim default (diagram.INITIAL_PITCH_OFFSET_DEG = 20.0)",
         "noise": "beihang_paper_sim default NoiseConfig()",
         "pixel_noise_std_px": [PIXEL_NOISE_STD_PX, PIXEL_NOISE_STD_PX],

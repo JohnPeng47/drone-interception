@@ -8,22 +8,16 @@ from typing import Any
 
 import numpy as np
 from pydrake.common.value import AbstractValue
-from pydrake.systems.framework import LeafSystem
 from scipy.spatial.transform import Rotation
 
-from intercept_sim.sensors import FeaturePerceptionModel, GeometryCamera
-
-from .targets import KinematicTarget
 from .types import (
     CameraCapture,
     CameraIntrinsics,
     CameraRig,
     CtbrCommand,
-    ImageFeatureMeasurement,
     ObserverState,
     SceneSnapshot,
     SimulationTarget,
-    RunnerStep,
 )
 
 
@@ -154,128 +148,6 @@ def observer_state_value() -> AbstractValue:
 
 def ctbr_value() -> AbstractValue:
     return AbstractValue.Make(_SENTINEL_CTBR)
-
-
-class RunnerStepLogger(LeafSystem):
-    def __init__(self, dt: float):
-        super().__init__()
-        self._dt = float(dt)
-        self._log: list[RunnerStep] = []
-
-        self.DeclareAbstractInputPort("vehicle_state_dict", vehicle_state_value())
-        self.DeclareAbstractInputPort("scene", scene_value())
-        self.DeclareAbstractInputPort("capture", capture_value())
-        self.DeclareAbstractInputPort("measurements", measurements_value())
-        self.DeclareAbstractInputPort("observer_state", observer_state_value())
-        self.DeclareAbstractInputPort("ctbr_cmd", ctbr_value())
-        self.DeclarePeriodicPublishEvent(
-            period_sec=self._dt, offset_sec=0.0, publish=self._record,
-        )
-
-    def get_log(self) -> list[RunnerStep]:
-        return list(self._log)
-
-    def reset(self) -> None:
-        self._log.clear()
-
-    def _record(self, context):
-        t = context.get_time()
-        state = self.GetInputPort("vehicle_state_dict").Eval(context)
-        scene = self.GetInputPort("scene").Eval(context)
-        capture = self.GetInputPort("capture").Eval(context)
-        measurements = self.GetInputPort("measurements").Eval(context)
-        observer_state = self.GetInputPort("observer_state").Eval(context)
-        cmd = self.GetInputPort("ctbr_cmd").Eval(context)
-
-        if cmd is None:
-            cmd = CtbrCommand(t=t, thrust_n=0.0, body_rates_b=np.zeros(3, dtype=float))
-
-        rotorpy_state = {k: np.asarray(v, dtype=float).copy() for k, v in state.items()}
-        self._log.append(
-            RunnerStep(
-                t=float(t),
-                rotorpy_state=rotorpy_state,
-                scene=scene,
-                capture=capture,
-                measurements=tuple(measurements),
-                observer_state=observer_state,
-                command=cmd,
-            )
-        )
-
-
-class PixhawkInterface(LeafSystem):
-    def __init__(self):
-        super().__init__()
-        self.DeclareAbstractInputPort("ctbr_cmd", ctbr_value())
-        self.DeclareAbstractOutputPort("rate_cmd", ctbr_value, self._passthrough)
-
-    def _passthrough(self, context, output):
-        output.set_value(self.GetInputPort("ctbr_cmd").Eval(context))
-
-
-class FeaturePerceptionSystem(LeafSystem):
-    def __init__(self, perception: FeaturePerceptionModel, dt: float):
-        super().__init__()
-        self._perception = perception
-        self._dt = float(dt)
-        self.DeclareAbstractInputPort("capture", capture_value())
-        self.DeclareAbstractOutputPort(
-            "measurements", measurements_value, self._calc,
-            prerequisites_of_calc={self.time_ticket()},
-        )
-
-    def _calc(self, context, output):
-        capture = self.GetInputPort("capture").Eval(context)
-        if capture is not None:
-            self._perception.submit_capture(capture)
-        output.set_value(tuple(self._perception.pop_available(context.get_time())))
-
-
-class GeometryCameraSystem(LeafSystem):
-    def __init__(self, camera: GeometryCamera, dt: float):
-        super().__init__()
-        self._camera = camera
-        self._dt = float(dt)
-        self.DeclareAbstractInputPort("scene", scene_value())
-        self.DeclareAbstractOutputPort(
-            "capture", capture_value, self._calc,
-            prerequisites_of_calc={self.time_ticket()},
-        )
-
-    def _calc(self, context, output):
-        output.set_value(self._camera.maybe_capture(self.GetInputPort("scene").Eval(context)))
-
-
-class KinematicTargetSystem(LeafSystem):
-    def __init__(self, target: KinematicTarget):
-        super().__init__()
-        self._target = target
-        self.DeclareAbstractOutputPort("target_state", target_value, self._calc)
-
-    def _calc(self, context, output):
-        output.set_value(self._target.state_at(context.get_time()))
-
-
-class SceneAssembler(LeafSystem):
-    def __init__(self, camera_rig: CameraRig):
-        super().__init__()
-        self._cameras = (camera_rig,)
-        self.DeclareAbstractInputPort("vehicle_state_dict", vehicle_state_value())
-        self.DeclareAbstractInputPort("target_state", target_value())
-        self.DeclareAbstractOutputPort(
-            "scene", scene_value, self._calc,
-            prerequisites_of_calc={self.time_ticket()},
-        )
-
-    def _calc(self, context, output):
-        vehicle_state = self.GetInputPort("vehicle_state_dict").Eval(context)
-        target = self.GetInputPort("target_state").Eval(context)
-        pursuer = rotorpy_state_to_target(vehicle_state)
-        scene = make_scene_snapshot(
-            context.get_time(), pursuer, [target], list(self._cameras),
-        )
-        output.set_value(scene)
 
 
 def _deep_merge(base: dict, overrides: dict) -> dict:

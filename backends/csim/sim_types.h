@@ -11,6 +11,10 @@ typedef struct {
 } Vec3;
 
 typedef struct {
+    float m[3][3];
+} Mat3;
+
+typedef struct {
     Vec3 pos;      // global position (x, y, z)
     Vec3 vel;      // linear velocity (u, v, w)
     Quat quat;     // roll/pitch/yaw (phi/theta/psi) as a quaternion

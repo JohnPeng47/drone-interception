@@ -5,6 +5,7 @@
 
 #pragma once
 
+#include "camera_sim.h"
 #include "pursuer_sim.h"
 #include "sim_engine.h"
 #include "target_sim.h"

@@ -64,6 +64,8 @@ class _CPursuerSim(C.Structure):
 
 SIM_MAX_TARGETS = 16
 SIM_MAX_WAYPOINTS = 64
+SIM_MAX_CAMERAS = 8
+SIM_MAX_CAMERA_OUTPUTS = 8
 TARGET_CONTROLLER_LINEAR = 0
 TARGET_BEHAVIOR_WAYPOINTS = 0
 
@@ -119,11 +121,68 @@ class _CInterceptMetrics(C.Structure):
     ]
 
 
+class _CCameraIntrinsics(C.Structure):
+    _fields_ = [
+        ("width_px", C.c_int),
+        ("height_px", C.c_int),
+        ("fx_px", C.c_float),
+        ("fy_px", C.c_float),
+        ("cx_px", C.c_float),
+        ("cy_px", C.c_float),
+        ("hfov_rad", C.c_float),
+        ("vfov_rad", C.c_float),
+    ]
+
+
+class _CMat3(C.Structure):
+    _fields_ = [("m", (C.c_float * 3) * 3)]
+
+
+class _CCameraSim(C.Structure):
+    _fields_ = [
+        ("id", C.c_int),
+        ("parent_actor", C.c_int),
+        ("position_b", _CVec3),
+        ("body_to_camera", _CMat3),
+        ("intrinsics", _CCameraIntrinsics),
+        ("capture_rate_hz", C.c_float),
+        ("next_capture_t", C.c_float),
+    ]
+
+
+class _CCameraObservation(C.Structure):
+    _fields_ = [
+        ("camera_id", C.c_int),
+        ("target_index", C.c_int),
+        ("captured", C.c_int),
+        ("detected", C.c_int),
+        ("t_capture", C.c_float),
+        ("target_pos_c", _CVec3),
+        ("range_m", C.c_float),
+        ("uv_norm", C.c_float * 2),
+        ("uv_px", C.c_float * 2),
+        ("apparent_radius_px", C.c_float),
+    ]
+
+
+class _CCameraOutput(C.Structure):
+    _fields_ = [
+        ("observation", _CCameraObservation),
+        ("has_frame", C.c_int),
+        ("frame_width_px", C.c_int),
+        ("frame_height_px", C.c_int),
+        ("frame_channels", C.c_int),
+        ("frame_rgb", C.c_void_p),
+    ]
+
+
 class _CSimEngine(C.Structure):
     _fields_ = [
         ("pursuer", _CPursuerSim),
         ("targets", _CTargetSim * SIM_MAX_TARGETS),
+        ("cameras", _CCameraSim * SIM_MAX_CAMERAS),
         ("num_targets", C.c_int),
+        ("num_cameras", C.c_int),
         ("t", C.c_float),
         ("intercept_radius_m", C.c_float),
         ("metrics", _CInterceptMetrics),
@@ -354,11 +413,13 @@ class PufferSimEngineBackend(PufferDroneBackend):
         self._lib = _load_lib()
         self._engine = _CSimEngine()
         self._target_specs: tuple[dict[str, Any], ...] = ()
+        self._camera_specs: tuple[dict[str, Any], ...] = ()
 
     def reset(
         self,
         initial_state: InitialState | dict[str, np.ndarray],
         targets: list[Any] | tuple[Any, ...],
+        cameras: list[Any] | tuple[Any, ...] = (),
         intercept_radius_m: float = 0.0,
     ) -> dict[str, Any]:
         if isinstance(initial_state, dict):
@@ -386,7 +447,10 @@ class PufferSimEngineBackend(PufferDroneBackend):
         )
         self._target_specs = tuple(_target_spec_from_python(target, i) for i, target in enumerate(targets))
         self._set_engine_targets(self._target_specs)
-        return self._snapshot_from_engine(wind)
+        self._camera_specs = tuple(_camera_spec_from_python(camera, i) for i, camera in enumerate(cameras))
+        self._set_engine_cameras(self._camera_specs)
+        camera_outputs = self._collect_camera_outputs()
+        return self._snapshot_from_engine(wind, camera_outputs=camera_outputs)
 
     def step_ctbr(
         self,
@@ -421,6 +485,11 @@ class PufferSimEngineBackend(PufferDroneBackend):
             self._target_specs,
         )
         self._set_engine_targets(target_specs)
+        camera_specs = _camera_specs_from_snapshot(
+            snapshot.get("camera_states", ()),
+            self._camera_specs,
+        )
+        self._set_engine_cameras(camera_specs)
 
         cmd_speeds = self.ctbr_to_motor_speeds(vehicle_state, thrust_n, body_rates_b)
         speed_arr = (C.c_float * 4)(*cmd_speeds.astype(np.float32))
@@ -430,7 +499,8 @@ class PufferSimEngineBackend(PufferDroneBackend):
             C.c_float(dt),
             C.c_int(max(1, int(self.options.action_substeps))),
         )
-        return self._snapshot_from_engine(wind)
+        camera_outputs = self._collect_camera_outputs()
+        return self._snapshot_from_engine(wind, camera_outputs=camera_outputs)
 
     def _set_engine_targets(self, specs: tuple[dict[str, Any], ...]) -> None:
         c_targets = [_target_to_c(spec) for spec in specs]
@@ -446,7 +516,37 @@ class PufferSimEngineBackend(PufferDroneBackend):
         if count != len(c_targets):
             raise ValueError(f"SimEngine accepted {count} targets out of {len(c_targets)}")
 
-    def _snapshot_from_engine(self, wind: np.ndarray) -> dict[str, Any]:
+    def _set_engine_cameras(self, specs: tuple[dict[str, Any], ...]) -> None:
+        c_cameras = [_camera_to_c(spec) for spec in specs]
+        if not c_cameras:
+            self._lib.sim_engine_clear_cameras(C.byref(self._engine))
+            return
+        arr_type = _CCameraSim * len(c_cameras)
+        count = self._lib.sim_engine_set_cameras(
+            C.byref(self._engine),
+            arr_type(*c_cameras),
+            C.c_int(len(c_cameras)),
+        )
+        if count != len(c_cameras):
+            raise ValueError(f"SimEngine accepted {count} cameras out of {len(c_cameras)}")
+
+    def _collect_camera_outputs(self) -> tuple[dict[str, Any], ...]:
+        outputs = (_CCameraOutput * SIM_MAX_CAMERA_OUTPUTS)()
+        count = self._lib.sim_engine_collect_camera_outputs(
+            C.byref(self._engine),
+            outputs,
+            C.c_int(SIM_MAX_CAMERA_OUTPUTS),
+        )
+        return tuple(
+            _camera_output_from_c(outputs[i], self._target_specs)
+            for i in range(int(count))
+        )
+
+    def _snapshot_from_engine(
+        self,
+        wind: np.ndarray,
+        camera_outputs: tuple[dict[str, Any], ...] = (),
+    ) -> dict[str, Any]:
         vehicle = _state_from_c(self._lib.sim_engine_get_pursuer_state(C.byref(self._engine)))
         vehicle["wind"] = np.asarray(wind, dtype=float).copy()
         targets = []
@@ -462,6 +562,8 @@ class PufferSimEngineBackend(PufferDroneBackend):
             "metrics": _metrics_from_c(
                 self._lib.sim_engine_get_metrics(C.byref(self._engine))
             ),
+            "camera_states": _camera_states_from_engine(self._engine, self._camera_specs),
+            "camera_outputs": tuple(camera_outputs),
         }
 
 
@@ -475,12 +577,14 @@ def _load_lib() -> C.CDLL:
         csim_dir / "pursuer_sim.c",
         csim_dir / "target_sim.c",
         csim_dir / "sim_engine.c",
+        csim_dir / "camera_sim.c",
     ]
     headers = [
         csim_dir / "sim_core.h",
         csim_dir / "pursuer_sim.h",
         csim_dir / "target_sim.h",
         csim_dir / "sim_engine.h",
+        csim_dir / "camera_sim.h",
         csim_dir / "sim_types.h",
         csim_dir / "sim_math.h",
     ]
@@ -522,10 +626,18 @@ def _load_lib() -> C.CDLL:
     lib.sim_engine_set_intercept_radius.restype = None
     lib.sim_engine_clear_targets.argtypes = [C.POINTER(_CSimEngine)]
     lib.sim_engine_clear_targets.restype = None
+    lib.sim_engine_clear_cameras.argtypes = [C.POINTER(_CSimEngine)]
+    lib.sim_engine_clear_cameras.restype = None
     lib.sim_engine_set_targets.argtypes = [C.POINTER(_CSimEngine), C.POINTER(_CTargetSim), C.c_int]
     lib.sim_engine_set_targets.restype = C.c_int
     lib.sim_engine_add_target.argtypes = [C.POINTER(_CSimEngine), _CTargetSim]
     lib.sim_engine_add_target.restype = C.c_int
+    lib.sim_engine_set_cameras.argtypes = [C.POINTER(_CSimEngine), C.POINTER(_CCameraSim), C.c_int]
+    lib.sim_engine_set_cameras.restype = C.c_int
+    lib.sim_engine_add_camera.argtypes = [C.POINTER(_CSimEngine), _CCameraSim]
+    lib.sim_engine_add_camera.restype = C.c_int
+    lib.sim_engine_collect_camera_outputs.argtypes = [C.POINTER(_CSimEngine), C.POINTER(_CCameraOutput), C.c_int]
+    lib.sim_engine_collect_camera_outputs.restype = C.c_int
     lib.sim_engine_step_motor_dt.argtypes = [C.POINTER(_CSimEngine), C.POINTER(C.c_float), C.c_float, C.c_int]
     lib.sim_engine_step_motor_dt.restype = None
     lib.sim_engine_step_motor_speeds_dt.argtypes = [C.POINTER(_CSimEngine), C.POINTER(C.c_float), C.c_float, C.c_int]
@@ -705,6 +817,157 @@ def _target_snapshot_from_c(
     }
 
 
+def _camera_spec_from_python(camera: Any, index: int = 0) -> dict[str, Any]:
+    intr = getattr(camera, "intrinsics", None)
+    if intr is None:
+        intr = camera["intrinsics"]
+        width_px = intr["width_px"]
+        height_px = intr["height_px"]
+        fx_px = intr["fx_px"]
+        fy_px = intr["fy_px"]
+        cx_px = intr.get("cx_px", width_px / 2.0)
+        cy_px = intr.get("cy_px", height_px / 2.0)
+        hfov_rad = intr["hfov_rad"]
+        vfov_rad = intr["vfov_rad"]
+        position_b = camera.get("position_b", [0.0, 0.0, 0.0])
+        body_to_camera = camera.get("body_to_camera", np.eye(3))
+        capture_rate_hz = camera["capture_rate_hz"]
+    else:
+        width_px = intr.width_px
+        height_px = intr.height_px
+        fx_px = intr.fx_px
+        fy_px = intr.fy_px
+        cx_px = intr.cx_px
+        cy_px = intr.cy_px
+        hfov_rad = intr.hfov_rad
+        vfov_rad = intr.vfov_rad
+        position_b = camera.position_b
+        body_to_camera = camera.body_to_camera
+        capture_rate_hz = camera.capture_rate_hz
+
+    return {
+        "c_id": int(index),
+        "position_b": np.asarray(position_b, dtype=float).reshape(3).copy(),
+        "body_to_camera": np.asarray(body_to_camera, dtype=float).reshape(3, 3).copy(),
+        "width_px": int(width_px),
+        "height_px": int(height_px),
+        "fx_px": float(fx_px),
+        "fy_px": float(fy_px),
+        "cx_px": float(cx_px),
+        "cy_px": float(cy_px),
+        "hfov_rad": float(hfov_rad),
+        "vfov_rad": float(vfov_rad),
+        "capture_rate_hz": float(capture_rate_hz),
+        "next_capture_t": 0.0,
+    }
+
+
+def _camera_specs_from_snapshot(
+    snapshots: tuple[dict[str, Any], ...] | list[dict[str, Any]],
+    base_specs: tuple[dict[str, Any], ...],
+) -> tuple[dict[str, Any], ...]:
+    specs = []
+    for i, snap in enumerate(snapshots):
+        base = dict(base_specs[i]) if i < len(base_specs) else {"c_id": i}
+        base.update({
+            "position_b": np.asarray(snap["position_b"], dtype=float).reshape(3).copy(),
+            "body_to_camera": np.asarray(snap["body_to_camera"], dtype=float).reshape(3, 3).copy(),
+            "width_px": int(snap["width_px"]),
+            "height_px": int(snap["height_px"]),
+            "fx_px": float(snap["fx_px"]),
+            "fy_px": float(snap["fy_px"]),
+            "cx_px": float(snap["cx_px"]),
+            "cy_px": float(snap["cy_px"]),
+            "hfov_rad": float(snap["hfov_rad"]),
+            "vfov_rad": float(snap["vfov_rad"]),
+            "capture_rate_hz": float(snap["capture_rate_hz"]),
+            "next_capture_t": float(snap["next_capture_t"]),
+        })
+        specs.append(base)
+    return tuple(specs)
+
+
+def _camera_to_c(spec: dict[str, Any]) -> _CCameraSim:
+    return _CCameraSim(
+        C.c_int(int(spec["c_id"])),
+        C.c_int(0),
+        _vec3(spec["position_b"]),
+        _mat3(spec["body_to_camera"]),
+        _CCameraIntrinsics(
+            C.c_int(int(spec["width_px"])),
+            C.c_int(int(spec["height_px"])),
+            C.c_float(float(spec["fx_px"])),
+            C.c_float(float(spec["fy_px"])),
+            C.c_float(float(spec["cx_px"])),
+            C.c_float(float(spec["cy_px"])),
+            C.c_float(float(spec["hfov_rad"])),
+            C.c_float(float(spec["vfov_rad"])),
+        ),
+        C.c_float(float(spec["capture_rate_hz"])),
+        C.c_float(float(spec.get("next_capture_t", 0.0))),
+    )
+
+
+def _camera_states_from_engine(
+    engine: _CSimEngine,
+    camera_specs: tuple[dict[str, Any], ...],
+) -> tuple[dict[str, Any], ...]:
+    states = []
+    for i in range(int(engine.num_cameras)):
+        camera = engine.cameras[i]
+        spec = camera_specs[i] if i < len(camera_specs) else {}
+        body_to_camera = np.array(
+            [[camera.body_to_camera.m[r][c] for c in range(3)] for r in range(3)],
+            dtype=float,
+        )
+        states.append({
+            "c_id": int(camera.id),
+            "position_b": np.array([camera.position_b.x, camera.position_b.y, camera.position_b.z], dtype=float),
+            "body_to_camera": body_to_camera,
+            "width_px": int(camera.intrinsics.width_px),
+            "height_px": int(camera.intrinsics.height_px),
+            "fx_px": float(camera.intrinsics.fx_px),
+            "fy_px": float(camera.intrinsics.fy_px),
+            "cx_px": float(camera.intrinsics.cx_px),
+            "cy_px": float(camera.intrinsics.cy_px),
+            "hfov_rad": float(camera.intrinsics.hfov_rad),
+            "vfov_rad": float(camera.intrinsics.vfov_rad),
+            "capture_rate_hz": float(camera.capture_rate_hz),
+            "next_capture_t": float(camera.next_capture_t),
+            **{k: v for k, v in spec.items() if k not in {"next_capture_t"}},
+        })
+    return tuple(states)
+
+
+def _camera_output_from_c(
+    output: _CCameraOutput,
+    target_specs: tuple[dict[str, Any], ...],
+) -> dict[str, Any]:
+    obs = output.observation
+    target_index = int(obs.target_index)
+    target_id = None
+    if 0 <= target_index < len(target_specs):
+        target_id = str(target_specs[target_index].get("id", target_index))
+    return {
+        "camera_id": str(int(obs.camera_id)),
+        "target_id": target_id,
+        "target_index": target_index,
+        "captured": bool(obs.captured),
+        "detected": bool(obs.detected),
+        "t_capture": float(obs.t_capture),
+        "target_pos_c": np.array([obs.target_pos_c.x, obs.target_pos_c.y, obs.target_pos_c.z], dtype=float),
+        "range_m": float(obs.range_m),
+        "uv_norm": np.array(list(obs.uv_norm), dtype=float) if obs.detected else None,
+        "uv_px": np.array(list(obs.uv_px), dtype=float) if obs.detected else None,
+        "apparent_radius_px": float(obs.apparent_radius_px) if obs.detected else None,
+        "has_frame": bool(output.has_frame),
+        "frame_width_px": int(output.frame_width_px),
+        "frame_height_px": int(output.frame_height_px),
+        "frame_channels": int(output.frame_channels),
+        "frame_rgb": None,
+    }
+
+
 def _metrics_from_c(metrics: _CInterceptMetrics) -> dict[str, float | int | bool | None]:
     intercepted = bool(metrics.intercepted)
     return {
@@ -730,6 +993,15 @@ def _metrics_to_c(metrics: dict[str, Any]) -> _CInterceptMetrics:
 def _vec3(value: np.ndarray | list[float] | tuple[float, ...]) -> _CVec3:
     arr = np.asarray(value, dtype=float).reshape(3)
     return _CVec3(C.c_float(arr[0]), C.c_float(arr[1]), C.c_float(arr[2]))
+
+
+def _mat3(value: np.ndarray | list[list[float]]) -> _CMat3:
+    arr = np.asarray(value, dtype=float).reshape(3, 3)
+    rows = ((C.c_float * 3) * 3)()
+    for r in range(3):
+        for c in range(3):
+            rows[r][c] = C.c_float(arr[r, c])
+    return _CMat3(rows)
 
 
 def _copy_numeric_state(state: dict[str, np.ndarray]) -> dict[str, np.ndarray]:

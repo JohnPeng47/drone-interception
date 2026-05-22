@@ -7,8 +7,7 @@ from typing import Any
 import numpy as np
 import yaml
 
-from intercept_sim.sensors import FeaturePerceptionModel
-
+from .sensing import FeaturePerceptionModel
 from .targets import KinematicTarget
 from .types import CameraIntrinsics, CameraRig
 
