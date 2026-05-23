@@ -41,7 +41,8 @@ def test_native_unity_stub_returns_backend_unavailable():
     assert result.pixels is None
 
 
-def test_native_software_backend_returns_rgb_frame():
+def test_native_software_backend_returns_rgb_frame(monkeypatch, tmp_path):
+    monkeypatch.setenv("LIFTOFF_RENDER_DRONE_MESH", str(tmp_path / "missing_target_drone.obj"))
     with NativeRenderEngine(RenderConfig(enabled=True, backend="software")) as renderer:
         result = renderer.render_frame(
             drone=_drone(),
@@ -62,9 +63,85 @@ def test_native_software_backend_returns_rgb_frame():
     frame = np.frombuffer(result.pixels, dtype=np.uint8).reshape((480, 640, 3))
     assert int(frame.max()) > int(frame.min())
     assert np.unique(frame.reshape((-1, 3)), axis=0).shape[0] > 64
+    red_marker_pixels = np.sum(
+        (frame[:, :, 0] > 180) & (frame[:, :, 1] > 45) & (frame[:, :, 1] < 130) & (frame[:, :, 2] < 90)
+    )
+    cyan_marker_pixels = np.sum(
+        (frame[:, :, 0] > 45) & (frame[:, :, 0] < 130) & (frame[:, :, 1] > 130) & (frame[:, :, 2] > 150)
+    )
+    dark_airframe_pixels = np.sum(
+        (frame[:, :, 0] > 20) & (frame[:, :, 0] < 120) &
+        (frame[:, :, 1] > 25) & (frame[:, :, 1] < 130) &
+        (frame[:, :, 2] > 25) & (frame[:, :, 2] < 135)
+    )
+    assert red_marker_pixels > 0
+    assert cyan_marker_pixels > 0
+    assert dark_airframe_pixels > 128
 
 
-def test_native_software_backend_depends_on_camera_attitude():
+def test_native_software_backend_loads_target_mesh(monkeypatch, tmp_path):
+    mesh_path = tmp_path / "target_drone.obj"
+    mesh_path.write_text(
+        "\n".join(
+            [
+                "o body",
+                "usemtl vortex_frame",
+                "v 0.06 -0.09 -0.015",
+                "v 0.06 0.09 -0.015",
+                "v -0.08 0.09 -0.015",
+                "v -0.08 -0.09 -0.015",
+                "v 0.06 -0.09 0.015",
+                "v 0.06 0.09 0.015",
+                "v -0.08 0.09 0.015",
+                "v -0.08 -0.09 0.015",
+                "f 1 2 3",
+                "f 1 3 4",
+                "f 5 7 6",
+                "f 5 8 7",
+                "usemtl prop",
+                "v 0.08 -0.14 0.01",
+                "v 0.08 -0.04 0.01",
+                "v -0.08 -0.14 0.01",
+                "v -0.08 -0.04 0.01",
+                "v 0.08 0.04 0.01",
+                "v 0.08 0.14 0.01",
+                "v -0.08 0.04 0.01",
+                "v -0.08 0.14 0.01",
+                "f 9 10 11",
+                "f 10 12 11",
+                "f 13 14 15",
+                "f 14 16 15",
+            ]
+        ),
+        encoding="ascii",
+    )
+    monkeypatch.setenv("LIFTOFF_RENDER_DRONE_MESH", str(mesh_path))
+
+    with NativeRenderEngine(RenderConfig(enabled=True, backend="software")) as renderer:
+        result = renderer.render_frame(
+            drone=_drone(),
+            camera=_camera(),
+            targets=(_target(),),
+            sequence_id=4,
+        )
+
+    assert result.status == LIFTOFF_RENDER_OK
+    assert result.pixels is not None
+    frame = np.frombuffer(result.pixels, dtype=np.uint8).reshape((480, 640, 3))
+    mesh_pixels = np.sum(
+        (frame[:, :, 0] > 25) & (frame[:, :, 0] < 145) &
+        (frame[:, :, 1] > 30) & (frame[:, :, 1] < 150) &
+        (frame[:, :, 2] > 30) & (frame[:, :, 2] < 155)
+    )
+    red_marker_pixels = np.sum(
+        (frame[:, :, 0] > 180) & (frame[:, :, 1] > 45) & (frame[:, :, 1] < 130) & (frame[:, :, 2] < 90)
+    )
+    assert mesh_pixels > 500
+    assert red_marker_pixels < 256
+
+
+def test_native_software_backend_depends_on_camera_attitude(monkeypatch, tmp_path):
+    monkeypatch.setenv("LIFTOFF_RENDER_DRONE_MESH", str(tmp_path / "missing_target_drone.obj"))
     with NativeRenderEngine(RenderConfig(enabled=True, backend="software")) as renderer:
         level = renderer.render_frame(
             drone=_drone(),
