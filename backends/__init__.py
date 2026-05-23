@@ -2,6 +2,7 @@ from .csim.bindings import PufferDroneBackend, PufferSimEngineBackend
 from .csim.bindings.types import (
     CameraConfig,
     CameraIntrinsics,
+    NoiseConfig,
     PursuerInitialState,
     PursuerParams,
     SimConfig,
@@ -14,11 +15,14 @@ from .csim.bindings.types import (
     TargetState,
 )
 from .csim.generator import PregeneratedSimGenerator, SimGenerator, read_sim_instances, write_sim_instances
+from .rendering import LiftoffRenderEngine, RenderUnavailableError
 from .rotorpy import RotorPyDroneBackend, RotorPyMultirotorPlant
 
 __all__ = [
     "CameraConfig",
     "CameraIntrinsics",
+    "LiftoffRenderEngine",
+    "NoiseConfig",
     "PufferDroneBackend",
     "PufferSimEngineBackend",
     "PregeneratedSimGenerator",
@@ -26,6 +30,7 @@ __all__ = [
     "PursuerParams",
     "RotorPyDroneBackend",
     "RotorPyMultirotorPlant",
+    "RenderUnavailableError",
     "SimConfig",
     "SimGenerator",
     "SimInstance",

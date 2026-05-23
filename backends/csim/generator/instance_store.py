@@ -9,6 +9,7 @@ import numpy as np
 from backends.csim.bindings.types import (
     CameraConfig,
     CameraIntrinsics,
+    NoiseConfig,
     PursuerInitialState,
     PursuerParams,
     SimConfig,
@@ -22,7 +23,7 @@ from backends.csim.bindings.types import (
 
 
 SIM_INSTANCE_MAGIC = b"CSIMINST"
-SIM_INSTANCE_FORMAT_VERSION = 2
+SIM_INSTANCE_FORMAT_VERSION = 4
 _HEADER = struct.Struct("<8sIIQ")
 _U8 = struct.Struct("<B")
 _U16 = struct.Struct("<H")
@@ -327,6 +328,39 @@ def _read_camera(cursor: _Cursor) -> CameraConfig:
     )
 
 
+def _write_noise_config(buf: bytearray, noise: NoiseConfig) -> None:
+    for value in (
+        noise.processing_delay_s,
+        noise.pixel_noise_std_px[0],
+        noise.pixel_noise_std_px[1],
+        noise.dropout_probability,
+        noise.sigma_img,
+        noise.sigma_gyr,
+        noise.sigma_acc,
+        noise.sigma_b_gyr,
+        noise.sigma_b_acc,
+        noise.bias_init_std,
+    ):
+        _write_f32(buf, value)
+    _write_i64(buf, noise.rng_seed)
+
+
+def _read_noise_config(cursor: _Cursor) -> NoiseConfig:
+    values = [_read_f32(cursor) for _ in range(10)]
+    return NoiseConfig(
+        processing_delay_s=values[0],
+        pixel_noise_std_px=(values[1], values[2]),
+        dropout_probability=values[3],
+        sigma_img=values[4],
+        sigma_gyr=values[5],
+        sigma_acc=values[6],
+        sigma_b_gyr=values[7],
+        sigma_b_acc=values[8],
+        bias_init_std=values[9],
+        rng_seed=_read_i64(cursor),
+    )
+
+
 def _write_sim_config(buf: bytearray, config: SimConfig | None) -> None:
     _write_u8(buf, int(config is not None))
     if config is None:
@@ -334,25 +368,66 @@ def _write_sim_config(buf: bytearray, config: SimConfig | None) -> None:
     _write_pursuer_params(buf, config.pursuer)
     _write_f32(buf, config.options.backend_dt)
     _write_u32(buf, config.options.action_substeps)
+    _write_f32(buf, config.options.duration_s)
+    _write_u8(buf, int(config.options.validation_dt is not None))
+    if config.options.validation_dt is not None:
+        _write_f32(buf, config.options.validation_dt)
     _write_string(buf, config.options.command_mode)
     _write_f32(buf, config.options.ctbr_rate_gain)
     _write_u8(buf, int(config.options.randomize_params))
     _write_f32(buf, config.intercept_radius_m)
+    _write_f32(buf, config.max_thrust_n)
+    _write_f32(buf, config.max_rate_rps)
+    _write_noise_config(buf, config.noise)
+    _write_u8(buf, int(config.render_frames))
+    _write_string(buf, "" if config.render_camera_id is None else config.render_camera_id)
+    _write_string(buf, config.render_endpoint)
 
 
 def _read_sim_config(cursor: _Cursor) -> SimConfig | None:
     if not _read_u8(cursor):
         return None
-    return SimConfig(
-        pursuer=_read_pursuer_params(cursor),
+    pursuer = _read_pursuer_params(cursor)
+    backend_dt = _read_f32(cursor)
+    action_substeps = _read_u32(cursor)
+    duration_s = _read_f32(cursor)
+    validation_dt = _read_f32(cursor) if _read_u8(cursor) else None
+    command_mode = _read_string(cursor)
+    ctbr_rate_gain = _read_f32(cursor)
+    randomize_params = bool(_read_u8(cursor))
+    intercept_radius_m = _read_f32(cursor)
+    max_thrust_n = _read_f32(cursor)
+    max_rate_rps = _read_f32(cursor)
+    noise = _read_noise_config(cursor)
+    config = SimConfig(
+        pursuer=pursuer,
         options=SimOptions(
-            backend_dt=_read_f32(cursor),
-            action_substeps=_read_u32(cursor),
-            command_mode=_read_string(cursor),
-            ctbr_rate_gain=_read_f32(cursor),
-            randomize_params=bool(_read_u8(cursor)),
+            backend_dt=backend_dt,
+            action_substeps=action_substeps,
+            duration_s=duration_s,
+            validation_dt=validation_dt,
+            command_mode=command_mode,
+            ctbr_rate_gain=ctbr_rate_gain,
+            randomize_params=randomize_params,
         ),
-        intercept_radius_m=_read_f32(cursor),
+        intercept_radius_m=intercept_radius_m,
+        max_thrust_n=max_thrust_n,
+        max_rate_rps=max_rate_rps,
+        noise=noise,
+    )
+    render_frames = bool(_read_u8(cursor))
+    render_camera_id = _read_string(cursor)
+    render_endpoint = _read_string(cursor)
+    return SimConfig(
+        pursuer=config.pursuer,
+        options=config.options,
+        intercept_radius_m=config.intercept_radius_m,
+        max_thrust_n=config.max_thrust_n,
+        max_rate_rps=config.max_rate_rps,
+        noise=config.noise,
+        render_frames=render_frames,
+        render_camera_id=render_camera_id or None,
+        render_endpoint=render_endpoint,
     )
 
 

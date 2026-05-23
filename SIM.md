@@ -159,8 +159,6 @@ class SimInstance:
     targets: tuple[TargetConfig, ...]
     cameras: tuple[CameraConfig, ...] = ()
     config: SimConfig | None = None
-    raw_config: dict[str, object] = field(default_factory=dict)
-    metadata: dict[str, object]
 ```
 
 `SimConfig` is the distribution/run-level object:
@@ -181,13 +179,11 @@ So:
 ## Control Sim Integration
 
 `backends/generator.py` owns the Python `SimGenerator` boundary. Concrete
-generators under `control_sims/beihang_paper_sim/sim/generator/` keep their
-scenario configs in code, implement `sample(seed=...) -> SimInstance`, and may
-override `run()` for deterministic control-sim execution.
+generators implement `sample(seed=...) -> SimInstance` and may override `run()`
+for deterministic execution.
 
 ```python
 instance = generator.sample(seed=seed)
-diagram, logger = build_diagram_from_config(instance.raw_config)
 ```
 
 `ExperimentConfig` is removed. The Drake builder consumes plain resolved config
@@ -217,7 +213,7 @@ rl/generated/intercept_manifest.json
 
 - `PursuerInitialState` mapped to C `State`
 - one or more `TargetConfig` records mapped to C `TargetSim` init data
-- seed/metadata id where useful
+- seed/sample id where useful
 
 The C/Puffer env should load the binary table once in `my_init`, keep it in
 memory, and sample scenario records on reset.
@@ -292,8 +288,7 @@ typedef struct {
 Records store the resolved simulation fields only: seed, `PursuerInitialState`,
 targets, cameras, and optional `SimConfig`. Numeric values are written as
 little-endian `float32`/integer fields, and IDs/kinds are length-prefixed UTF-8
-strings. Arbitrary `raw_config` and `metadata` are intentionally not stored in
-this compact table.
+strings.
 
 Use `write_sim_instances(path, instances)` to write tables and
 `read_sim_instances(path)` or `PregeneratedSimGenerator.sample_many_from_disk`

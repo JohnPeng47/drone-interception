@@ -5,6 +5,7 @@ import numpy as np
 from backends import (
     CameraConfig,
     CameraIntrinsics,
+    NoiseConfig,
     PregeneratedSimGenerator,
     PursuerInitialState,
     PursuerParams,
@@ -37,8 +38,15 @@ def test_sim_instance_binary_round_trip(tmp_path):
     np.testing.assert_allclose(restored.cameras[0].body_to_camera, np.eye(3))
     assert restored.config is not None
     assert restored.config.options.action_substeps == 5
-    assert restored.raw_config == {}
-    assert restored.metadata == {}
+    assert restored.config.options.duration_s == 2.5
+    assert restored.config.options.validation_dt == np.float32(0.04)
+    assert restored.config.max_thrust_n == np.float32(1.2)
+    assert restored.config.max_rate_rps == np.float32(3.4)
+    assert restored.config.noise.pixel_noise_std_px == (1.0, 2.0)
+    assert restored.config.noise.dropout_probability == 0.25
+    assert restored.config.noise.rng_seed == 99
+    assert restored.config.render_frames is True
+    assert restored.config.render_camera_id == "front"
 
 
 def test_pregenerated_generator_reads_slices_from_disk(tmp_path):
@@ -97,8 +105,24 @@ def _instance(seed: int) -> SimInstance:
             rotor_positions_b=np.zeros((4, 3)),
             rotor_directions=np.array([1.0, -1.0, 1.0, -1.0]),
         ),
-        options=SimOptions(action_substeps=5),
+        options=SimOptions(action_substeps=5, duration_s=2.5, validation_dt=0.04),
         intercept_radius_m=0.5,
+        max_thrust_n=1.2,
+        max_rate_rps=3.4,
+        noise=NoiseConfig(
+            processing_delay_s=0.08,
+            pixel_noise_std_px=(1.0, 2.0),
+            dropout_probability=0.25,
+            sigma_img=1.0e-3,
+            sigma_gyr=0.01,
+            sigma_acc=0.05,
+            sigma_b_gyr=1.0e-4,
+            sigma_b_acc=1.0e-3,
+            bias_init_std=0.005,
+            rng_seed=99,
+        ),
+        render_frames=True,
+        render_camera_id="front",
     )
     return SimInstance(
         seed=seed,
@@ -113,6 +137,4 @@ def _instance(seed: int) -> SimInstance:
         targets=(target,),
         cameras=(camera,),
         config=config,
-        raw_config={"experiment": {"name": "round_trip"}, "vector": np.array([1.0, 2.0, 3.0])},
-        metadata={"source": "test", "seed": np.int64(seed)},
     )

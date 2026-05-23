@@ -109,12 +109,12 @@ def _apply_initial_pitch_offset(raw: dict) -> None:
 
 
 def build_diagram_from_config(
-    raw_config: dict,
+    config_dict: dict,
     controller_gains: dict | None = None,
     noise_config: NoiseConfig | None = None,
 ) -> tuple[Diagram, RunnerStepLogger]:
-    validate_experiment_config(raw_config)
-    raw = raw_config
+    validate_experiment_config(config_dict)
+    raw = config_dict
     # Pre-pitch the drone before initial_rotorpy_state reads the quat —
     # see INITIAL_PITCH_OFFSET_DEG docstring above for why this matters.
     _apply_initial_pitch_offset(raw)

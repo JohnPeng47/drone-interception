@@ -25,24 +25,11 @@ class SimGenerator(ABC):
             attempted_seed = int(seed) + attempt
             instance = self._sample_once(seed=attempted_seed, **kwargs)
             try:
-                self._validate_config(instance.raw_config)
+                self._validate_instance(instance)
             except ValueError as exc:
                 if first_error is None:
                     first_error = exc
                 continue
-            if attempt:
-                metadata = dict(instance.metadata)
-                metadata["requested_seed"] = int(seed)
-                metadata["sample_attempts"] = attempt + 1
-                instance = SimInstance(
-                    seed=instance.seed,
-                    pursuer_initial=instance.pursuer_initial,
-                    targets=instance.targets,
-                    cameras=instance.cameras,
-                    config=instance.config,
-                    raw_config=instance.raw_config,
-                    metadata=metadata,
-                )
             return instance
         message = (
             f"{type(self).__name__} failed to generate a valid sample after "
@@ -63,23 +50,11 @@ class SimGenerator(ABC):
             attempts += 1
             cursor += 1
             try:
-                self._validate_config(instance.raw_config)
+                self._validate_instance(instance)
             except ValueError as exc:
                 if first_error is None:
                     first_error = exc
                 continue
-            if attempts != len(instances) + 1:
-                metadata = dict(instance.metadata)
-                metadata["sample_attempts"] = attempts
-                instance = SimInstance(
-                    seed=instance.seed,
-                    pursuer_initial=instance.pursuer_initial,
-                    targets=instance.targets,
-                    cameras=instance.cameras,
-                    config=instance.config,
-                    raw_config=instance.raw_config,
-                    metadata=metadata,
-                )
             instances.append(instance)
         if len(instances) != int(count):
             message = (
@@ -95,12 +70,12 @@ class SimGenerator(ABC):
     def _sample_once(self, *, seed: int, **kwargs: Any) -> SimInstance:
         raise NotImplementedError
 
-    def _validate_config(self, raw_config: dict[str, Any]) -> None:
-        """Validate a resolved config before it is returned to callers."""
+    def _validate_instance(self, instance: SimInstance) -> None:
+        """Validate a resolved typed instance before it is returned to callers."""
         from .validations import validate_kinematic_intercept, validate_target_in_fov
 
-        validate_target_in_fov(raw_config)
-        validate_kinematic_intercept(raw_config)
+        validate_target_in_fov(instance)
+        validate_kinematic_intercept(instance)
 
     def run(self) -> Any:
         raise NotImplementedError(f"{type(self).__name__} does not implement run()")

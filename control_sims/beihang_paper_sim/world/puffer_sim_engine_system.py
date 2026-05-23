@@ -9,7 +9,14 @@ from pydrake.common.value import AbstractValue
 from pydrake.systems.framework import LeafSystem
 from scipy.spatial.transform import Rotation
 
-from backends import PufferSimEngineBackend, SimOptions
+from backends import (
+    CameraConfig,
+    CameraIntrinsics,
+    PufferSimEngineBackend,
+    SimOptions,
+    TargetConfig,
+    TargetState,
+)
 from backends.csim.bindings import (
     initial_state_from_rotorpy,
     vehicle_params_from_quad_params,
@@ -37,13 +44,15 @@ class PufferSimEngineSystem(LeafSystem):
         self._dt = float(dt)
         self._target = target
         self._cameras = (camera_rig,)
+        self._target_config = _target_config(target)
+        self._camera_config = _camera_config(camera_rig)
         self._params = vehicle_params_from_quad_params(quad_params)
         self._backend = PufferSimEngineBackend(self._params, options=options)
         self._intercept_radius_m = float(intercept_radius_m)
         self._initial_snapshot = self._backend.reset(
             initial_state_from_rotorpy(initial_state),
-            targets=(target,),
-            cameras=(camera_rig,),
+            targets=(self._target_config,),
+            cameras=(self._camera_config,),
             intercept_radius_m=self._intercept_radius_m,
         )
 
@@ -131,6 +140,39 @@ def _copy_snapshot(snapshot: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _target_config(target: KinematicTarget) -> TargetConfig:
+    return TargetConfig(
+        id=str(target.target_id),
+        kind=str(target.kind),
+        radius_m=float(target.radius_m),
+        initial=TargetState(
+            position_w=np.asarray(target.initial_position_w, dtype=float).reshape(3).copy(),
+            velocity_w=np.asarray(target.velocity_w, dtype=float).reshape(3).copy(),
+        ),
+    )
+
+
+def _camera_config(camera: CameraRig) -> CameraConfig:
+    intr = camera.intrinsics
+    return CameraConfig(
+        id=str(camera.id),
+        parent_id=str(camera.parent_id),
+        position_b=np.asarray(camera.position_b, dtype=float).reshape(3).copy(),
+        body_to_camera=np.asarray(camera.body_to_camera, dtype=float).reshape(3, 3).copy(),
+        intrinsics=CameraIntrinsics(
+            width_px=int(intr.width_px),
+            height_px=int(intr.height_px),
+            fx_px=float(intr.fx_px),
+            fy_px=float(intr.fy_px),
+            cx_px=float(intr.cx_px),
+            cy_px=float(intr.cy_px),
+            hfov_rad=float(intr.hfov_rad),
+            vfov_rad=float(intr.vfov_rad),
+        ),
+        capture_rate_hz=float(camera.capture_rate_hz),
+    )
+
+
 def _copy_state(state: dict[str, np.ndarray]) -> dict[str, np.ndarray]:
     return {key: np.asarray(value, dtype=float).copy() for key, value in state.items()}
 
@@ -185,7 +227,10 @@ def _copy_camera_output(output: dict[str, Any]) -> dict[str, Any]:
         "frame_width_px": int(output["frame_width_px"]),
         "frame_height_px": int(output["frame_height_px"]),
         "frame_channels": int(output["frame_channels"]),
-        "frame_rgb": None,
+        "frame_rgb": (
+            None if output.get("frame_rgb") is None
+            else np.asarray(output["frame_rgb"], dtype=np.uint8).copy()
+        ),
     }
 
 
