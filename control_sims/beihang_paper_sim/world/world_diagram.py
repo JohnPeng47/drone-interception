@@ -6,11 +6,11 @@ from pydrake.systems.framework import DiagramBuilder
 
 from backends import RotorPyMultirotorPlant
 
-from .scene_assembler import SceneAssembler
-from .target_system import KinematicTargetSystem
 from ..targets import KinematicTarget
 from ..types import CameraRig
 from .puffer_sim_engine_system import PufferSimEngineSystem
+from .scene_assembler import SceneAssembler
+from .target_system import KinematicTargetSystem
 
 
 def add_world(
@@ -36,7 +36,7 @@ def add_world(
         builder.Connect(target_sys.GetOutputPort("target_state"),
                         scene.GetInputPort("target_state"))
 
-        return {"plant": plant, "target": target_sys, "scene": scene}
+        return {"plant": plant, "target": target_sys, "scene": scene, "camera": scene}
     elif backend == "puffer_c":
         if quad_params is None:
             raise ValueError("quad_params is required when backend='puffer_c'")
@@ -50,6 +50,6 @@ def add_world(
                 intercept_radius_m=intercept_radius_m,
             )
         )
-        return {"plant": world, "target": world, "scene": world}
+        return {"plant": world, "target": world, "scene": world, "camera": world}
     else:
         raise ValueError(f"Unsupported beihang_paper_sim world backend: {backend}")

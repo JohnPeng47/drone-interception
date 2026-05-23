@@ -44,11 +44,11 @@ from pydrake.systems.framework import Diagram, DiagramBuilder
 
 from .actuator.actuator_diagram import add_actuator
 from .config import (
-    ExperimentConfig,
     camera_from_config,
     initial_rotorpy_state,
     perception_from_config,
     target_from_config,
+    validate_experiment_config,
 )
 from .controller.controller_diagram import add_controller
 from .drake_compat import resolve_quad_params
@@ -56,7 +56,7 @@ from .estimation.estimation_diagram import add_estimation
 from .logging import RunnerStepLogger
 from .noise_config import NoiseConfig
 from .sensing.sensing_diagram import add_sensing
-from intercept_sim.sensors import GeometryCamera
+from .sensing import GeometryCamera
 from .world.world_diagram import add_world
 
 
@@ -109,11 +109,12 @@ def _apply_initial_pitch_offset(raw: dict) -> None:
 
 
 def build_diagram_from_config(
-    config: ExperimentConfig,
+    raw_config: dict,
     controller_gains: dict | None = None,
     noise_config: NoiseConfig | None = None,
 ) -> tuple[Diagram, RunnerStepLogger]:
-    raw = config.raw
+    validate_experiment_config(raw_config)
+    raw = raw_config
     # Pre-pitch the drone before initial_rotorpy_state reads the quat —
     # see INITIAL_PITCH_OFFSET_DEG docstring above for why this matters.
     _apply_initial_pitch_offset(raw)
@@ -153,10 +154,13 @@ def build_diagram_from_config(
         vehicle=vehicle, initial_state=initial_state, dt=inner_dt,
         target=target, camera_rig=camera_rig,
         backend=backend, quad_params=quad_params,
-        intercept_radius_m=config.catch_radius_m,
+        intercept_radius_m=float(raw["metrics"]["catch_radius_m"]),
     )
     sensing = add_sensing(
-        builder, camera=geometry_camera, perception=perception, dt=inner_dt,
+        builder,
+        camera=None if backend == "puffer_c" else geometry_camera,
+        perception=perception,
+        dt=inner_dt,
         noise_config=nc,
     )
     estimation = add_estimation(
@@ -170,8 +174,12 @@ def build_diagram_from_config(
     logger = builder.AddSystem(RunnerStepLogger(dt=inner_dt))
 
     # ----- world → sensing
-    builder.Connect(world["scene"].GetOutputPort("scene"),
-                    sensing["camera"].GetInputPort("scene"))
+    if backend == "puffer_c":
+        builder.Connect(world["camera"].GetOutputPort("capture"),
+                        sensing["perception"].GetInputPort("capture"))
+    else:
+        builder.Connect(world["scene"].GetOutputPort("scene"),
+                        sensing["camera"].GetInputPort("scene"))
     builder.Connect(world["plant"].GetOutputPort("vehicle_state_dict"),
                     sensing["imu"].GetInputPort("vehicle_state_dict"))
 
@@ -200,8 +208,12 @@ def build_diagram_from_config(
                     logger.GetInputPort("vehicle_state_dict"))
     builder.Connect(world["scene"].GetOutputPort("scene"),
                     logger.GetInputPort("scene"))
-    builder.Connect(sensing["camera"].GetOutputPort("capture"),
-                    logger.GetInputPort("capture"))
+    if backend == "puffer_c":
+        builder.Connect(world["camera"].GetOutputPort("capture"),
+                        logger.GetInputPort("capture"))
+    else:
+        builder.Connect(sensing["camera"].GetOutputPort("capture"),
+                        logger.GetInputPort("capture"))
     builder.Connect(sensing["perception"].GetOutputPort("measurements"),
                     logger.GetInputPort("measurements"))
     builder.Connect(estimation["core"].GetOutputPort("observer_state"),

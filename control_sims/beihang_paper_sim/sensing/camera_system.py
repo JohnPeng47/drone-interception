@@ -5,7 +5,7 @@ from __future__ import annotations
 from pydrake.systems.framework import LeafSystem
 
 from ..drake_compat import capture_value, scene_value
-from intercept_sim.sensors import GeometryCamera
+from .camera import GeometryCamera
 
 
 class CameraCaptureSystem(LeafSystem):

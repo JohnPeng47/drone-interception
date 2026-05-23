@@ -9,12 +9,15 @@ from typing import Any
 
 import numpy as np
 
-from ...input import (
+from .types import (
     DEFAULT_MAX_OMEGA_RPS,
     DEFAULT_MAX_VEL_MPS,
-    InitialState,
+    PursuerInitialState,
+    PursuerParams,
+    SimConfig,
+    SimInstance,
     SimOptions,
-    VehicleParams,
+    TargetConfig,
 )
 
 
@@ -36,7 +39,7 @@ class _CState(C.Structure):
     ]
 
 
-class _CParams(C.Structure):
+class _CPursuerParams(C.Structure):
     _fields_ = [
         ("mass", C.c_float),
         ("ixx", C.c_float),
@@ -59,11 +62,13 @@ class _CParams(C.Structure):
 
 
 class _CPursuerSim(C.Structure):
-    _fields_ = [("state", _CState), ("params", _CParams)]
+    _fields_ = [("state", _CState), ("params", _CPursuerParams)]
 
 
 SIM_MAX_TARGETS = 16
 SIM_MAX_WAYPOINTS = 64
+SIM_MAX_CAMERAS = 8
+SIM_MAX_CAMERA_OUTPUTS = 8
 TARGET_CONTROLLER_LINEAR = 0
 TARGET_BEHAVIOR_WAYPOINTS = 0
 
@@ -119,11 +124,68 @@ class _CInterceptMetrics(C.Structure):
     ]
 
 
+class _CCameraIntrinsics(C.Structure):
+    _fields_ = [
+        ("width_px", C.c_int),
+        ("height_px", C.c_int),
+        ("fx_px", C.c_float),
+        ("fy_px", C.c_float),
+        ("cx_px", C.c_float),
+        ("cy_px", C.c_float),
+        ("hfov_rad", C.c_float),
+        ("vfov_rad", C.c_float),
+    ]
+
+
+class _CMat3(C.Structure):
+    _fields_ = [("m", (C.c_float * 3) * 3)]
+
+
+class _CCameraSim(C.Structure):
+    _fields_ = [
+        ("id", C.c_int),
+        ("parent_actor", C.c_int),
+        ("position_b", _CVec3),
+        ("body_to_camera", _CMat3),
+        ("intrinsics", _CCameraIntrinsics),
+        ("capture_rate_hz", C.c_float),
+        ("next_capture_t", C.c_float),
+    ]
+
+
+class _CCameraObservation(C.Structure):
+    _fields_ = [
+        ("camera_id", C.c_int),
+        ("target_index", C.c_int),
+        ("captured", C.c_int),
+        ("detected", C.c_int),
+        ("t_capture", C.c_float),
+        ("target_pos_c", _CVec3),
+        ("range_m", C.c_float),
+        ("uv_norm", C.c_float * 2),
+        ("uv_px", C.c_float * 2),
+        ("apparent_radius_px", C.c_float),
+    ]
+
+
+class _CCameraOutput(C.Structure):
+    _fields_ = [
+        ("observation", _CCameraObservation),
+        ("has_frame", C.c_int),
+        ("frame_width_px", C.c_int),
+        ("frame_height_px", C.c_int),
+        ("frame_channels", C.c_int),
+        ("frame_rgb", C.c_void_p),
+    ]
+
+
 class _CSimEngine(C.Structure):
     _fields_ = [
         ("pursuer", _CPursuerSim),
         ("targets", _CTargetSim * SIM_MAX_TARGETS),
+        ("cameras", _CCameraSim * SIM_MAX_CAMERAS),
         ("num_targets", C.c_int),
+        ("num_cameras", C.c_int),
         ("t", C.c_float),
         ("intercept_radius_m", C.c_float),
         ("metrics", _CInterceptMetrics),
@@ -133,12 +195,12 @@ class _CSimEngine(C.Structure):
 _LIB: C.CDLL | None = None
 
 
-def vehicle_params_from_quad_params(quad_params: dict[str, Any]) -> VehicleParams:
+def vehicle_params_from_quad_params(quad_params: dict[str, Any]) -> PursuerParams:
     rotor_pos = quad_params.get("rotor_pos", {})
     arm_len = _infer_x_arm_len(rotor_pos)
     rotor_positions = _rotor_positions_array(rotor_pos)
     rotor_directions = np.asarray(quad_params.get("rotor_directions", np.ones(4)), dtype=float).reshape(4)
-    return VehicleParams(
+    return PursuerParams(
         mass_kg=float(quad_params["mass"]),
         ixx=float(quad_params["Ixx"]),
         iyy=float(quad_params["Iyy"]),
@@ -165,8 +227,8 @@ def vehicle_params_from_quad_params(quad_params: dict[str, Any]) -> VehicleParam
     )
 
 
-def initial_state_from_rotorpy(state: dict[str, np.ndarray]) -> InitialState:
-    return InitialState(
+def initial_state_from_rotorpy(state: dict[str, np.ndarray]) -> PursuerInitialState:
+    return PursuerInitialState(
         position_w=np.asarray(state["x"], dtype=float).copy(),
         velocity_w=np.asarray(state.get("v", np.zeros(3)), dtype=float).copy(),
         quat_xyzw=np.asarray(state.get("q", np.array([0.0, 0.0, 0.0, 1.0])), dtype=float).copy(),
@@ -178,7 +240,7 @@ def initial_state_from_rotorpy(state: dict[str, np.ndarray]) -> InitialState:
 
 
 class PufferDroneBackend:
-    def __init__(self, params: VehicleParams, options: SimOptions | None = None):
+    def __init__(self, params: PursuerParams, options: SimOptions | None = None):
         self.params = params
         self.options = options or SimOptions()
         self.mass_kg = params.mass_kg
@@ -186,7 +248,7 @@ class PufferDroneBackend:
         self._lib = _load_lib()
         self._sim = _CPursuerSim()
 
-    def reset(self, initial_state: InitialState | dict[str, np.ndarray]) -> dict[str, np.ndarray]:
+    def reset(self, initial_state: PursuerInitialState | dict[str, np.ndarray]) -> dict[str, np.ndarray]:
         if isinstance(initial_state, dict):
             initial_state = initial_state_from_rotorpy(initial_state)
         rotor_speeds = initial_state.rotor_speeds
@@ -346,21 +408,41 @@ class PufferDroneBackend:
 class PufferSimEngineBackend(PufferDroneBackend):
     """Python adapter for the C SimEngine pursuer plus target world."""
 
-    def __init__(self, params: VehicleParams, options: SimOptions | None = None):
-        self.params = params
-        self.options = options or SimOptions()
-        self.mass_kg = params.mass_kg
+    def __init__(self, params: PursuerParams | SimConfig, options: SimOptions | None = None):
+        self.config = params if isinstance(params, SimConfig) else None
+        self.params = params.pursuer if isinstance(params, SimConfig) else params
+        self.options = options or (params.options if isinstance(params, SimConfig) else SimOptions())
+        self.mass_kg = self.params.mass_kg
         self.dt = self.options.backend_dt * self.options.action_substeps
         self._lib = _load_lib()
         self._engine = _CSimEngine()
         self._target_specs: tuple[dict[str, Any], ...] = ()
+        self._camera_specs: tuple[dict[str, Any], ...] = ()
 
     def reset(
         self,
-        initial_state: InitialState | dict[str, np.ndarray],
-        targets: list[Any] | tuple[Any, ...],
-        intercept_radius_m: float = 0.0,
+        initial_state: PursuerInitialState | SimInstance | dict[str, np.ndarray],
+        targets: list[Any] | tuple[Any, ...] = (),
+        cameras: list[Any] | tuple[Any, ...] = (),
+        intercept_radius_m: float | None = None,
     ) -> dict[str, Any]:
+        if isinstance(initial_state, SimInstance):
+            instance = initial_state
+            initial_state = instance.pursuer_initial
+            targets = instance.targets
+            cameras = instance.cameras
+            if intercept_radius_m is None:
+                intercept_radius_m = (
+                    instance.config.intercept_radius_m
+                    if instance.config is not None
+                    else (
+                        self.config.intercept_radius_m
+                        if self.config is not None
+                        else 0.0
+                    )
+                )
+        if intercept_radius_m is None:
+            intercept_radius_m = self.config.intercept_radius_m if self.config is not None else 0.0
         if isinstance(initial_state, dict):
             initial_state = initial_state_from_rotorpy(initial_state)
         rotor_speeds = initial_state.rotor_speeds
@@ -386,7 +468,10 @@ class PufferSimEngineBackend(PufferDroneBackend):
         )
         self._target_specs = tuple(_target_spec_from_python(target, i) for i, target in enumerate(targets))
         self._set_engine_targets(self._target_specs)
-        return self._snapshot_from_engine(wind)
+        self._camera_specs = tuple(_camera_spec_from_python(camera, i) for i, camera in enumerate(cameras))
+        self._set_engine_cameras(self._camera_specs)
+        camera_outputs = self._collect_camera_outputs()
+        return self._snapshot_from_engine(wind, camera_outputs=camera_outputs)
 
     def step_ctbr(
         self,
@@ -421,6 +506,11 @@ class PufferSimEngineBackend(PufferDroneBackend):
             self._target_specs,
         )
         self._set_engine_targets(target_specs)
+        camera_specs = _camera_specs_from_snapshot(
+            snapshot.get("camera_states", ()),
+            self._camera_specs,
+        )
+        self._set_engine_cameras(camera_specs)
 
         cmd_speeds = self.ctbr_to_motor_speeds(vehicle_state, thrust_n, body_rates_b)
         speed_arr = (C.c_float * 4)(*cmd_speeds.astype(np.float32))
@@ -430,7 +520,8 @@ class PufferSimEngineBackend(PufferDroneBackend):
             C.c_float(dt),
             C.c_int(max(1, int(self.options.action_substeps))),
         )
-        return self._snapshot_from_engine(wind)
+        camera_outputs = self._collect_camera_outputs()
+        return self._snapshot_from_engine(wind, camera_outputs=camera_outputs)
 
     def _set_engine_targets(self, specs: tuple[dict[str, Any], ...]) -> None:
         c_targets = [_target_to_c(spec) for spec in specs]
@@ -446,7 +537,37 @@ class PufferSimEngineBackend(PufferDroneBackend):
         if count != len(c_targets):
             raise ValueError(f"SimEngine accepted {count} targets out of {len(c_targets)}")
 
-    def _snapshot_from_engine(self, wind: np.ndarray) -> dict[str, Any]:
+    def _set_engine_cameras(self, specs: tuple[dict[str, Any], ...]) -> None:
+        c_cameras = [_camera_to_c(spec) for spec in specs]
+        if not c_cameras:
+            self._lib.sim_engine_clear_cameras(C.byref(self._engine))
+            return
+        arr_type = _CCameraSim * len(c_cameras)
+        count = self._lib.sim_engine_set_cameras(
+            C.byref(self._engine),
+            arr_type(*c_cameras),
+            C.c_int(len(c_cameras)),
+        )
+        if count != len(c_cameras):
+            raise ValueError(f"SimEngine accepted {count} cameras out of {len(c_cameras)}")
+
+    def _collect_camera_outputs(self) -> tuple[dict[str, Any], ...]:
+        outputs = (_CCameraOutput * SIM_MAX_CAMERA_OUTPUTS)()
+        count = self._lib.sim_engine_collect_camera_outputs(
+            C.byref(self._engine),
+            outputs,
+            C.c_int(SIM_MAX_CAMERA_OUTPUTS),
+        )
+        return tuple(
+            _camera_output_from_c(outputs[i], self._target_specs)
+            for i in range(int(count))
+        )
+
+    def _snapshot_from_engine(
+        self,
+        wind: np.ndarray,
+        camera_outputs: tuple[dict[str, Any], ...] = (),
+    ) -> dict[str, Any]:
         vehicle = _state_from_c(self._lib.sim_engine_get_pursuer_state(C.byref(self._engine)))
         vehicle["wind"] = np.asarray(wind, dtype=float).copy()
         targets = []
@@ -462,6 +583,8 @@ class PufferSimEngineBackend(PufferDroneBackend):
             "metrics": _metrics_from_c(
                 self._lib.sim_engine_get_metrics(C.byref(self._engine))
             ),
+            "camera_states": _camera_states_from_engine(self._engine, self._camera_specs),
+            "camera_outputs": tuple(camera_outputs),
         }
 
 
@@ -475,12 +598,13 @@ def _load_lib() -> C.CDLL:
         csim_dir / "pursuer_sim.c",
         csim_dir / "target_sim.c",
         csim_dir / "sim_engine.c",
+        csim_dir / "camera_sim.c",
     ]
     headers = [
         csim_dir / "sim_core.h",
-        csim_dir / "pursuer_sim.h",
         csim_dir / "target_sim.h",
         csim_dir / "sim_engine.h",
+        csim_dir / "camera_sim.h",
         csim_dir / "sim_types.h",
         csim_dir / "sim_math.h",
     ]
@@ -502,7 +626,7 @@ def _load_lib() -> C.CDLL:
         )
 
     lib = C.CDLL(str(lib_path))
-    lib.pursuer_sim_init.argtypes = [C.POINTER(_CPursuerSim), _CParams, _CState]
+    lib.pursuer_sim_init.argtypes = [C.POINTER(_CPursuerSim), _CPursuerParams, _CState]
     lib.pursuer_sim_init.restype = None
     lib.pursuer_sim_reset.argtypes = [C.POINTER(_CPursuerSim), _CState]
     lib.pursuer_sim_reset.restype = None
@@ -514,7 +638,7 @@ def _load_lib() -> C.CDLL:
     lib.pursuer_sim_step_motor_speeds_dt.restype = None
     lib.pursuer_sim_get_state.argtypes = [C.POINTER(_CPursuerSim)]
     lib.pursuer_sim_get_state.restype = _CState
-    lib.sim_engine_init.argtypes = [C.POINTER(_CSimEngine), _CParams, _CState]
+    lib.sim_engine_init.argtypes = [C.POINTER(_CSimEngine), _CPursuerParams, _CState]
     lib.sim_engine_init.restype = None
     lib.sim_engine_reset.argtypes = [C.POINTER(_CSimEngine), _CState]
     lib.sim_engine_reset.restype = None
@@ -522,10 +646,18 @@ def _load_lib() -> C.CDLL:
     lib.sim_engine_set_intercept_radius.restype = None
     lib.sim_engine_clear_targets.argtypes = [C.POINTER(_CSimEngine)]
     lib.sim_engine_clear_targets.restype = None
+    lib.sim_engine_clear_cameras.argtypes = [C.POINTER(_CSimEngine)]
+    lib.sim_engine_clear_cameras.restype = None
     lib.sim_engine_set_targets.argtypes = [C.POINTER(_CSimEngine), C.POINTER(_CTargetSim), C.c_int]
     lib.sim_engine_set_targets.restype = C.c_int
     lib.sim_engine_add_target.argtypes = [C.POINTER(_CSimEngine), _CTargetSim]
     lib.sim_engine_add_target.restype = C.c_int
+    lib.sim_engine_set_cameras.argtypes = [C.POINTER(_CSimEngine), C.POINTER(_CCameraSim), C.c_int]
+    lib.sim_engine_set_cameras.restype = C.c_int
+    lib.sim_engine_add_camera.argtypes = [C.POINTER(_CSimEngine), _CCameraSim]
+    lib.sim_engine_add_camera.restype = C.c_int
+    lib.sim_engine_collect_camera_outputs.argtypes = [C.POINTER(_CSimEngine), C.POINTER(_CCameraOutput), C.c_int]
+    lib.sim_engine_collect_camera_outputs.restype = C.c_int
     lib.sim_engine_step_motor_dt.argtypes = [C.POINTER(_CSimEngine), C.POINTER(C.c_float), C.c_float, C.c_int]
     lib.sim_engine_step_motor_dt.restype = None
     lib.sim_engine_step_motor_speeds_dt.argtypes = [C.POINTER(_CSimEngine), C.POINTER(C.c_float), C.c_float, C.c_int]
@@ -542,7 +674,7 @@ def _load_lib() -> C.CDLL:
     return lib
 
 
-def _params_to_c(p: VehicleParams) -> _CParams:
+def _params_to_c(p: PursuerParams) -> _CPursuerParams:
     rotor_positions = (
         np.zeros((4, 3), dtype=float)
         if p.rotor_positions_b is None
@@ -553,7 +685,7 @@ def _params_to_c(p: VehicleParams) -> _CParams:
         if p.rotor_directions is None
         else np.asarray(p.rotor_directions, dtype=float).reshape(4)
     )
-    return _CParams(
+    return _CPursuerParams(
         C.c_float(p.mass_kg),
         C.c_float(p.ixx),
         C.c_float(p.iyy),
@@ -600,20 +732,62 @@ def _state_from_c(state: _CState) -> dict[str, np.ndarray]:
 
 
 def _target_spec_from_python(target: Any, index: int = 0) -> dict[str, Any]:
+    behavior_kind = TARGET_BEHAVIOR_WAYPOINTS
+    waypoints = None
+    duration = 0.0
+    loop = 0
+    controller_kind = TARGET_CONTROLLER_LINEAR
+    kp = 0.0
+    kv = 0.0
+    max_accel = 0.0
     if isinstance(target, dict):
         pos = target.get("position_w", target.get("initial_position_w", target.get("pos")))
         vel = target.get("velocity_w", target.get("vel"))
         target_id = target.get("id", target.get("target_id", str(index)))
         kind = target.get("kind", "target")
         radius = target.get("radius_m", target.get("radius", 0.0))
+    elif isinstance(target, TargetConfig):
+        pos = target.initial.position_w
+        vel = target.initial.velocity_w
+        target_id = target.id
+        kind = target.kind
+        radius = target.radius_m
+        waypoints = target.behavior.waypoints
+        duration = target.behavior.duration_s
+        loop = int(target.behavior.loop)
+        kp = target.controller.kp
+        kv = target.controller.kv
+        max_accel = target.controller.max_accel_mps2
     else:
-        pos = getattr(target, "initial_position_w", getattr(target, "position_w", None))
-        vel = getattr(target, "velocity_w", None)
+        initial = getattr(target, "initial", None)
+        pos = (
+            getattr(initial, "position_w", None)
+            if initial is not None
+            else getattr(target, "initial_position_w", getattr(target, "position_w", None))
+        )
+        vel = (
+            getattr(initial, "velocity_w", None)
+            if initial is not None
+            else getattr(target, "velocity_w", None)
+        )
         target_id = getattr(target, "target_id", getattr(target, "id", str(index)))
         kind = getattr(target, "kind", "target")
         radius = getattr(target, "radius_m", getattr(target, "radius", 0.0))
+        behavior = getattr(target, "behavior", None)
+        controller = getattr(target, "controller", None)
+        if behavior is not None:
+            waypoints = getattr(behavior, "waypoints", None)
+            duration = getattr(behavior, "duration_s", getattr(behavior, "duration", duration))
+            loop = int(bool(getattr(behavior, "loop", loop)))
+        if controller is not None:
+            kp = getattr(controller, "kp", kp)
+            kv = getattr(controller, "kv", kv)
+            max_accel = getattr(controller, "max_accel_mps2", getattr(controller, "max_accel", max_accel))
     if pos is None or vel is None:
         raise ValueError(f"Target {index} must provide position and velocity")
+    waypoints = () if waypoints is None else tuple(waypoints)
+    if not waypoints:
+        waypoints = (np.asarray(pos, dtype=float).reshape(3).copy(),)
     return {
         "c_id": int(index),
         "id": str(target_id),
@@ -621,14 +795,14 @@ def _target_spec_from_python(target: Any, index: int = 0) -> dict[str, Any]:
         "radius_m": float(radius),
         "position_w": np.asarray(pos, dtype=float).reshape(3).copy(),
         "velocity_w": np.asarray(vel, dtype=float).reshape(3).copy(),
-        "behavior_kind": TARGET_BEHAVIOR_WAYPOINTS,
-        "waypoints": (np.asarray(pos, dtype=float).reshape(3).copy(),),
-        "duration": 0.0,
-        "loop": 0,
-        "controller_kind": TARGET_CONTROLLER_LINEAR,
-        "kp": 0.0,
-        "kv": 0.0,
-        "max_accel": 0.0,
+        "behavior_kind": behavior_kind,
+        "waypoints": tuple(np.asarray(wp, dtype=float).reshape(3).copy() for wp in waypoints),
+        "duration": float(duration),
+        "loop": int(loop),
+        "controller_kind": controller_kind,
+        "kp": float(kp),
+        "kv": float(kv),
+        "max_accel": float(max_accel),
     }
 
 
@@ -705,6 +879,157 @@ def _target_snapshot_from_c(
     }
 
 
+def _camera_spec_from_python(camera: Any, index: int = 0) -> dict[str, Any]:
+    intr = getattr(camera, "intrinsics", None)
+    if intr is None:
+        intr = camera["intrinsics"]
+        width_px = intr["width_px"]
+        height_px = intr["height_px"]
+        fx_px = intr["fx_px"]
+        fy_px = intr["fy_px"]
+        cx_px = intr.get("cx_px", width_px / 2.0)
+        cy_px = intr.get("cy_px", height_px / 2.0)
+        hfov_rad = intr["hfov_rad"]
+        vfov_rad = intr["vfov_rad"]
+        position_b = camera.get("position_b", [0.0, 0.0, 0.0])
+        body_to_camera = camera.get("body_to_camera", np.eye(3))
+        capture_rate_hz = camera["capture_rate_hz"]
+    else:
+        width_px = intr.width_px
+        height_px = intr.height_px
+        fx_px = intr.fx_px
+        fy_px = intr.fy_px
+        cx_px = intr.cx_px
+        cy_px = intr.cy_px
+        hfov_rad = intr.hfov_rad
+        vfov_rad = intr.vfov_rad
+        position_b = camera.position_b
+        body_to_camera = camera.body_to_camera
+        capture_rate_hz = camera.capture_rate_hz
+
+    return {
+        "c_id": int(index),
+        "position_b": np.asarray(position_b, dtype=float).reshape(3).copy(),
+        "body_to_camera": np.asarray(body_to_camera, dtype=float).reshape(3, 3).copy(),
+        "width_px": int(width_px),
+        "height_px": int(height_px),
+        "fx_px": float(fx_px),
+        "fy_px": float(fy_px),
+        "cx_px": float(cx_px),
+        "cy_px": float(cy_px),
+        "hfov_rad": float(hfov_rad),
+        "vfov_rad": float(vfov_rad),
+        "capture_rate_hz": float(capture_rate_hz),
+        "next_capture_t": 0.0,
+    }
+
+
+def _camera_specs_from_snapshot(
+    snapshots: tuple[dict[str, Any], ...] | list[dict[str, Any]],
+    base_specs: tuple[dict[str, Any], ...],
+) -> tuple[dict[str, Any], ...]:
+    specs = []
+    for i, snap in enumerate(snapshots):
+        base = dict(base_specs[i]) if i < len(base_specs) else {"c_id": i}
+        base.update({
+            "position_b": np.asarray(snap["position_b"], dtype=float).reshape(3).copy(),
+            "body_to_camera": np.asarray(snap["body_to_camera"], dtype=float).reshape(3, 3).copy(),
+            "width_px": int(snap["width_px"]),
+            "height_px": int(snap["height_px"]),
+            "fx_px": float(snap["fx_px"]),
+            "fy_px": float(snap["fy_px"]),
+            "cx_px": float(snap["cx_px"]),
+            "cy_px": float(snap["cy_px"]),
+            "hfov_rad": float(snap["hfov_rad"]),
+            "vfov_rad": float(snap["vfov_rad"]),
+            "capture_rate_hz": float(snap["capture_rate_hz"]),
+            "next_capture_t": float(snap["next_capture_t"]),
+        })
+        specs.append(base)
+    return tuple(specs)
+
+
+def _camera_to_c(spec: dict[str, Any]) -> _CCameraSim:
+    return _CCameraSim(
+        C.c_int(int(spec["c_id"])),
+        C.c_int(0),
+        _vec3(spec["position_b"]),
+        _mat3(spec["body_to_camera"]),
+        _CCameraIntrinsics(
+            C.c_int(int(spec["width_px"])),
+            C.c_int(int(spec["height_px"])),
+            C.c_float(float(spec["fx_px"])),
+            C.c_float(float(spec["fy_px"])),
+            C.c_float(float(spec["cx_px"])),
+            C.c_float(float(spec["cy_px"])),
+            C.c_float(float(spec["hfov_rad"])),
+            C.c_float(float(spec["vfov_rad"])),
+        ),
+        C.c_float(float(spec["capture_rate_hz"])),
+        C.c_float(float(spec.get("next_capture_t", 0.0))),
+    )
+
+
+def _camera_states_from_engine(
+    engine: _CSimEngine,
+    camera_specs: tuple[dict[str, Any], ...],
+) -> tuple[dict[str, Any], ...]:
+    states = []
+    for i in range(int(engine.num_cameras)):
+        camera = engine.cameras[i]
+        spec = camera_specs[i] if i < len(camera_specs) else {}
+        body_to_camera = np.array(
+            [[camera.body_to_camera.m[r][c] for c in range(3)] for r in range(3)],
+            dtype=float,
+        )
+        states.append({
+            "c_id": int(camera.id),
+            "position_b": np.array([camera.position_b.x, camera.position_b.y, camera.position_b.z], dtype=float),
+            "body_to_camera": body_to_camera,
+            "width_px": int(camera.intrinsics.width_px),
+            "height_px": int(camera.intrinsics.height_px),
+            "fx_px": float(camera.intrinsics.fx_px),
+            "fy_px": float(camera.intrinsics.fy_px),
+            "cx_px": float(camera.intrinsics.cx_px),
+            "cy_px": float(camera.intrinsics.cy_px),
+            "hfov_rad": float(camera.intrinsics.hfov_rad),
+            "vfov_rad": float(camera.intrinsics.vfov_rad),
+            "capture_rate_hz": float(camera.capture_rate_hz),
+            "next_capture_t": float(camera.next_capture_t),
+            **{k: v for k, v in spec.items() if k not in {"next_capture_t"}},
+        })
+    return tuple(states)
+
+
+def _camera_output_from_c(
+    output: _CCameraOutput,
+    target_specs: tuple[dict[str, Any], ...],
+) -> dict[str, Any]:
+    obs = output.observation
+    target_index = int(obs.target_index)
+    target_id = None
+    if 0 <= target_index < len(target_specs):
+        target_id = str(target_specs[target_index].get("id", target_index))
+    return {
+        "camera_id": str(int(obs.camera_id)),
+        "target_id": target_id,
+        "target_index": target_index,
+        "captured": bool(obs.captured),
+        "detected": bool(obs.detected),
+        "t_capture": float(obs.t_capture),
+        "target_pos_c": np.array([obs.target_pos_c.x, obs.target_pos_c.y, obs.target_pos_c.z], dtype=float),
+        "range_m": float(obs.range_m),
+        "uv_norm": np.array(list(obs.uv_norm), dtype=float) if obs.detected else None,
+        "uv_px": np.array(list(obs.uv_px), dtype=float) if obs.detected else None,
+        "apparent_radius_px": float(obs.apparent_radius_px) if obs.detected else None,
+        "has_frame": bool(output.has_frame),
+        "frame_width_px": int(output.frame_width_px),
+        "frame_height_px": int(output.frame_height_px),
+        "frame_channels": int(output.frame_channels),
+        "frame_rgb": None,
+    }
+
+
 def _metrics_from_c(metrics: _CInterceptMetrics) -> dict[str, float | int | bool | None]:
     intercepted = bool(metrics.intercepted)
     return {
@@ -730,6 +1055,15 @@ def _metrics_to_c(metrics: dict[str, Any]) -> _CInterceptMetrics:
 def _vec3(value: np.ndarray | list[float] | tuple[float, ...]) -> _CVec3:
     arr = np.asarray(value, dtype=float).reshape(3)
     return _CVec3(C.c_float(arr[0]), C.c_float(arr[1]), C.c_float(arr[2]))
+
+
+def _mat3(value: np.ndarray | list[list[float]]) -> _CMat3:
+    arr = np.asarray(value, dtype=float).reshape(3, 3)
+    rows = ((C.c_float * 3) * 3)()
+    for r in range(3):
+        for c in range(3):
+            rows[r][c] = C.c_float(arr[r, c])
+    return _CMat3(rows)
 
 
 def _copy_numeric_state(state: dict[str, np.ndarray]) -> dict[str, np.ndarray]:

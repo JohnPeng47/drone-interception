@@ -1,46 +1,12 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
-from pathlib import Path
 from typing import Any
 
 import numpy as np
-import yaml
 
-from intercept_sim.sensors import FeaturePerceptionModel
-
+from .sensing import FeaturePerceptionModel
 from .targets import KinematicTarget
 from .types import CameraIntrinsics, CameraRig
-
-
-@dataclass(frozen=True)
-class ExperimentConfig:
-    raw: dict[str, Any]
-    path: Path | None = None
-
-    @property
-    def name(self) -> str:
-        return str(self.raw["experiment"]["name"])
-
-    @property
-    def duration_s(self) -> float:
-        return float(self.raw["sim"]["duration_s"])
-
-    @property
-    def dt(self) -> float:
-        return float(self.raw["sim"]["dt"])
-
-    @property
-    def catch_radius_m(self) -> float:
-        return float(self.raw["metrics"]["catch_radius_m"])
-
-
-def load_experiment_config(path: str | Path) -> ExperimentConfig:
-    config_path = Path(path)
-    with config_path.open("r", encoding="utf-8") as handle:
-        raw = yaml.safe_load(handle)
-    validate_experiment_config(raw)
-    return ExperimentConfig(raw=raw, path=config_path)
 
 
 def validate_experiment_config(raw: dict[str, Any]) -> None:

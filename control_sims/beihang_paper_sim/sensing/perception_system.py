@@ -5,7 +5,7 @@ from __future__ import annotations
 from pydrake.systems.framework import LeafSystem
 
 from ..drake_compat import capture_value, measurements_value
-from intercept_sim.sensors import FeaturePerceptionModel
+from .perception import FeaturePerceptionModel
 
 
 class FeatureDetectionSystem(LeafSystem):

@@ -20,6 +20,13 @@ static inline float rndf(float a, float b, unsigned int* rng) {
 static inline Vec3 add3(Vec3 a, Vec3 b) { return (Vec3){a.x + b.x, a.y + b.y, a.z + b.z}; }
 static inline Vec3 sub3(Vec3 a, Vec3 b) { return (Vec3){a.x - b.x, a.y - b.y, a.z - b.z}; }
 static inline Vec3 scalmul3(Vec3 a, float b) { return (Vec3){a.x * b, a.y * b, a.z * b}; }
+static inline Vec3 mat3_mul_vec3(Mat3 m, Vec3 v) {
+    return (Vec3){
+        m.m[0][0] * v.x + m.m[0][1] * v.y + m.m[0][2] * v.z,
+        m.m[1][0] * v.x + m.m[1][1] * v.y + m.m[1][2] * v.z,
+        m.m[2][0] * v.x + m.m[2][1] * v.y + m.m[2][2] * v.z,
+    };
+}
 
 static inline Quat add_quat(Quat a, Quat b) {
     return (Quat){a.w + b.w, a.x + b.x, a.y + b.y, a.z + b.z};

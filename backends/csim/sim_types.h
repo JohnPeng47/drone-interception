@@ -11,6 +11,10 @@ typedef struct {
 } Vec3;
 
 typedef struct {
+    float m[3][3];
+} Mat3;
+
+typedef struct {
     Vec3 pos;      // global position (x, y, z)
     Vec3 vel;      // linear velocity (u, v, w)
     Quat quat;     // roll/pitch/yaw (phi/theta/psi) as a quaternion
@@ -44,4 +48,16 @@ typedef struct {
     float rotor_pos_x[4]; // body-frame rotor x positions, optional
     float rotor_pos_y[4]; // body-frame rotor y positions, optional
     float rotor_dir[4];   // yaw moment signs, optional
-} Params;
+} PursuerParams;
+
+typedef struct {
+    State state;
+    PursuerParams params;
+} PursuerSim;
+
+void pursuer_sim_init(PursuerSim* sim, PursuerParams params, State initial);
+void pursuer_sim_reset(PursuerSim* sim, State initial);
+void pursuer_sim_step_motor(PursuerSim* sim, float actions[4]);
+void pursuer_sim_step_motor_dt(PursuerSim* sim, float actions[4], float dt, int substeps);
+void pursuer_sim_step_motor_speeds_dt(PursuerSim* sim, float cmd_rpms[4], float dt, int substeps);
+State pursuer_sim_get_state(PursuerSim* sim);

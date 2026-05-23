@@ -7,8 +7,8 @@ Keep simulator and backend code outside this directory:
 
 - `intercept_env/` contains the Puffer C environment implementation.
 - `backends/` contains Python simulator/backend adapters.
-- `shared/intercept_sim/` contains simulator-independent interception logic,
-  scenarios, metrics, and telemetry.
+- `control_sims/beihang_paper_sim/sim/generator/` contains the current Python
+  scenario generators for deterministic control-sim runs.
 
 Current contents:
 

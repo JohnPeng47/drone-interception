@@ -2,11 +2,11 @@ from __future__ import annotations
 
 import numpy as np
 
-from backends import InitialState, PufferDroneBackend, PufferSimEngineBackend, VehicleParams
+from backends import PursuerInitialState, PursuerParams, PufferDroneBackend, PufferSimEngineBackend
 
 
 def test_backend_hover_smoke():
-    params = VehicleParams(
+    params = PursuerParams(
         mass_kg=0.027,
         ixx=3.85e-6,
         iyy=3.85e-6,
@@ -18,7 +18,7 @@ def test_backend_hover_smoke():
     )
     backend = PufferDroneBackend(params)
     state = backend.reset(
-        InitialState(
+        PursuerInitialState(
             position_w=np.zeros(3),
             velocity_w=np.zeros(3),
             quat_xyzw=np.array([0.0, 0.0, 0.0, 1.0]),
@@ -39,7 +39,7 @@ def test_backend_hover_smoke():
 
 
 def test_motor_speed_and_state_clamps_are_enforced():
-    params = VehicleParams(
+    params = PursuerParams(
         mass_kg=0.027,
         ixx=3.85e-6,
         iyy=3.85e-6,
@@ -54,7 +54,7 @@ def test_motor_speed_and_state_clamps_are_enforced():
     )
     backend = PufferDroneBackend(params)
     state = backend.reset(
-        InitialState(
+        PursuerInitialState(
             position_w=np.zeros(3),
             velocity_w=np.array([10.0, -10.0, 10.0]),
             quat_xyzw=np.array([0.0, 0.0, 0.0, 1.0]),
@@ -71,7 +71,7 @@ def test_motor_speed_and_state_clamps_are_enforced():
 
 
 def test_sim_engine_tracks_intercept_metrics():
-    params = VehicleParams(
+    params = PursuerParams(
         mass_kg=0.027,
         ixx=3.85e-6,
         iyy=3.85e-6,
@@ -83,7 +83,7 @@ def test_sim_engine_tracks_intercept_metrics():
     )
     backend = PufferSimEngineBackend(params)
     snapshot = backend.reset(
-        InitialState(
+        PursuerInitialState(
             position_w=np.zeros(3),
             velocity_w=np.zeros(3),
             quat_xyzw=np.array([0.0, 0.0, 0.0, 1.0]),
@@ -104,3 +104,57 @@ def test_sim_engine_tracks_intercept_metrics():
     np.testing.assert_allclose(snapshot["metrics"]["distance_m"], 0.25, atol=1e-6)
     np.testing.assert_allclose(snapshot["metrics"]["min_distance_m"], 0.25, atol=1e-6)
     assert snapshot["metrics"]["target_index"] == 0
+
+
+def test_sim_engine_emits_camera_outputs():
+    params = PursuerParams(
+        mass_kg=0.027,
+        ixx=3.85e-6,
+        iyy=3.85e-6,
+        izz=5.9675e-6,
+        arm_len_m=0.0396,
+        k_thrust=3.16e-10,
+        k_yaw=0.005964552,
+        max_rpm=21702.0,
+    )
+    backend = PufferSimEngineBackend(params)
+    snapshot = backend.reset(
+        PursuerInitialState(
+            position_w=np.zeros(3),
+            velocity_w=np.zeros(3),
+            quat_xyzw=np.array([0.0, 0.0, 0.0, 1.0]),
+            body_rates_b=np.zeros(3),
+        ),
+        targets=(
+            {
+                "id": "target",
+                "position_w": np.array([2.0, 0.0, 0.0]),
+                "velocity_w": np.zeros(3),
+                "radius_m": 0.2,
+            },
+        ),
+        cameras=(
+            {
+                "position_b": np.zeros(3),
+                "body_to_camera": np.eye(3),
+                "capture_rate_hz": 30.0,
+                "intrinsics": {
+                    "width_px": 640,
+                    "height_px": 480,
+                    "fx_px": 320.0,
+                    "fy_px": 320.0,
+                    "cx_px": 320.0,
+                    "cy_px": 240.0,
+                    "hfov_rad": np.deg2rad(90.0),
+                    "vfov_rad": np.deg2rad(60.0),
+                },
+            },
+        ),
+    )
+
+    assert len(snapshot["camera_outputs"]) == 1
+    output = snapshot["camera_outputs"][0]
+    assert output["detected"] is True
+    assert output["target_id"] == "target"
+    np.testing.assert_allclose(output["uv_norm"], np.zeros(2), atol=1e-6)
+    np.testing.assert_allclose(output["uv_px"], np.array([320.0, 240.0]), atol=1e-5)
