@@ -18,10 +18,22 @@ class SimOptions:
 
 
 @dataclass(frozen=True)
+class RenderConfig:
+    enabled: bool = False
+    camera_id: str | None = None
+    backend: str = "software"
+    platform: str = "auto"
+    scene_id: str = "liftoff_fpv_0"
+    timeout_ms: int = 16
+    fail_on_error: bool = False
+
+
+@dataclass(frozen=True)
 class SimConfig:
     pursuer: PursuerParams
     options: SimOptions = field(default_factory=SimOptions)
     intercept_radius_m: float = 0.0
+    render: RenderConfig = field(default_factory=RenderConfig)
 
 
 @dataclass(frozen=True)

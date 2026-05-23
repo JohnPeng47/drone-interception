@@ -2,7 +2,18 @@ from __future__ import annotations
 
 import numpy as np
 
-from backends import PursuerInitialState, PursuerParams, PufferDroneBackend, PufferSimEngineBackend
+import pytest
+
+from backends import (
+    RenderConfig,
+    SimConfig,
+    PursuerInitialState,
+    PursuerParams,
+    PufferDroneBackend,
+    PufferSimEngineBackend,
+)
+from rendering.python import LIFTOFF_RENDER_BACKEND_UNAVAILABLE, RenderError
+from rendering.python import LIFTOFF_RENDER_OK
 
 
 def test_backend_hover_smoke():
@@ -156,5 +167,144 @@ def test_sim_engine_emits_camera_outputs():
     output = snapshot["camera_outputs"][0]
     assert output["detected"] is True
     assert output["target_id"] == "target"
+    assert output["camera_id"] == "0"
+    assert output["render_status"] is None
     np.testing.assert_allclose(output["uv_norm"], np.zeros(2), atol=1e-6)
     np.testing.assert_allclose(output["uv_px"], np.array([320.0, 240.0]), atol=1e-5)
+
+
+def test_sim_engine_render_config_requests_only_selected_camera():
+    params = _params()
+    backend = PufferSimEngineBackend(
+        SimConfig(
+            pursuer=params,
+            render=RenderConfig(enabled=True, camera_id="front", backend="unity"),
+        )
+    )
+
+    snapshot = backend.reset(
+        PursuerInitialState(
+            position_w=np.zeros(3),
+            velocity_w=np.zeros(3),
+            quat_xyzw=np.array([0.0, 0.0, 0.0, 1.0]),
+            body_rates_b=np.zeros(3),
+        ),
+        targets=(
+            {
+                "id": "target",
+                "position_w": np.array([2.0, 0.0, 0.0]),
+                "velocity_w": np.zeros(3),
+                "radius_m": 0.2,
+            },
+        ),
+        cameras=(_camera("front"), _camera("down")),
+    )
+
+    outputs = {output["camera_id"]: output for output in snapshot["camera_outputs"]}
+    assert set(outputs) == {"front", "down"}
+    assert outputs["front"]["render_status"] == LIFTOFF_RENDER_BACKEND_UNAVAILABLE
+    assert outputs["front"]["render_status_name"] == "backend_unavailable"
+    assert outputs["front"]["has_frame"] is False
+    assert outputs["front"]["frame_rgb"] is None
+    assert outputs["down"]["render_status"] is None
+    assert outputs["down"]["frame_rgb"] is None
+
+
+def test_sim_engine_render_fail_on_error_raises():
+    backend = PufferSimEngineBackend(
+        SimConfig(
+            pursuer=_params(),
+            render=RenderConfig(enabled=True, camera_id="front", backend="unity", fail_on_error=True),
+        )
+    )
+
+    with pytest.raises(RenderError) as exc:
+        backend.reset(
+            PursuerInitialState(
+                position_w=np.zeros(3),
+                velocity_w=np.zeros(3),
+                quat_xyzw=np.array([0.0, 0.0, 0.0, 1.0]),
+                body_rates_b=np.zeros(3),
+            ),
+            targets=(
+                {
+                    "id": "target",
+                    "position_w": np.array([2.0, 0.0, 0.0]),
+                    "velocity_w": np.zeros(3),
+                    "radius_m": 0.2,
+                },
+            ),
+            cameras=(_camera("front"),),
+        )
+
+    assert exc.value.status == LIFTOFF_RENDER_BACKEND_UNAVAILABLE
+
+
+def test_sim_engine_software_render_outputs_frame_bytes():
+    backend = PufferSimEngineBackend(
+        SimConfig(
+            pursuer=_params(),
+            render=RenderConfig(enabled=True, camera_id="front", backend="software"),
+        )
+    )
+
+    snapshot = backend.reset(
+        PursuerInitialState(
+            position_w=np.zeros(3),
+            velocity_w=np.zeros(3),
+            quat_xyzw=np.array([0.0, 0.0, 0.0, 1.0]),
+            body_rates_b=np.zeros(3),
+        ),
+        targets=(
+            {
+                "id": "target",
+                "position_w": np.array([2.0, 0.0, 0.0]),
+                "velocity_w": np.zeros(3),
+                "radius_m": 0.2,
+            },
+        ),
+        cameras=(_camera("front"),),
+    )
+
+    output = snapshot["camera_outputs"][0]
+    assert output["render_status"] == LIFTOFF_RENDER_OK
+    assert output["render_status_name"] == "ok"
+    assert output["has_frame"] is True
+    assert output["frame_width_px"] == 640
+    assert output["frame_height_px"] == 480
+    assert output["frame_channels"] == 3
+    assert output["frame_stride_bytes"] == 640 * 3
+    assert output["frame_rgb"] is not None
+    assert len(output["frame_rgb"]) == 640 * 480 * 3
+
+
+def _params() -> PursuerParams:
+    return PursuerParams(
+        mass_kg=0.027,
+        ixx=3.85e-6,
+        iyy=3.85e-6,
+        izz=5.9675e-6,
+        arm_len_m=0.0396,
+        k_thrust=3.16e-10,
+        k_yaw=0.005964552,
+        max_rpm=21702.0,
+    )
+
+
+def _camera(camera_id: str) -> dict:
+    return {
+        "id": camera_id,
+        "position_b": np.zeros(3),
+        "body_to_camera": np.eye(3),
+        "capture_rate_hz": 30.0,
+        "intrinsics": {
+            "width_px": 640,
+            "height_px": 480,
+            "fx_px": 320.0,
+            "fy_px": 320.0,
+            "cx_px": 320.0,
+            "cy_px": 240.0,
+            "hfov_rad": np.deg2rad(90.0),
+            "vfov_rad": np.deg2rad(60.0),
+        },
+    }

@@ -19,7 +19,7 @@ No Windows types should appear in `rendering/include` or `backends/csim`.
 
 `platform/linux` will own:
 
-- POSIX shared memory or Unix domain sockets
+- POSIX shared memory
 - `eventfd`, `poll`, or futex-backed readiness
 - Linux Unity runtime process discovery if needed
 - timeout conversion to POSIX wait APIs

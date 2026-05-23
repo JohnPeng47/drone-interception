@@ -11,6 +11,7 @@ from backends.csim.bindings.types import (
     CameraIntrinsics,
     PursuerInitialState,
     PursuerParams,
+    RenderConfig,
     SimConfig,
     SimInstance,
     SimOptions,
@@ -22,7 +23,7 @@ from backends.csim.bindings.types import (
 
 
 SIM_INSTANCE_MAGIC = b"CSIMINST"
-SIM_INSTANCE_FORMAT_VERSION = 2
+SIM_INSTANCE_FORMAT_VERSION = 3
 _HEADER = struct.Struct("<8sIIQ")
 _U8 = struct.Struct("<B")
 _U16 = struct.Struct("<H")
@@ -137,6 +138,18 @@ def _write_string(buf: bytearray, value: str) -> None:
 def _read_string(cursor: _Cursor) -> str:
     length = _read_u16(cursor)
     return cursor.read(length).decode("utf-8")
+
+
+def _write_optional_string(buf: bytearray, value: str | None) -> None:
+    _write_u8(buf, int(value is not None))
+    if value is not None:
+        _write_string(buf, value)
+
+
+def _read_optional_string(cursor: _Cursor) -> str | None:
+    if not _read_u8(cursor):
+        return None
+    return _read_string(cursor)
 
 
 def _write_f32_array(buf: bytearray, value: np.ndarray, shape: tuple[int, ...]) -> None:
@@ -338,6 +351,7 @@ def _write_sim_config(buf: bytearray, config: SimConfig | None) -> None:
     _write_f32(buf, config.options.ctbr_rate_gain)
     _write_u8(buf, int(config.options.randomize_params))
     _write_f32(buf, config.intercept_radius_m)
+    _write_render_config(buf, config.render)
 
 
 def _read_sim_config(cursor: _Cursor) -> SimConfig | None:
@@ -353,6 +367,29 @@ def _read_sim_config(cursor: _Cursor) -> SimConfig | None:
             randomize_params=bool(_read_u8(cursor)),
         ),
         intercept_radius_m=_read_f32(cursor),
+        render=_read_render_config(cursor),
+    )
+
+
+def _write_render_config(buf: bytearray, config: RenderConfig) -> None:
+    _write_u8(buf, int(config.enabled))
+    _write_optional_string(buf, config.camera_id)
+    _write_string(buf, config.backend)
+    _write_string(buf, config.platform)
+    _write_string(buf, config.scene_id)
+    _write_u32(buf, config.timeout_ms)
+    _write_u8(buf, int(config.fail_on_error))
+
+
+def _read_render_config(cursor: _Cursor) -> RenderConfig:
+    return RenderConfig(
+        enabled=bool(_read_u8(cursor)),
+        camera_id=_read_optional_string(cursor),
+        backend=_read_string(cursor),
+        platform=_read_string(cursor),
+        scene_id=_read_string(cursor),
+        timeout_ms=_read_u32(cursor),
+        fail_on_error=bool(_read_u8(cursor)),
     )
 
 

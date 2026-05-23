@@ -13,7 +13,7 @@ namespace liftoff_render {
 struct PlatformConfig {
     LiftoffRenderPlatformKind platform;
     uint32_t timeout_ms;
-    const char* endpoint;
+    const char* scene_id;
 };
 
 struct ByteView {

@@ -8,6 +8,7 @@ from backends import (
     PregeneratedSimGenerator,
     PursuerInitialState,
     PursuerParams,
+    RenderConfig,
     SimConfig,
     SimInstance,
     SimOptions,
@@ -37,6 +38,13 @@ def test_sim_instance_binary_round_trip(tmp_path):
     np.testing.assert_allclose(restored.cameras[0].body_to_camera, np.eye(3))
     assert restored.config is not None
     assert restored.config.options.action_substeps == 5
+    assert restored.config.render.enabled is True
+    assert restored.config.render.camera_id == "front"
+    assert restored.config.render.backend == "none"
+    assert restored.config.render.platform == "linux"
+    assert restored.config.render.scene_id == "liftoff_test"
+    assert restored.config.render.timeout_ms == 7
+    assert restored.config.render.fail_on_error is True
     assert restored.raw_config == {}
     assert restored.metadata == {}
 
@@ -99,6 +107,15 @@ def _instance(seed: int) -> SimInstance:
         ),
         options=SimOptions(action_substeps=5),
         intercept_radius_m=0.5,
+        render=RenderConfig(
+            enabled=True,
+            camera_id="front",
+            backend="none",
+            platform="linux",
+            scene_id="liftoff_test",
+            timeout_ms=7,
+            fail_on_error=True,
+        ),
     )
     return SimInstance(
         seed=seed,
