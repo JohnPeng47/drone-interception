@@ -69,11 +69,11 @@ DEFAULT_ROBUST_INTERCEPT_CONFIG: dict[str, Any] = {
     },
     "parameters": {
         "range_m": {"min": 8.0, "max": 8.0, "distribution": "uniform"},
-        "los_azimuth_deg": {"min": 0.0, "max": 0.0, "distribution": "uniform"},
-        "los_elevation_deg": {"min": -20.0, "max": 45.0, "distribution": "uniform_sin"},
+        "los_azimuth_deg": {"min": 0.0, "max": 360.0, "distribution": "uniform"},
+        "los_elevation_deg": {"min": -90.0, "max": 90.0, "distribution": "uniform_sin"},
         "camera_u_fraction": {"min": -0.9, "max": 0.9, "distribution": "uniform"},
         "camera_v_fraction": {"min": -0.9, "max": 0.9, "distribution": "uniform"},
-        "camera_roll_deg": {"min": -180.0, "max": 180.0, "distribution": "uniform"},
+        "camera_roll_deg": {"min": 0.0, "max": 0.0, "distribution": "uniform"},
         "closing_speed_mps": {"min": 2.0, "max": 2.0, "distribution": "uniform"},
         "lateral_speed_mps": {"min": 0.0, "max": 0.0, "distribution": "uniform"},
         "lateral_direction_rad": {"min": 0.0, "max": 0.0, "distribution": "uniform"},
@@ -91,10 +91,10 @@ DEFAULT_ROBUST_INTERCEPT_CONFIG: dict[str, Any] = {
         "geometry": {
             "weight": 0.80,
             "active_parameters": [
+                "los_azimuth_deg",
                 "los_elevation_deg",
                 "camera_u_fraction",
                 "camera_v_fraction",
-                "camera_roll_deg",
             ],
         },
         "kinematic": {
@@ -118,6 +118,14 @@ class _SamplePoint:
     seed: int
     stratum: str
     values: dict[str, float]
+
+
+@dataclass(frozen=True)
+class SampleEvaluation:
+    instance: SimInstance
+    record: dict[str, Any]
+    valid: bool
+    validation_error: str | None
 
 
 class RobustInterceptConfigGenerator(SimGenerator):
@@ -160,16 +168,35 @@ def write_default_config(path: str | Path) -> None:
 
 
 def generate_instances(config: dict[str, Any]) -> list[SimInstance]:
-    generator = RobustInterceptConfigGenerator(config)
-    return generator.sample_many(
-        count=int(generator.config["sampling"]["n_samples"]),
-        seed_start=int(generator.config["sampling"]["seed"]),
-    )
+    return [evaluation.instance for evaluation in evaluate_samples(config) if evaluation.valid]
 
 
 def generate_sample_records(config: dict[str, Any]) -> list[dict[str, Any]]:
+    return [evaluation.record for evaluation in evaluate_samples(config)]
+
+
+def evaluate_samples(config: dict[str, Any]) -> list[SampleEvaluation]:
     generator = RobustInterceptConfigGenerator(config)
-    return [_sample_record(config, point) for point in generator._sample_points]
+    evaluations: list[SampleEvaluation] = []
+    for point in generator._sample_points:
+        instance = _resolve_instance(generator.config, point)
+        valid = True
+        validation_error = None
+        try:
+            generator._validate_instance(instance)
+        except ValueError as exc:
+            valid = False
+            validation_error = str(exc)
+        record = _sample_record(generator.config, point, valid=valid, validation_error=validation_error)
+        evaluations.append(
+            SampleEvaluation(
+                instance=instance,
+                record=record,
+                valid=valid,
+                validation_error=validation_error,
+            )
+        )
+    return evaluations
 
 
 def plot_sample_records(records_by_strategy: dict[str, list[dict[str, Any]]], out_dir: str | Path) -> list[Path]:
@@ -365,13 +392,21 @@ def _resolve_instance(config: dict[str, Any], point: _SamplePoint) -> SimInstanc
     )
 
 
-def _sample_record(config: dict[str, Any], point: _SamplePoint) -> dict[str, Any]:
+def _sample_record(
+    config: dict[str, Any],
+    point: _SamplePoint,
+    *,
+    valid: bool | None = None,
+    validation_error: str | None = None,
+) -> dict[str, Any]:
     return {
         "scenario": "robust_intercept",
         "strategy": str(config["sampling"].get("strategy", "sobol")).lower(),
         "stratum": point.stratum,
         "sample_index": point.index,
         "seed": point.seed,
+        **({} if valid is None else {"valid": bool(valid)}),
+        **({} if validation_error is None else {"validation_error": validation_error}),
         **{name: float(value) for name, value in point.values.items()},
     }
 
@@ -505,8 +540,26 @@ def _camera_config(camera: dict[str, Any]) -> CameraConfig:
 def _scatter(ax: Any, rows: list[dict[str, Any]], x_key: str, y_key: str, x_label: str, y_label: str, title: str) -> None:
     strata = sorted(set(str(row["stratum"]) for row in rows))
     for stratum in strata:
-        subset = [row for row in rows if row["stratum"] == stratum]
-        ax.scatter([row[x_key] for row in subset], [row[y_key] for row in subset], s=8, alpha=0.6, label=stratum)
+        valid_subset = [row for row in rows if row["stratum"] == stratum and row.get("valid", True)]
+        invalid_subset = [row for row in rows if row["stratum"] == stratum and not row.get("valid", True)]
+        if valid_subset:
+            ax.scatter(
+                [row[x_key] for row in valid_subset],
+                [row[y_key] for row in valid_subset],
+                s=8,
+                alpha=0.6,
+                label=stratum,
+            )
+        if invalid_subset:
+            ax.scatter(
+                [row[x_key] for row in invalid_subset],
+                [row[y_key] for row in invalid_subset],
+                s=18,
+                alpha=0.85,
+                marker="x",
+                c="#dc2626",
+                label=f"{stratum} invalid",
+            )
     ax.set_xlabel(x_label)
     ax.set_ylabel(y_label)
     ax.set_title(title)
@@ -596,8 +649,9 @@ def _main() -> None:
     records_by_strategy: dict[str, list[dict[str, Any]]] = {}
     for strategy in [item.strip() for item in args.strategies.split(",") if item.strip()]:
         config = _deep_merge(base_config, {"sampling": {"strategy": strategy}})
-        instances = generate_instances(config)
-        records = generate_sample_records(config)
+        evaluations = evaluate_samples(config)
+        instances = [evaluation.instance for evaluation in evaluations if evaluation.valid]
+        records = [evaluation.record for evaluation in evaluations]
         records_by_strategy[strategy] = records
         write_sim_instances(out_dir / f"{strategy}_samples.csimin", instances)
         (out_dir / f"{strategy}_sample_records.json").write_text(
