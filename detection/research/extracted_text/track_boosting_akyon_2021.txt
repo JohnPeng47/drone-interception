@@ -1,0 +1,276 @@
+arXiv:2111.12389v5 [cs.CV] 19 May 2022
+
+
+
+
+
+
+
+
+
+
+    Track Boosting and Synthetic Data Aided Drone Detection
+
+Fatih Cagatay Akyon, Ogulcan Eryuksel, Kamil Anil Ozfuttu, Sinan Onur Altinuc
+                                   OBSS AI
+                       OBSS Technology, Ankara, Turkey
+    {fatih.akyon, ogulcan.eryuksel, anil.ozfuttu, sinan.altinuc}@obss.com.tr
+
+
+        Abstract between drones and birds [4]. Given their characteristics, in
+        fact, drones can be easily confused with birds, particularly
+   This is the paper for the first place winning solution of at long distances, which makes the surveillance task even
+the Drone vs. Bird Challenge, organized by AVSS 2021. As more challenging. The use of video analytics can solve the
+the usage of drones increases with lowered costs and im- issue, but effective algorithms are needed that can operate
+proved drone technology, drone detection emerges as a vi- under unfavorable conditions, namely weak contrast, long-
+tal object detection task. However, detecting distant drones range, low visibility, etc.
+under unfavorable conditions, namely weak contrast, long- To overcome these issues, firstly, we use synthetic data
+range, low visibility, requires effective algorithms. Our selectively to enrich the dataset. Secondly, we make use of
+method approaches the drone detection problem by fine- the Kalman filter [18] based object tracking method to track
+tuning a YOLOv5 model with real and synthetically gen- objects across time to eliminate false positives and enhance
+erated data using a Kalman-based object tracker to boost detection performance. Lastly, we propose a track boost-
+detection confidence. Our results indicate that augmenting ing method for boosting the confidence scores of detections
+the real data with an optimal subset of synthetic data can based on track statistics.
+increase the performance. Moreover, temporal information
+gathered by object tracking methods can increase perfor- 2. Related Work
+mance further. In recent years, the application of deep learning-based
+        detection methods has led to excellent results for a wide
+1. Introduction range of applications, including drone detection. However,
+        due to the absence of large amounts of drone detection
+   Initially being used for military applications, the use of datasets, a two-staged detection strategy has been proposed
+drones has been extended to multiple application fields, in- in [16]. First, the authors examined the suitability of differ-
+cluding traffic and weather monitoring [5], smart agricul- ent flying object detection techniques, i.e., frame differenc-
+ture monitoring [17], and many more [15]. Furthermore, ing and background subtraction techniques, locally adap-
+with the COVID-19 pandemic, there has been a radical in- tive change detection, and object proposal techniques [11],
+crease in the use of drones not only for autonomous delivery to extract region candidates in video data from static and
+of essential grocery and medical supplies but also to enforce moving cameras. In the second stage, a small CNN clas-
+social distancing. Nowadays, small quadcopters can be eas- sification network is applied to distinguish each candidate
+ily purchased on the Internet at low prices, which brings region into drone and clutter categories.
+unprecedented opportunities but also poses several threats In [3], Gagn and Mercier (referred to as Alexis team)
+in terms of safety, privacy, and security [7]. proposed a drone detection approach based on YOLOv3
+   The Drone vs. Bird Detection Challenge was launched [13] and taking a single RGB frame as input. By integrating
+in 2017, during the first edition of the International Work- an image tiling strategy, this approach is able to detect small
+shop on Small-Drone Surveillance, Detection and Coun- drones in high-resolution images successfully. Alexis Team
+teraction Techniques (WOSDETC) [4] as part of the 14th leveraged the public PyTorch implementation of YOLOv3
+edition of the IEEE International Conference on Advanced with Spatial Pyramid Pooling (YOLOv3-SPP) made avail-
+Video and Signal based Surveillance (AVSS). This chal- able by Ultralytics [8]. Spatial Pyramid Pooling [6] is a
+lenge aims to address the technical issues of discriminating simple technique for which the input features are processed
+        by pooling layers of different sizes in parallel and then con-
+    978-1-6654-3396-9/21/$31.00 ©2021 IEEE catenated to generate fixed-length feature vectors. More-
+
+over, EagleDrone Team proposed a YOLOv5 based drone                with these studies, we created datasets with varying sam-
+detection modality with a linear sampling-based data sub-          ple sizes that were optimized based on the features discov-
+sampling method. They propose to set the sampling proba-           ered. Finally, a series of experiments were conducted; first,
+bilities using calculated loss per image. In addition to that,     a dataset was used with mixing synthetic and real data; sec-
+they utilize an ESRGAN based super-resolution technique            ond, a model trained on a synthetic dataset was used as a
+to detect small and low-resolution drones.                         backbone for real data training.
+
+3. Proposed Technique                                              3.3. Object Tracking And Tracker Based Confi-
+                                                                       dence Boosting
+3.1. Detection Model                                                    Object tracking algorithms are used to provide continu-
+             The proposed technique focuses on a combination of    ity of object detections over time. While tracking the ob-
+two methods to improve the accuracy of drone detection             jects is not directly required, it provides temporal informa-
+performance using YOLOv5 [9] object detection method.              tion about the objects in the video that can further improve
+YOLOv5 is selected because of its speed and performance            performance.
+on object detection tasks.      In addition, it supports anchor
+optimization, which is proven to improve performance [19]          3.3.1 Tracker Method
+and feature pyramids [10] that handle objects at different
+scales.                                                            A simple Kalman-based tracking method is applied [2] over
+                                                                   the predictions of the object detection network.     Kalman-
+3.2. Synthetic Data                                                based tracking uses a position and velocity-based pro-
+                                                                   cess, object detection methods as measurements, and a hit
+                                                                   counter mechanism. The tracking parameters are optimized
+                                                                   for drone tracking with possibly moving cameras.
+>      4                   RG                                      One benefit of using a tracker system is that for a track to
+                           7     fob                          d    be formed successfully, the object detection model needs to
+                                                                   provide a consistent stream of predictions close to the ob-
+                                                                   ject’s predicted location. Therefore false positives occurring
+Figure 1. Samples from synthetically generated drones images.      at random positions usually fail to build up the necessary hit
+                                                                   count to form a track, as shown in Fig. 2. This has a positive
+       The use of synthetic data in deep learning appears help-    impact on the mAP score.
+ful in scenarios where data is scarce or unavailable.       Al-
+though synthetic data alone cannot show the same perfor-
+mance as real data, it has been seen that it increases perfor-         [J
+mance when used alongside real data [19]. Since there is no
+general method for creating synthetic data, each problem
+requires a unique approach.        For the drone tracking prob-        |
+lem, a method for creating labeled, randomized composi-                1
+tions by positioning 3D drone objects in front of 2D back-             |"      wp-      a4     In
+grounds were designed. This method was chosen because it
+is challenging to create a 3D randomized environment for           =
+the drone detection problem, and a location-independent
+object such as a drone can be used appropriately with 2D           Figure 2. Tracker results and false positive detections on a frame.
+backgrounds.           To generate the dataset, 3D drone models    Drone in the frame has a tracking id of 1 that shows tracker tracks
+were rendered with various conditions such as position, ro-        the frame. The other red boxes on the clouds are false positives
+tation and lighting, and post-process effects on the random-       that can be filtered out by the tracker.
+ized background images. Some samples from the syntheti-
+cally generated dataset can be seen in Fig. 1.
+           The most complex challenge encountered in the method    3.3.2 Track Boosting Method
+is developing a solution to bridge the so-called ”domain
+gap”. To achieve this, experiments were conducted on the           The tracks provide a spatiotemporal dimension and continu-
+properties of the generated synthetic data, and the properties     ity over the predictions. This information is used in various
+that make it similar to real data were investigated. In line       ways to improve performance.
+
+                    Data                            Technique                       mAP  mAP-s           mAP-m mAP-l
+              Combined Dataset  | YOLOv5 + Tracker + Track Boosting             ~~  79.4  86.2            72.7  70.3
+                Real Dataset            YOLOv5 + Tracker + Track Boosting       ~~  76.1  86.6            67.6  43.0
+             Synthetic Dataset  | YOLOv5 + Tracker + Track Boosting             ~~  60.9  69.3            58.3  41.3
+              Combined Dataset                   YOLOv5 + Tracker                   78.8  85.7            71.6  65.3
+                Real Dataset                     YOLOv5 + Tracker                   74.6  86.2            66.9  33.0
+             Synthetic Dataset                   YOLOv5 + Tracker                   56.6  65.4            55.7  36.0
+                  Combined                            YOLOv5                        78.1  84.8            72.0  65.2
+                Real Dataset                          YOLOv5                        74.6  86.0            67.1  33.4
+             Synthetic Dataset                        YOLOv5                        55.6  63.0            55.6  35.2
+Table 1. Fine-tuning results for synthetic data augmentation and track boosting technique. In ‘Data‘ column, ‘Combined‘ means synthetic
+samples are used in training together with real data. In ‘Technique‘ column, ‘Y‘ means YOLOv5m6 model is used as detector and ‘T‘
+means Kalman based tracker is applied on top of model detections.   ‘mAP‘ corresponds to mean average precision at 0.50 threshold.
+mAP-s, mAP-m and mAP-l corresponds to small, medium and large object detection accuracies, respectively.
+
+      However, tracking can provide object predictions where            4. Experiments
+the object  detection method    provides  no       predictions;         4.1. Used Datasets
+tracker-only predictions are not very useful compared to
+detection predictions due to their low IoU rate and test set                    Before conducting the experiments, we randomly se-
+not having annotations for occluded objects. Furthermore,               lected 15 of the videos from drone-vs-bird set [19] as the
+in conducted experiments, including the tracker predictions             validation set. Then extracted the frames from training and
+had a negative impact on the mAP score.       Therefore only            validation videos. We observed that using a subset of the
+detections from the object detection method are used in the             training frames instead of the whole set prevents over-fitting
+Tracker Boosting Method.                                                resulting in improved accuracy. Therefore, uniformly sam-
+    Also, object detection model confidence may vary signif-            pled 104 frames from the drone vs. bird training is used as
+icantly with moving objects as the object moves or changes              training data in experiments. This dataset will be referred
+orientation over time. With the track information provided              as ”Real Dataset”.
+by the tracking algorithm, we increased the confidence of                Synthetic datasets with different features were generated
+the predictions within a track by averaging the max confi-              using the method mentioned in sec. 3.2.These datasets with
+dence score in the track with the confidence provided by the            special features are:
+object detection algorithm as shown in Eq. (1) where Si,j′
+is the score for a prediction with i as track number and j              • Original   Original rendered image without spesific fea-
+as the position in the track and si is the vector of scores for              tures
+track i.
+             S′         = Si,j + max(si)                 (1)            • Noise Image rendered with film grain noise post process-
+               i,j              2                                            ing effect
+                                                                        • Optimal drone sizes     Drones sized according to normal
+                                                                             distribution
+
+                                                                        • Blur     Rendered image with Gaussian Blur optimized for
+        II   )   Hii                                                         backgrounds
+                                                                        The dataset generated with 104        images by optimizing
+                                                                        these features is called ”Synthetic Dataset”.
+                                         dg                                 To perform experiments in which synthetic data will be
+                                        fot                             used alongside real data, we created a combined dataset of
+                                                                        1.05        × 104 images which will be referred as ”Combined
+Figure 3. Plot of the confidence scores of a track. Red lines are the   Dataset”. This dataset includes all 104 samples from ”Real
+confidence scores of object detection and tracking. Blue lines are      Dataset” and an optimal sub-sample of 500 images from
+the results of the confidence increasing algorithm. In areas marked     ’Synthetic Dataset’. The reason to include just a small sub-
+with orange, object detector failed to find the object.                 set of the synthetic images is to avoid the domain gap men-
+                                                                        tioned in sec. 3.2.
+
+         Moreover, we have also trained models with a combined        As seen in Table 1, real data gives better results than syn-
+dataset containing images from mav-vid [14] and realworld-               thetic data; however, augmenting real data with syntheti-
+uav [12] drone detection datasets. However, since their dis-            cally generated data improves the validation results by up
+tributions differ from the drone-vs-bird dataset, our drone-            to 4.2 AP in all scenarios. Moreover, by applying a Kalman
+vs-bird validation accuracy dropped, so we do not mention            filter-based tracker, base results can be improved by up to 1
+combined dataset training results in this paper.                          AP. More importantly, applying the track boosting method
+4.2. Results                                                        on top of a tracker provides us with an additional 1.5 and 0.6
+                                                                          AP improvement in real and combined dataset experiments,
+      Firstly, a series of experiments were performed on vari-   respectively.
+ous synthetic datasets to find the optimal synthetic features.   5. Conclusion
+All experiments were performed with COCO pretrained
+YOLOv5m6 model of 1333 input image size, 8 batch size,                        Our results show that a YOLOv5 model fine-tuned only
+and 10 epochs setup and with datasets described in 4.1. For               on synthetically generated images can achieve acceptable
+data sampling, inference and evaluation, our open source                 performance on drone detection tasks. Moreover, mixing an
+vision package SAHI [1] is utilized. As seen in Fig. 4, ex-           optimal subset of synthetic data yielded much better results
+periments revealed that the most important property is the               than using real and synthetic images by themselves. Usage
+amount of blur applied to the image. In addition, it was un-             of the tracker improves upon the object detection perfor-
+derstood that the distribution of drone sizes and noise effect             mance in all cases. This improvement may be a result of
+similar to film grain significantly affect the performance.             filling out missing frames and eliminating the false posi-
+The results of the synthetic data experiments are used to             tives by the tracker’s internal mechanism. These results can
+create the optimized synthetic dataset known as ’Synthetic              be further improved by adjusting the frame predictions us-
+Dataset’. The training results obtained with the ’Synthetic                ing the track information. Using the maximum confidence
+Dataset’ show that with the correct features, a training set          value in a track as a reference value, the overall mAP score
+consisting of only synthetic images gives us acceptable re-              increased. In cases where both the tracking algorithm and
+sults considering no real images were required in the pro-             the object detection provide a prediction using the predic-
+cess.                                                                     tion from the object detection model results in improved
+                                                                 accuracy as well.
+
+                 er                                              References
+              Noise                                               [1] F. C. Akyon, S. O. Altinuc, and A. Temizel.    Slicing aided
+                                                                       hyper inference and fine-tuning for small object detection.
+optimal arone sizes                                                arXiv preprint arXiv:2202.06934, 2022. 4
+                                                                  [2] J. Alori, A. Descoins, B.  Ros, and A.     Castro.      try-
+                                                                   olabs/norfair:    v0.3.1.                   https://github.com/
+                                                                   tryolabs/norfair, 2021. 2, 4
+                                                                      [3] A. Coluccia, A. Fascista, A. Schumann, L. Sommer, A. Di-
+    00      02      04     (na)  05      08                          mou, D. Zarpalas, M. M´endez, D. De la Iglesia, I. Gonz´alez,
+    Jan     Preston                                                J.-P. Mercier, et al.     Drone vs. bird detection: Deep learn-
+                                                                   ing algorithms and results from a grand challenge.     Sensors,
+                                                                   21(8):2824, 2021. 1
+Figure 4. Evaluation result for different synthetic features      [4] A. Coluccia, A. Fascista,  A. Schumann,     L.       Sommer,
+                                                                   M. Ghenescu,    T. Piatrik,   G. De Cubber,        M. Nalamati,
+           For the real data (drone-vs-bird) experiments, COCO     A. Kapoor, M. Saqib, et al.       Drone-vs-bird detection chal-
+pretrained YOLOv5m6 model is fine-tuned on drone-vs-               lenge at ieee avss2019.   In       2019 16th IEEE International
+bird training split with 1333 input image size, 6 batch size                Conference on Advanced Video and Signal Based Surveil-
+for 10 epochs. During inference, vanilla YOLOv5 detection          lance (AVSS), pages 1–7. IEEE, 2019. 1
+results are taken as a baseline.      Then Kalman filter-based           [5] M. Elloumi, R. Dhaou, B. Escrig, H. Idoudi, and L. A.
+tracker is applied on top of model detections. Norfair pack-          Saidane. Monitoring road traffic with a uav-based system. In
+age [2] is utilized for the Kalman filter implementations                    2018 IEEE Wireless Communications and Networking Con-
+with measurement (R) and process (Q) uncertainty param-            ference (WCNC), pages 1–6. IEEE, 2018. 1
+eters of 0.2 and 1, respectively. Lastly, the track boosting      [6] K. He, X. Zhang, S. Ren, and J. Sun. Spatial pyramid pooling
+technique is applied to the tracker output for further perfor-         in deep convolutional networks for visual recognition. IEEE
+                                                                        transactions on pattern analysis and machine intelligence,
+mance improvement.                                                 37(9):1904–1916, 2015. 1
+
+  [7] T. Humphreys. Statement on the security threat posed by un-
+ manned aerial systems and possible countermeasures. Over-
+ sight and Management Efficiency Subcommittee, Homeland
+ Security Committee, Washington, DC, US House, 2015. 1
+      [8] G. Jocher, Y. Kwon, J. Veitch-Michaelis, Marc, G. Bian-
+ coni, F. Baltac, D. Suess, W. Xinyu, T. M. Shead, T. Havlik,
+ P. Skalski, J. Hu, F. Reveriano, Falak, and D. Kendall.      ul-
+ tralytics/yolov3: 43.1map@0.5:0.95 on coco2014. https:
+ //github.com/ultralytics/yolov3, 2020. 1
+      [9] G. Jocher, A. Stoken, J. Borovec, NanoCode012, Christo-
+ pherSTAN, L. Changyu, Laughing, tkianai, A. Hogan, loren-
+ zomammana, yxNONG, AlexWang1900, L. Diaconu, Marc,
+ wanghaoyang0106, ml5ah, Doug, F. Ingham, Frederik, Guil-
+ hen, Hatovix, J. Poznanski, J. Fang, L. Yu, changyu98,
+ M. Wang, N. Gupta, O. Akhtar, PetrDvoracek, and P. Rai.
+ ultralytics/yolov5:         v3.1 - bug fixes and performance im-
+ provements.                      https://github.com/ultralytics/
+ yolov5, Oct. 2020. 2
+[10] T.-Y. Lin, P. Doll´ar, R. Girshick, K. He, B. Hariharan, and
+ S. Belongie. Feature pyramid networks for object detection.
+ In Proceedings of the IEEE conference on computer vision
+ and pattern recognition, pages 2117–2125, 2017. 2
+[11] T. M¨uller. Robust drone detection for day/night counter-uav
+ with static vis and swir cameras. In Ground/Air Multisensor
+ Interoperability, Integration, and Networking for Persistent
+ ISR VIII, volume 10190, page 1019018. International Society
+ for Optics and Photonics, 2017. 1
+[12] M. . Paweczyk and M. Wojtyra.       Real world object detec-
+ tion dataset for quadcopter unmanned aerial vehicle detec-
+ tion. IEEE Access, 8:174394–174409, 2020. 4
+   [13] J. Redmon and A. Farhadi. Yolov3: An incremental improve-
+ ment. arXiv preprint arXiv:1804.02767, 2018. 1
+      [14] A. Rodriguez-Ramos, J. Rodriguez-Vazquez, C. Sampedro,
+ and P. Campoy. Adaptive inattentional framework for video
+ object detection with reward-conditional training.      IEEE Ac-
+ cess, 8:124451–124466, 2020. 4
+        [15] H. Shakhatreh, A. H. Sawalmeh, A. Al-Fuqaha, Z. Dou,
+ E. Almaita, I. Khalil, N. S. Othman, A. Khreishah, and
+ M. Guizani. Unmanned aerial vehicles (uavs): A survey on
+ civil applications and key research challenges.     Ieee Access,
+ 7:48572–48634, 2019. 1
+       [16] L. Sommer, A. Schumann, T. M¨uller, T. Schuchert, and
+ J. Beyerer. Flying object detection for automatic uav recog-
+ nition. In 2017 14th IEEE International Conference on Ad-
+ vanced Video and Signal Based Surveillance (AVSS), pages
+ 1–6. IEEE, 2017. 1
+  [17] P. Tokekar, J. Vander Hook, D. Mulla, and V. Isler. Sensor
+ planning for a symbiotic uav and ugv system for precision
+ agriculture.          IEEE Transactions on Robotics, 32(6):1498–
+ 1511, 2016. 1
+[18] G. Welch, G. Bishop, et al.    An introduction to the kalman
+ filter. 1995. 1
+        [19] J. Wojtanowski, M. Zygmunt, T. Drozd, M. Jakubaszek,
+ M. ˙Zyczkowski, and M. Muzal. Distinguishing drones from
+ birds in a uav searching laser scanner based on echo depolar-
+ ization measurement. Sensors, 21(16):5597, 2021. 2, 3

@@ -1,0 +1,1099 @@
+arXiv:2411.05633v2 [cs.CV] 8 Jan 2026
+
+
+
+
+
+
+
+
+
+
+© 2025 IEEE. Personal use of this material is permitted. Permission from IEEE must be obtained for all other uses, in any current or
+future media, including reprinting/republishing this material for advertising or promotional purposes, creating new collective works, for
+resale or redistribution to servers or lists, or reuse of any copyrighted component of this work in other works.
+
+
+
+
+
+SynDroneVision: A Synthetic Dataset for Image-Based Drone Detection
+
+  Tamara R. Lenhard1,2 Andreas Weinmann2 Kai Franke¹ Tobias Koch¹
+
+1Institute for the Protection of Terrestrial Infrastructures, German Aerospace Center (DLR)
+      2Working Group Algorithms for Computer Vision, Imaging and Data Analysis,
+        University of Applied Sciences Darmstadt
+
+    {tamara.lenhard, kai.franke, tobias.koch}@dlr.de, andreas.weinmann@h-da.de
+
+
+        Abstract extensive and diverse training data [44, 52].
+   Developing robust drone detection systems is often con- In practical applications, the acquisition of substan-
+strained by the limited availability of large-scale anno- tial amounts of annotated real-world data is both time-
+tated training data and the high costs associated with real- consuming and resource-intensive [28, 45]. Additional con-
+world data collection. However, leveraging synthetic data straints, such as non-fly zones and adverse weather condi-
+generated via game engine-based simulations provides a tions, further complicate the data collection process. Lever-
+promising and cost-effective solution to overcome this issue. aging synthetic data presents a viable alternative to circum-
+Therefore, we present SynDroneVision, a synthetic dataset vent environmental limitations and significantly reduce ac-
+specifically designed for RGB-based drone detection in quisition costs [16,44] (not only in drone detection, but also
+surveillance applications. Featuring diverse backgrounds, in other domains [4, 29, 34, 47]). In particular, the applica-
+lighting conditions, and drone models, SynDroneVision of- tion of game engine-based data generation techniques en-
+fers a comprehensive training foundation for deep learn- ables the efficient and physically precise simulation of di-
+ing algorithms. To evaluate the dataset’s effectiveness, we verse real-world conditions [7, 16, 30, 35]. It facilitates the
+perform a comparative analysis across a selection of re- seamless interchange of environmental configurations (e.g.,
+cent YOLO detection models. Our findings demonstrate that from urban landscapes to rural terrains), offering the po-
+SynDroneVision is a valuable resource for real-world data tential for comprehensive coverage of diverse scenarios, in-
+enrichment, achieving notable enhancements in model per- cluding those inadequately represented by real-world data.
+formance and robustness, while significantly reducing the Furthermore, the ability to rapidly alter illumination, time
+time and costs of real-world data acquisition. SynDroneVi- of day, and weather conditions – from clear summer days
+sion will be publicly released upon paper acceptance. to overcast skies within seconds – provides a time-efficient
+        solution without compromising data diversity. A broad se-
+        lection of interchangeable drone models, materials, and tex-
+1. Introduction tures supports a high variability in drone appearances, in
+        contrast to the often limited drone selection in practical ap-
+   Unmanned aerial vehicles (UAVs), commonly known as plications [2, 55]. Moreover, a key advantage of synthetic
+drones, have become integral to a variety of sectors, in- data is the automated generation of pixel-precise annota-
+cluding agriculture, logistics, surveillance, and recreation. tions [31]. This capability accelerates both training and val-
+However, their rapid proliferation introduces new chal- idation processes, enabling more rapid experimentation and
+lenges, particularly in terms of security and privacy protec- iteration cycles. Furthermore, it significantly decreases re-
+tion [14]. Therefore, the implementation of effective drone source requirements associated with traditional data collec-
+detection systems is crucial to mitigate the risks associated tion methods [28], particularly in terms of annotation costs
+with unauthorized or malicious drone activities. Combining and recording time.
+optical sensors, specifically cameras, with advanced deep Despite the substantial benefits of synthetic data, there is
+learning (DL) techniques represents a highly promising and still a gap between simulated scenarios and real-world con-
+economically efficient detection strategy [18]. Neverthe- ditions [6, 35]. This discrepancy can negatively impact de-
+less, the effectiveness of DL models is heavily reliant on tection quality, especially when transferring drone detection
+
+        1
+
+models trained exclusively on synthetic data to real-world          ever, significant efforts are also directed towards the cre-
+applications. However, leveraging hybrid datasets – incor-          ation and utilization of synthetic data (e.g., see [6, 35]).
+porating both real and synthetic data, with real data shares         Despite variations in generation techniques, prevailing re-
+< 1% – has proven to be an effective training strategy to         search highlights the substantial potential of synthetic data,
+overcome this issue [17, 46].                                    particularly in combination with real-world data.        Preva-
+    Although the generation of synthetic data is a topic of          lent training strategies for improving detection quality by
+ongoing research, particularly in the field of drone detec-        integrating real and synthetic data include mixed-data train-
+tion, there is currently only one publicly available synthetic     ing [9, 46] and fine-tuning models, initially trained on syn-
+dataset: the S-UAV-T dataset by Barisic et al. [6].    This          thetic data, with real-world data [6, 35]. However, the op-
+dataset is specifically designed for UAV-to-UAV detection,        timal ratio of synthetic to real-world data is a controversial
+featuring perspectives that deviate from standard surveil-       topic of ongoing research [17].
+lance configurations.
+Contributions.          Addressing the scarcity of publicly      2.2. Datasets
+available synthetic datasets for image-based drone detec-             Publicly available datasets for drone detection can be di-
+tion,  we introduce  SynDroneVision       – a comprehensive      vided into two primary categories.       The first category in-
+dataset featuring diverse environments, drone models, and           cludes datasets exclusively designed for detection tasks [2,
+lighting conditions. We provide a comparative analysis of          5, 6], typically featuring individual images. The second cat-
+state-of-the-art models, demonstrating the effectiveness of             egory comprises datasets that support both detection and
+SynDroneVision, especially in combination with real-world          tracking [9, 11, 51, 54], generally including sequential data
+data.     Furthermore, we assess the robustness of this ap-         or specialized subsets featuring both image and video files.
+proach using out-of-distribution data.                           Except for the dataset by Barisic        et al. [6], the major-
+  The remainder of this paper is organized as follows: Sec-             ity of datasets consists of real-world data sourced from
+tion 2 provides an overview of related research on image-                Google images [2], YouTube videos [2], or self-recorded
+based drone detection and publicly available datasets. Sec-        footage [9, 51, 53] using static, moving, handheld, or drone-
+tion 3 details the generation process, defining features, and        mounted devices. Beyond the variability in data origins and
+the composition of SynDroneVision. The experimental de-          collection techniques, available datasets exhibit further vari-
+sign and results are outlined in Section 4. Conclusions are      ations in the following attributes:
+presented in Section 5.
+2. Related Work                                                  •  Dataset Size          – The costly nature of real-world data
+                                                                           acquisition leads to significant discrepancies in the
+In the following sections,     we briefly summarize re-                  sizes of publicly available datasets. For instance, the
+cent advances in image-based drone detection and assess                     datasets UAV-Eagle [5] and Malicious Drones [27] are
+the characteristics of publicly available drone detection                relatively small, with 510 and 776 images, respectively
+datasets, emphasizing their similarities and differences.           (see Table 1). Most datasets comprise 4,000 [2] to
+2.1. Drone Detection                                                40,232 images [41].             Exceptions include the Halm-
+                                                                          stad Data [45], featuring 203,328 annotated frames (IR
+     State-of-the-art techniques for RGB-based drone detec-                    + RGB), and the Drone-vs-Bird Detection Challenge
+tion primarily leverage single-stage DL algorithms, which                  dataset [11], with 85,904 annotated frames. (Notably,
+offer an optimal balance between real-time performance                        the Drone-vs-Bird Detection Challenge dataset [11]
+and precision. A majority of methodologies employ vari-                    constitutes a comprehensive compilation of data, col-
+ants of the You Only Look Once (YOLO) models, includ-                         lected over time and continually enhanced by input
+ing YOLOv3, YOLOv5, and YOLOv8, either in their origi-              from various contributors.)
+nal configurations [6, 38] or with custom modifications [24,
+31, 33]. Architectural innovations typically seek to resolve     •  Image Resolution           – Publicly available drone detec-
+particular challenges encountered in drone detection, in-                     tion datasets encompass a wide spectrum of resolu-
+cluding the identification of small drones [24, 28, 32, 33],              tions, ranging from low-resolution (e.g., 224×224 pix-
+the differentiation between drones and other aerial entities                 els [27] and 608×608 pixels [6]) to high-resolution
+(e.g., birds) [11, 33], and the mitigation of camouflage ef-               images (e.g., 5616×3744 pixels [54]). The variability
+fects [31]. Transformer-based approaches offer an effective,            in resolution is observed both across different datasets
+albeit less frequently employed, alternative to traditional de-     and within individual datasets.          While some datasets
+tection techniques [27].                                             maintain a uniform resolution [1, 5, 6, 9, 27, 45, 51, 55],
+    Training drone detection models predominantly relies on             others offer a diverse range of resolutions [2, 11, 54].
+(self-collected) application-specific real-world data. How-                   For instance, the DUT Anti-UAV dataset provided by
+
+To appear in Proc. WACV2025        2                                                                                 © 2025 IEEE
+
+ Table 1. Comprehensive information on publicly available datasets for image-based drone detection, encompassing both real and synthetic
+data. The symbols ✗ (does not apply) and ✓ (applies) indicate the presence of image sequences (4th column from the right), the inclusion
+    of diverse drone models (3rd column from the right), and the incorporation of distractor objects (2nd column from the right).
+
+    Dataset        No. Images                                                         Img.  Diff.   Dist.  Max. Img.
+                                      train    val                  test   total     Sequ.  Drones  Objs.  Resolution
+    USC Drone Detect. & Track. [9, 51]  –       –                    –     27,000★     ✓      ✗       ✗    1920×1080
+    Drone Dataset [2]                 3,611     –                   401    4,012       ✗      ✗       ✗    3840×2160
+    MAV-VID [41]                      29,500  10,732                 –     40,232      ✓      ✓       ✗        –
+    Det-Fly [55]                        –       –                    –     13,271★   (✓)      ✗       ✗    3840×2160
+    UAV-Eagle [5]                       –       –                    –      510★       ✓      ✗       ✗    1920×1080
+    UAVData [53]                        –       –                    –     13,803★     ✓      ✓       ✓     1280×720
+    Halmstadt Data [45]                 –       –                    –   203,328▲      ✓      ✓       ✓     640×512
+    DUT Anti-UAV [54]                 5,200   2,600                2,200   10,000    (✓)      ✓       ✗    5616×3744
+    VisioDECT [1]                       –       –                    –     20,924★     ✓      ✓       ✗     852×480
+    Malicious Drones [27]              543      –                   233     776        ✗      ✓       ✓     224×224
+    S-UAV-T [6] (synthetic)             –       –                    –     52,500★     ✗      ✓       ✗     608×608
+    Drone-vs-Bird Detection Ch. [11]  85,904    –     –✻                   85,904      ✓      ✓       ✓    3840×2160
+ ✻ not publicly available ★ no subdivision into train, val, and test ▲ RGB + IR data
+
+        Zhao et al. [54] includes images with resolutions vary-          grounds, vegetation, and other landscape features, cap-
+        ing from 240×160 to 5616×3744 pixels, whereas the                tured from diverse viewing angles (e.g., top-down and
+        Det-Fly dataset by Zheng et al. [55] is characterized            bottom-up, as in [54]). An exception is the dataset by
+        by a consistent resolution of 3840×2160 pixels.                  Zeng et al. [53] which also features indoor scenes.
+     •  Drone Models, Size & Position – The representation           •   Illumination & Weather – Real-world datasets are
+        of drone models across various datasets exhibits con-            predominantly recorded in daylight [45, 53, 54] and
+        siderable heterogeneity.        While some datasets are re-      feature diverse weather conditions [11, 27] (includ-
+        stricted to a single drone model [2, 41, 55], others en-         ing cloudy [1, 54], sunny [1, 54], and snowy [54]).
+        compass multiple models [1, 11, 45, 53, 54], typically           Some datasets also account for low-light conditions
+        comprising three [45] to eight [11] distinct types. Ex-          such as night, dawn, and dusk [1, 11, 54]. Reflecting
+        ceptions include the DUT Anti-UAV dataset [54], fea-             the unpredictable nature of real-world lighting, these
+        turing 35 drone models, and the synthetic dataset by             datasets often (unintentionally) exhibit rapid illumina-
+        Barisic et al. [6]. Additionally, variability is observed        tion changes or direct sun glare [11, 53]. In contrast,
+        in the number of drones per image (ranging from sin-             the synthetic dataset by Barisic et al. [6] is character-
+        gle [5, 41] to multiple drones [6, 53, 54] per frame), as        ized by more controlled lighting conditions, including
+        well as in their size and position. Nevertheless, a com-         daylight and twilight.
+        mon feature across most datasets is the prevalence of
+        small, centrally positioned drones, typically in conven-     •   Annotation Process – Annotations are typically gener-
+        tional colors such as black and / or white.                      ated manually by individual experts [41] or teams [1].
+     •  Distractor Objects     – In addition to drones,        some      An exception is  the  synthetic dataset     by     Barisic
+        datasets encompass other (drone-like) objects [2], in-           et al. [6], which employs an automated annotation
+        cluding birds [11, 27, 45], airplanes [27, 45], heli-            pipeline based on Blender [8] and Cycles [13]. Man-
+        copters [27, 45], and balloons [53].       These distractor      ual annotation techniques often suffer from inconsis-
+        objects are either explicitly annotated [27, 45] or in-          tencies in terms of quality and precision. Additionally,
+        corporated in a more implicit manner [2, 11, 53].                variations in file formats (e.g., .txt [5] vs. .mat [45])
+                                                                         and bounding box definitions further compromise the
+     •  Backgrounds – The majority of datasets feature out-              datasets’ practical applicability. Methodologies, tools,
+        door environments such as urban landscapes, forests,             and quality control measures are often insufficiently
+        farmland, airports, and coastal areas across differ-             documented, resulting in a lack of transparency.
+        ent regions around the globe (e.g., Sweden [45] vs.
+        China [54]). The visual compositions comprise an as-                        In addition to RGB data, some datasets include other
+        sortment of elements, including skies, buildings, play-             imaging modalities, such as infrared (IR) data [45]. Table 1
+
+    To appear in Proc. WACV2025        3                                                                                     © 2025 IEEE
+
+    provides an overview of existing datasets and their charac-                Top-Down View      Ground-Level View    Bottom-Up View
+    teristics, with further details in the supplementary material.             --                       3           "     -
+    3. SynDroneVision Dataset                                                                     =              ey 2     =.        ?
+               This section provides a comprehensive overview of the                          TE
+    proposed SynDroneVision dataset, detailing the employed                             TY    |                            22
+    generation technique, simulation parameter variations, its                                                         ad
+    composition, and inherent characteristic properties.                                                                   hed
+    3.1. Data Generation Process                                                                               4 |ᵣ                is
+              The synthetic RGB data of the proposed dataset is gen-                                                   |   Ed
+    erated using an advanced iteration of the data generation                                              -           -            E
+    pipeline introduced by Dieter    et al. [16]. Unlike Dieter
+    et al.’s pipeline — reliant on Microsoft AirSim [36] and
+    Unreal Engine 4.25 [22] — the employed pipeline lever-                                          «   =
+    ages Colosseum [10] (the successor to Microsoft AirSim)                                       TN           hi =
+    and Unreal Engine 5.0. Unreal Engine 5.0 introduces ad-                        v                           Ii
+    vanced capabilities for rendering dynamic global illumi-                            -                  Dai
+    nation and reflections through the implementation of the                                  &
+    fully dynamic global illumination and reflections system                                 i
+    Lumen [19]. This advancement significantly enhances the             Figure 1. A selection of synthetic images captured from diverse
+    realism of depicted scenes (especially in terms of daytime-         virtual environments – University Site (row 1), Venetian City (row
+    dependent light and shadow variations), thereby elevat-             2), Rural Australia (row 3), Factory Grounds (row 4), and Modu-
+    ing the fidelity of synthetic RGB data.        To ensure precise    lar Cityscape (last row) – demonstrating SynDroneVision’s diver-
+    representation of Lumen-based lighting effects and reflec-          sity in terms of environmental conditions and camera perspectives
+    tions, we refine the data generation process by modifying           (top-down, ground-level, and bottom-up).
+    the pipeline’s data generation module (cf. [16]). In Dieter
+    et al.’s pipeline, visual sensor data was acquired through          >                                  =   =
+    Scene Capture 2D Actors. However, when integrated with                                                                 Eo
+    Unreal Engine 5.0, these components lack the ability to ac-
+    curately capture the intricate details of Lumen’s dynamic                                                                      = Ee
+    global illumination and reflections. To address this limita-                            I
+    tion, we implement the capture of RGB data via high res-                                        82      39 oN
+    olution screenshots. All other pipeline components remain
+    consistent with [16]. For detailed information on individual
+    components, refer to [16].                                          Figure 2. Drone models from [3, 25, 37] employed in the genera-
+              The data acquisition process itself is predicated on a    tion of the SynDroneVision dataset.
+    strategic placement of stationary virtual camera sensors,
+    whose position and orientation are pre-determined with re-
+    spect to the underlying simulation environment (inspired by         ing conditions. Detailed information on these aspects is pro-
+    a typical surveillance setup, cf. Figure 1). Data collection        vided in the following sections.
+    is systematically performed from each designated camera
+    in a sequential manner, adhering to a pre-defined recording         3.2.1           Environments
+    duration. The recording duration is synchronized with the
+    drone’s flight time.     The drone’s flight trajectory is deter-    To establish a foundation for simulating physically-realistic
+    mined by a probabilistic selection of waypoints, randomly           drone flights, we leverage a variety of three-dimensional en-
+    positioned within the camera’s field of view (up to 30 me-          vironments, encompassing both commercially licensed and
+    ters from its vantage point).                                       freely available options. The selection of environments is
+    3.2. Simulation Parameter and Domain Variations                     guided by the defining attributes of the real-world settings
+                                                                        utilized in creating the DUT Anti-UAV dataset [54]. Par-
+          To foster a high level of diversity in the generated data,    ticular emphasis is placed on incorporating environments
+    we introduce variations across multiple simulation compo-           with diverse complexity levels and substantial variations
+    nents, including the environment, drone models, and light-          (cf. Figure 1), ensuring thorough data diversification. The
+
+    To appear in Proc. WACV2025        4                                                                                    © 2025 IEEE
+
+
+
+
+
+
+
+
+
+
+Mod. Cityscape Factory Grounds Rural Australia Venetian City University Site
+
+employed environments and settings include:    University        (Figure 1, first row, third image), from clear blue skies (Fig-
+Site, Venetian City [15], Farming Grounds [12], Rural Aus-       ure 1, second row, third image) to overcast conditions (Fig-
+tralia [23], City Park [43], Factory Grounds [42], Urban         ure 1, first row, second image). Note that the combination of
+Downtown [39], and Modular Cityscape [40]. In publicly           Lumen, Sun and Sky Actor, and Post Process Volume is em-
+accessible environments (commercial or free), we utilized        ployed exclusively for data generation within the following
+pre-existing demo maps (with minor modifications, cf. Sec-       environments: University Site, Venetian City [15], Farm-
+tion 3.2.3) for data generation. Note that the environments      ing Grounds [12], and Modular Cityscape [40]. The default
+predominantly consist of static geometry, with two notable       illumination setup included in the environments Rural Aus-
+exceptions: the shader-based animation of foliage and the        tralia [23], City Park [43], Factory Grounds [42], and Urban
+dynamic motion of the drone. A detailed overview of the          Downtown [39] remains unchanged, as it already features
+environments and their inherent characteristics can be found     a sophisticated (Lumen-based) implementation of lighting
+in the supplementary material (Table II and Figure II).          and reflections. Further details on illumination parameters
+                                                                 are provided in the supplementary material.
+3.2.2 Drone Models                                               3.3. Post-Processing
+To ensure a high degree of diversity in drone representa-              To further increase the data diversity, a subset of ran-
+tion, we employ a selection of drone models from the com-        domly selected images undergoes post-capture blurring.
+mercially available Quadcopter Pack [37], Drone Pack [3],        Considering a synthetically generated image I ∈ RW ×H×3,
+and Military Drone Pack [25] for synthetic data generation       where W    ∈ N denotes the width and H         ∈ N denotes the
+(see Figure 2). Our selection features a variety of widely-      height, the blurring procedure is defined by the following
+deployed drone models, including the DJI Phantom (Fig-           convolution operation:
+ure 2, second row, second model from the left) and the DJI
+Tello Ryze (Figure 2, last row, third model from the left).                  X
+                                                                             2m X
+                                                                                 2n
+Each drone model is rendered with realistic textures sourced     I′(x, y) =      I(x + i − m, y + j − n) · K(i, j)          (1)
+from the respective asset packages. This contrasts with the                  i=0 j=0
+approach of Barisic et al. [6], characterized by texture ran-
+domization featuring unconventional drone textures.              where x ∈ {0, ..., W − 1} and y   ∈ {0, ..., H       − 1}. The
+                                                                 kernel             K ∈ RM×N is characterized by the dimensions
+3.2.3 Illumination                                               M = 2m − 1 and N              = 2n − 1 with m, n ∈ N.       In
+                                                                 our application, the kernel is specified as either an average
+To incorporate a variety of realistic illumination conditions,   kernel or a Gaussian kernel.       The average kernel is given
+we utilize the dynamic illumination and reflection system,       by K(i, j) =    (2m−1)(2n−1)1  , with indices i ∈ {0, ..., 2m}
+Lumen [19], in conjunction with the Sun and Sky Actor [21]       and j  ∈ {0, ..., 2n} determining the kernel’s spatial ex-
+and the Post Process Volume [20] provided by Unreal En-          tent.          Conversely, the Gaussian kernel is described by
+gine. The Sun and Sky Actor offers precise control over the      K(i, j) =     1           exp − (i−m)²+(j−n)² , where σ repre-
+sun’s positioning based on geographic location, date, and                    (2πσ2)      2σ2
+time, while the Post Process Volume provides a comprehen-        sents the standard deviation of the Gaussian distribution.
+sive toolkit for regulating visual aesthetics and atmospheric           For the creation of SynDroneVision, square kernels with
+properties (e.g., color grading, contrast, or bloom).    By      dimensions M, N ∈ {13, 15, 17, 19, 21}, M = N are em-
+leveraging the dynamic nature of directional lights within       ployed. The choice of kernel type and size is randomized in-
+the Sun and Sky Actor, lightmap baking becomes obsolete,         dependently for each image. Note that for kernel extensions
+thus eliminating the need for pre-computed lighting. Conse-      beyond image boundaries (i.e., when x /∈ {0, ..., W − 1} or
+quently, this configuration enables the creation of authentic    y /∈ {0, ..., H    − 1}), explicit boundary conditions are im-
+renderings, accurately portraying the interplay of sunlight      posed. Specifically, replication padding is employed to ex-
+and shadow.                                                      tend the image boundaries by duplicating edge pixel values.
+    During the data generation process, we systematically        3.4. Composition
+introduce variations in the intensity of the Directional Light
+Actor and the Rayleigh scattering properties of the Sky At-              For the generation of SynDroneVision, four to thirteen
+mosphere – both fundamental components of the Sun and            distinct camera positions are established per environment
+Sky Actor. Additionally, adjustments are made to the color       (cf. Table 2). This environment-specific camera placement
+temperature parameter within the Post Process Volume to          results in the capture of 72 annotated image sequences.
+further refine atmospheric properties. Thus, SynDroneVi-         Each sequence is characterized by a unique combination of
+sion offers a broad spectrum of illumination conditions,         drone model, lighting configurations, and background com-
+ranging from dawn (Figure 1, first row, first image) to dusk     position, providing a high degree of realism and variation.
+
+To appear in Proc. WACV2025        5                                                                                © 2025 IEEE
+
+                                                                Table 2. Comprehensive composition overview of the SynDroneVision dataset.
+
+        Environment                                                                            Image Count    Camera   Drone
+                                               train              val         test        total             Positions  Models
+        University Site                  29,111                  1,000        500         30,611                13  8
+        Venetian City                    19,566                  1,000        500         21,066                8   6
+        Farming Grounds                        9,053             1,000        500         10,553                6   5
+        Rural Australia                  11,589                  1,000        500         13,089                6   5
+        City Park                              7,310             1,000        500         8,810                 4   4
+        Factory Grounds                  13,759                  1,000        500         15,259                7   6
+        Urban Downtown                   14,404                  1,000        500         15,904                9   6
+        Modular Cityscape                14,515                  1,000        500         16,015                5   6
+        Total                            119,307 / 131,238★  8,000 / 8,800★  4,000  131,307 / 140,038★          58  13
+        ★ incl. blurring
+
+    Table 3. Comprehensive details regarding the area and aspect ratios of objects featured in SynDroneVision – across training, validation,
+    and test splits – in comparison to DUT Anti-UAV [54].
+
+               SynDroneVision (Ours)                                     DUT Anti-UAV
+           Split     Object Area Ratio        Object Aspect Ratio    Object Area Ratio            Object Aspect Ratio
+                 min    avg.             max   min    avg.       max          min      avg.   max min     avg.    max
+       train 0.001 0.322 1.0 0.021 1.291 9.993 0.000026 0.013 0.700 1.0 1.910 5.420
+           val  0.006  0.323             1.0  0.020  1.330      9.855       0.000002  0.013  0.690  1.0   1.910  6.670
+       test 0.009 0.323 1.0 0.041 1.302 8.383 0.000041 0.014 0.470 1.0 1.920 5.090
+
+    (An overview of selected camera field of views and annota-       Training      Validation                 Test
+    tion details are included in the supplementary material.)
+            SynDroneVision encompasses all 72 recorded image se-
+    quences, thus yielding a total of 131,307 annotated images
+    for image-based drone detection (cf. Table 2). Apart from
+    drone images, the dataset also includes a small share of
+    background images (∼ 7%). The dataset is partitioned into           X        X                                  X
+    a training, validation, and test set. This allocation yields
+    119,307 images for training, 8,000 for validation, and 4,000   Figure 3.   Position distribution of drones within the SynDroneVi-
+    for testing purposes.   The training and validation datasets   sion dataset. Regions of high frequency are shown in yellow, while
+    are further augmented through the application of the afore-    areas with no data points are indicated in blue.
+    mentioned blurring technique (cf.        Section 3.3). Specifi-
+    cally,        ∼ 10% of the images from each set are randomly              a (mostly) uniform dispersion of objects across the en-
+    selected, blurred, and included on top of the original data.               tire image area, encompassing both central and periph-
+    This yields a final dataset size of 131,238 images for train-            eral image regions. This contrasts with the distribution
+    ing and 8,800 images for validation (cf. Table 2). The num-                  patterns observed in datasets like DUT Anti-UAV [28]
+    ber of test images remains unchanged.                                            or MAV-VID [41], where objects are predominantly
+    3.5. Characteristics                                             concentrated in the central region of the image.
+           The proposed SynDroneVision dataset exhibits the fol-   •               Object Aspect Ratio – SynDroneVision exhibits con-
+    lowing characteristic properties:                                siderable diversity in object aspect ratios.             Minimum
+                                                                               values range from 0.021 (train) to 0.041 (test), while
+     •  Image Resolution – An identical, consistently high res-                       maximum values range from 8.383 (test) to 9.993
+        olution of 2560×1489 pixels is maintained for all im-        (train).                Similar to DUT Anti-UAV, most object as-
+        age sequences across all environments.                                pect ratios fall between 1.0 and 3.0, with average val-
+                                                                                  ues between 1.291 and 1.330 (cf. Table 3). However,
+     •  Object Position – The spatial distribution of objects                      SynDroneVision covers a broader spectrum of aspect
+        within the image frame, depicted in Figure 3, reveals                     ratios compared to DUT Anti-UAV, which features as-
+
+    To appear in Proc. WACV2025              6                                                                            © 2025 IEEE
+
+
+
+
+
+
+
+
+
+
+Y
+
+
+
+
+
+
+Y
+
+
+
+
+
+
+Y
+
+Table 4. Performance and technical details of the YOLOv8m, YOLOv8l, YOLOv9c, and YOLOv9e models evaluated on the DUT Anti-
+UAV dataset [54] (in-distribution data) across various training data configurations. The SynDroneVision dataset is abbreviated as SDV.
+
+YOLO     Layers Param.  GFLOPs     Training Data                               Evaluation on DUT Anti-UAV
+                 (M)     (B)  SDV (Ours)                       DUT Anti-UAV        mAP ↑          FNR ↓     FDR ↓
+                             (synthetic)                          (real)   @0.25   @0.5  @0.5-0.95
+                                  ✓                                 –      0.677   0.639   0.422  0.525                          0.103
+ v8m   295      25.85    79.1     –                                 ✓      0.956   0.933   0.669  0.118                          0.021
+                                  ✓                                 ✓      0.960   0.938   0.686  0.117                          0.025
+                                  ✓                                 –      0.746   0.716   0.468  0.438                          0.079
+  v8l  287      43.61   164.8     –                                 ✓      0.922   0.896   0.628  0.149                          0.067
+                                  ✓                                 ✓      0.963   0.944   0.696  0.105                          0.015
+                                  ✓                                 –      0.700   0.666   0.429  0.474                          0.093
+  v9c  384      25.32   102.3     –                                 ✓      0.959   0.935   0.668  0.123                          0.023
+                                  ✓                                 ✓      0.961   0.941   0.695  0.107                          0.022
+                                  ✓                                 –      0.767   0.733   0.460  0.405                          0.055
+  v9e  1225     58.15   192.7     –                                 ✓      0.944   0.915   0.643  0.149                          0.042
+                                  ✓                                 ✓      0.969   0.955   0.723  0.095                          0.009
+
+       pect ratios ranging from 1 to 6.67 with an average of   of real-world data in validating SynDroneVision’s practi-
+   1.91 (see Table 3).                                         cal value, we incorporate the DUT Anti-UAV dataset [54]
+                                                               (selected for its characteristic resemblance to SynDroneVi-
+ •       Object Scale – The object scale, or object area ra-   sion).                 To ensure a comprehensive evaluation, especially
+       tio, quantifies the proportion of the drone area cap-   in terms of model robustness, we also include the UAV-
+      tured within the image frame relative to the total im-   Eagle dataset [5] and the Drone Dataset by [2] as out-of-
+   age area.         Object scales within SynDroneVision ex-   distribution data.
+       hibit a broad distribution, ranging from minimal val-                 The training procedure for each model involves three dis-
+         ues between 0.001 (train) and 0.009 (test) to maxi-   tinct strategies: (i) training exclusively on SynDroneVision,
+   mum values of 1 (cf.     Table 3).      However, the gen-   (ii) training solely on DUT Anti-UAV, and (iii) a hybrid ap-
+      eral trend leans towards smaller objects, with average   proach combining both datasets. Each model is trained for
+       values around 0.32 (cf. Figure III, supplementary ma-   100 epochs with a batch size of 64. For YOLOv9e, a re-
+   terial).   This aspect is particularly crucial, given the   duced batch size of 32 is employed due to memory limita-
+        prevalence of small drones in practical applications   tions. Other hyperparameters follow their default configura-
+       and the inherent complexity associated with their de-   tions specified in [48]. Model performance is evaluated us-
+    tection. It also aligns with the characteristic features   ing the DUT Anti-UAV test set [54], UAV-Eagle [5], and the
+   observed in other drone detection datasets.       For in-   Drone Dataset by [2]. Key performance indicators include
+        stance, the DUT Anti-UAV dataset also comprises pre-   standard object detection metrics such as mean average pre-
+       dominantly small drone object, albeit with an average   cision (mAP) at an intersection over union (IoU) threshold
+   object scale of 0.013.                                      of 0.5, and computed over a range of IoU thresholds from
+4. Analysis                                                    0.5 to 0.95. To account for precision variations in manually
+                                                               generated annotations (cf. [31]), we also consider mAP val-
+     This section outlines the evaluation setup and presents   ues at an IoU threshold of 0.25, along with false negative
+key findings regarding the efficiency of SynDroneVision.       rates (FNRs) and false discovery rates (FDRs). All exper-
+                                                               iments are performed using the Ultralytics repository [48]
+4.1. Experimental Setup                                        on a single NVIDIA Quadro RTX-8000 GPU.
+      To assess the effectiveness of SynDroneVision, we con-
+      duct a comparative analysis of various YOLO models and   4.2. Results
+associated training configurations. Building upon the latest
+    developments in YOLO architectures, our analysis focuses                  For evaluations on the SynDroneVision test set, refer to
+       on YOLOv8 [49] and YOLOv9 [50], with a detailed exam-   the supplementary material. In the following, we provide an
+     ination of their respective variants: YOLOv8m, YOLOv8l,   assessment of all trained models on real-world data, high-
+YOLOv9c, and YOLOv9e.     Considering the significance         lighting SynDroneVision’s practical applicability.
+
+To appear in Proc. WACV2025        7                                                                                       © 2025 IEEE
+
+Table 5. Performance of YOLOv9e on the UAV-Eagle dataset [5] and the Drone Dataset by [2] (out-of-distribution data) across different
+training data configurations. The SynDroneVision dataset is abbreviated as SDV.
+
+          Evaluation Data      Training Data                                   mAP ↑          FNR ↓  FDR ↓
+                            SDV (Ours)  DUT Anti-UAV             @0.25         @0.5  @0.5-0.95
+                           (synthetic)     (real)
+          UAV-Eagle [5]         ✓–           ✓–                  0.946         0.810   0.340  0.193  0.125
+          (real)                ✓            ✓                   0.947         0.819   0.290  0.165  0.088
+                                                                 0.980         0.879   0.351  0.136  0.058
+          Drone Dataset by [2]  ✓–           ✓–                  0.741         0.474   0.179  0.379  0.109
+          (real)                ✓            ✓                   0.812         0.569   0.202  0.251  0.185
+                                                                 0.822         0.595   0.222  0.213  0.098
+
+Performance on DUT Anti-UAV.         A comprehensive anal-      veals notable robustness when exposed to varying data dis-
+ysis of YOLO models trained on the hybrid dataset combin-       tributions and sources (cf. Table 5).  For instance, on the
+ing SynDroneVision (synthetic data) and DUT Anti-UAV            UAV-Eagle dataset, YOLOv9e trained on SynDroneVision
+(real-world data) reveals substantial improvements across       achieves nearly equivalent performance to the model trained
+all performance indicators, particularly when compared to       exclusively on DUT Anti-UAV, with mAP deviations of
+models trained solely on real-world data. Specifically, at      less than 0.01. It even exceeds the latter by five percent-
+an IoU threshold of 0.5, the hybrid training strategy yields    age points in mAP for an IoU threshold range of 0.5 to
+an mAP increase of up to 4.8 percentage points over mod-        0.95. Compared to corresponding validation outcomes on
+els trained exclusively on DUT Anti-UAV (cf. YOLOv8l,           DUT Anti-UAV (see Table 4), the model trained solely on
+Table 4). This positive effect is even more pronounced for      SynDroneVision shows significant improvements across all
+mAP values averaged across multiple IoU thresholds, re-         metrics, while the model trained exclusively on DUT Anti-
+sulting in improvements up to eight percentage points (cf.      UAV experiences notable performance declines (except for
+YOLOv9e, Table 4). Moreover, a considerable decline in          mAP at 0.25). Integrating SynDroneVision with DUT Anti-
+FNRs and FDRs is observed across all models, except for         UAV during training further enhances performance, leading
+YOLOv8m.          The performance enhancements obtained by      to even more pronounced improvements across key indica-
+integrating SynDroneVision with real-world data are par-        tors. This trend is consistent across other YOLO variants,
+ticularly amplified in more complex architectures character-    as detailed in the supplementary material (Table VI).
+ized by an increased number of trainable parameters (e.g.,            On the Drone Dataset by [2], the model solely trained
+cf. YOLOv8m vs. YOLOv8l, Table 4). The most effective           on SynDroneVision exhibits lower performance in mAP
+performance is achieved with YOLOv9e.                           and FNR relative to the DUT Anti-UAV-trained model.
+    A comparison between models trained exclusively on ei-      However, the performance gap is less pronounced than the
+ther SynDroneVision or DUT Anti-UAV also demonstrates           one observed in Table 4. Combining both datasets during
+distinct performance variations on the DUT Anti-UAV test        training also yields significant improvements on the Drone
+set. Models trained on DUT Anti-UAV exhibit superior per-       Dataset by [2] across all metrics. An exception is the FDR,
+formance compared to those solely trained on SynDroneVi-        where the combination of SynDroneVision and DUT Anti-
+sion (cf. Table 4).  In particular, models trained on Syn-      UAV is not always as effective for other YOLO variants (cf.
+DroneVision feature increased FNRs, ranging from 0.405          Table VI, supplementary material).
+to 0.525 (cf. Table 4), while models trained on DUT Anti-
+UAV maintain FNRs below 0.149. This deviation is not sur-       Discussion.    Our findings indicate that SynDroneVision is
+prising, considering the persistent challenge associated with   a highly promising dataset with the potential to substantially
+the simulation-reality gap.  Nevertheless, training exclu-      enhance the performance of DL models for drone detection
+sively on SynDroneVision still yields promising outcomes,       (in surveillance applications), particularly when combined
+with mAP values exceeding 0.639 at an IoU threshold of          with real-world data. Furthermore, SynDroneVision seems
+0.5 for all YOLO architectures.                                 to contribute to an improved model robustness, offering a
+  Visual examples of the detection results are provided in      clear benefit over exclusive real-world data training.  The
+the supplementary material (Figure IV).                         practical value of SynDroneVision is further highlighted by
+                                                                the promising performance of models trained exclusively
+Performance on Out-of-Distribution Data.        The evalu-      on this dataset, considering that these models have not en-
+ation of YOLO models trained on SynDroneVision, both            countered target domain data or any real-world information.
+independently and in combination with real-world data, re-      With its pixel-precise, automatically generated annotations,
+
+To appear in Proc. WACV2025        8                                                                            © 2025 IEEE
+
+                     SynDroneVision significantly enhances bounding box lo-    [11] Angelo Coluccia,   Alessio Fascista,   Lars Sommer,   Arne
+                 calization, while simultaneously reducing data acquisition            Schumann, Anastasios Dimou, and Dimitrios Zarpalas. The
+costs (without compromising performance).                                              Drone-vs-Bird Detection Grand Challenge at ICASSP 2023:
+                                                                                A Review of Methods and Results.          IEEE Open Journal of
+5. Conclusion                                                                   Signal Processing, 5:766–779, 2024. 2, 3, 13, 14
+                                                                               [12] CropCraft Studios.          Ultimate Farming.  https : / /
+                        In this work, we introduced SynDroneVision, a novel                           www.unrealengine.com/marketplace/en- US/
+                   and comprehensive synthetic RGB dataset designed to sup-                    product/ultimate-farming. accessed: 2024-08-26.
+                    port the development of robust drone detection systems.     5, 15, 17
+                     By providing a detailed analysis of recent YOLO models    [13] Cycles Developers. Cycles.             https://www.cycles-
+                     trained on both SynDroneVision and real-world data, we     renderer.org/", accessed: 2024-08-26. 3, 13
+                    demonstrated the effectiveness of SynDroneVision in en-        [14] Safaa Dafrallah and Moulay Akhloufi. Malicious UAV De-
+hancing model accuracy and robustness.                                              tection Using Various Modalities. Drone Systems and Appli-
+                                                                                cations, 12:1–18, 2024. 1
+References                                                                     [15] Deelus.    Venice -         Fast Building.     https : / /
+                                                                                                      www.unrealengine.com/marketplace/en- US/
+                    [1] Simeon Okechukwu Ajakwe, Vivian Ukamaka Ihekoronye,                      product/venice-fast-building. accessed: 2024-
+                        Golam Mohtasin, Rubina Akter, Ali Aouto, Dong Seong     08-26. 5, 15, 17
+  Kim, and Jae Min Lee.                        VisioDECT Dataset: An Aerial    [16] Tamara R. Dieter,  Andreas Weinmann,        and Eva Bruch-
+  Dataset     for     Scenario-Based              Multi-Drone Detection and     erseifer.         Generating Synthetic Data for Deep Learning-
+  Identification. IEEE Dataport, 2022. 2, 3, 13                                 Based Drone Detection.             AIP Conference Proceedings,
+ [2] Mehmet C¸ a˘gri Aksoy,     Alp Sezer Orak,               Hasan Mertcan     2939(1):030007, 2023. 1, 4
+  Ozkan, and Bilgin Selimo˘¨                glu. Drone Dataset: Amateur Un-    [17] Tamara R. Dieter, Andreas Weinmann, Stefan J¨ager, and Eva
+                  manned Air Vehicle Detection. Mendeley Data, V4, 2019. 1,          Brucherseifer. Quantifying the Simulation–Reality Gap for
+  2, 3, 7, 8, 12, 13, 18, 19                                                         Deep Learning-Based Drone Detection. Electronics, 12(10),
+ [3] Alianza     Store.     Drone    Pack.                https : / / www .     2023. 2
+  unrealengine        .       com    / marketplace      /   en            -          [18] Mohamed Elsayed, Mohamed Reda, Ahmed S. Mashaly, and
+                          US/product/drone-pack. accessed: 2024-08-26. 4, 5     Ahmed S. Amein.            Review on Real-Time Drone Detection
+                [4] Dafni Anagnostopoulou, George Retsinas, Niki Efthymiou,          Based on Visual Band Electro-Optical (EO) Sensor. In 10th
+  Panagiotis Filntisis, and Petros Maragos.                A Realistic Syn-          International Conference on Intelligent Computing and In-
+  thetic Mushroom Scenes Dataset.              In        Proceedings of the    [19] Epicformation Systems, pages 57–65, 2021. 1
+                         IEEE/CVF Conference on Computer Vision and Pattern     flections.Games.     Lumen       Global   Illumination and Re-
+  Recognition Workshops, pages 6282–6289, 2023. 1                                                      https : / / docs . unrealengine . com /
+             [5] Antonella Barisic, Frano Petric, and Stjepan Bogdan. Brain                  5 . 0 / en - US / lumen - global - illumination -
+                    over Brawn: Using a Stereo Camera to Detect, Track, and     and - reflections - in - unreal - engine/,                 ac-
+               Intercept a Faster UAV by Reconstructing the Intruder’s Tra-    [20] Epiccessed: 2024-08-26. 4, 5
+  jectory.             Field Robotics, 2:222–240, 2021. 2, 3, 7, 8, 12, 13,          Games.          Post       Process  Effects.  https : / /
+  18, 19                                                                                  docs . unrealengine . com / 5 . 3 / en - US / post -
+ [6] Antonella     Barisic, Frano    Petric,   and  Stjepan         Bogdan.     process - effects - in - unreal - engine/,                 ac-
+                     Sim2Air - Synthetic Aerial Dataset for UAV Monitoring.    [21] Epiccessed: 2024-08-26. 5, 17
+                      IEEE Robotics and Automation Letters, 7(2):3757–3764,          Games.          Sun          and Sky  Actor.      https :
+  2022. 1, 2, 3, 5, 13                                                                           / / docs . unrealengine . com / 4 . 27 / en -
+              [7] Michael J. Black, Priyanka Patel, Joachim Tesch, and Jin-                         US / BuildingWorlds / LightingAndShadows /
+  long Yang.                      BEDLAM: A Synthetic Dataset of Bodies Ex-    [22] EpicSunSky/, accessed: 2024-08-26. 5, 17
+                 hibiting Detailed Lifelike Animated Motion. In Proceedings          Games.          Unreal     Engine.      https : / / www .
+                     of the IEEE/CVF Conference on Computer Vision and Pat-                    unrealengine.com/en- US/, accessed: 2024-08-26.
+  tern Recognition, pages 8726–8737, 2023. 1                                    4, 17
+                                                                               [23] Andrew Svanberg Hamilton. Rural Australia.        https://
+                      [8] Blender Foundation. Blender. https://www.blender.                           www.unrealengine.com/marketplace/en- US/
+  org/, accessed: 2024-08-26. 3, 13                                             product/rural-australia.                 accessed: 2024-08-26.
+               [9] Yueru Chen, Pranav Aggarwal, Jongmoo Choi, and C.-C. Jay     5, 15
+                      Kuo. A Deep Learning Approach to Drone Monitoring. In    [24] Min Huang,    Wenkai Mi,     and Yuming Wang.        EDGS-
+                 Asia-Pacific Signal and Information Processing Association                  YOLOv8: An Improved YOLOv8 Lightweight UAV Detec-
+                   Annual Summit and Conference, pages 686–691, 2017. 2, 3,     tion Model. Drones, 8(7), 2024. 2
+  12, 13                                                                       [25] I.G.F Iron Gear Factory. Military Drone Pack.     https://
+[10] Codex     Laboratories     LLC.   Welcome      to Colosseum,         a                           www.unrealengine.com/marketplace/en- US/
+  Successor     of AirSim.                       https : / / github . com /     product/military-drone-pack.                   accessed: 2024-
+  CodexLabsLLC/Colosseum, accessed: 2024-08-26. 4                               08-26. 4, 5
+
+To appear in Proc. WACV2025                             9                                                                          © 2025 IEEE
+
+[26] Brian K. S. Isaac-Medina, Matt Poyser, Daniel Organisciak,    Backgrounds and Rainy Artifacts.     In  Proceedings of the
+ Chris G. Willcocks, T. Breckon, and Hubert P. H. Shum.            IEEE/CVF Winter Conference on Applications of Computer
+ Unmanned Aerial Vehicle Visual Detection and Tracking             Vision Workshops, pages 232–241, 2023. 2
+ using Deep Neural Networks: A Performance Benchmark.             [39] PurePolygons.         Downtown        West      Modular
+ Proceedings of the IEEE/CVF International Conference on           Pack.                      https : / / www . unrealengine .
+ Computer Vision Workshops, pages 1223–1232, 2021. 12              com    /    marketplace   /    en  -   US    / product    /
+      [27] Sonain Jamil, Muhammad Sohail Abbas, and Arunabha M.    6bb93c7515e148a1a0a0ec263db67d5b.                 accessed:
+ Roy. Distinguishing Malicious Drones Using Vision Trans-          2024-08-26. 5, 15
+ former. AI, 3(2):260–273, 2022. 2, 3, 13                         [40] PurePolygons.  Modular  Building   Set.     https : / /
+     [28] Nan Jiang, Kuiran Wang, Xiaoke Peng, Xuehui Yu, Qiang    www.unrealengine.com/marketplace/en- US/
+ Wang, Junliang Xing, Guorong Li, Guodong Guo, Qixiang             product/modular-building-set. accessed: 2024-
+ Ye, Jianbin Jiao, Jian Zhao, and Zhenjun Han.        Anti-UAV:    08-26. 5, 15, 17
+ A Large-Scale Benchmark for Vision-Based UAV Tracking.           [41] Alejandro  Rodriguez-Ramos, Javier   Rodriguez-Vazquez,
+ IEEE Transactions on Multimedia, 25:486–500, 2023. 1, 2,          Carlos Sampedro, and Pascual Campoy.      Adaptive Inatten-
+ 6, 13, 14                                                         tional Framework for Video Object Detection With Reward-
+  [29] Andreas Kloukiniotis, Andreas Papandreou, Christos Anag-    Conditional Training.     IEEE Access,     8:124451–124466,
+ nostopoulos, Aris Lalos, Petros Kapsalas, D.-V. Nguyen, and       2020. 2, 3, 6, 12, 13
+ Konstantinos Moustakas. CarlaScenes: A Synthetic Dataset         [42] Denys   Rutkovskyi.   Factory    Environment    Collec-
+ for Odometry in Autonomous Driving.     In      Proceedings of    tion.                https : / / www . unrealengine . com /
+ the IEEE/CVF Conference on Computer Vision and Pattern            marketplace / en - US / product / factory -
+ Recognition Workshops, pages 4519–4527, 2022. 1                   environment - collection.              accessed:   2024-08-
+[30] Benedikt Kolbeinsson and Krystian Mikolajczyk.       DDOS:    26. 5, 15, 17
+ The Drone Depth and Obstacle Segmentation Dataset.          In   [43] SilverTm.     City Park Environment Collection.  https:
+ Proceedings of the IEEE/CVF Conference on Computer Vi-            / / www . unrealengine . com / marketplace / en -
+ sion and Pattern Recognition Workshops, 2024. 1                   US / product / city - park - environment -
+[31] Tamara R. Lenhard, Andreas Weinmann, Stefan J¨ager, and       collection. accessed: 2024-08-26. 5, 15, 17
+ Tobias Koch.       Yolo-feder fusionnet: A novel deep learning     [44] Krishnakant Singh, Thanush Navaratnam, Jannik Holmer,
+ architecture for drone detection. In IEEE International Con-      Simone Schaub-Meyer, and Stefan Roth Roth.          Is Syn-
+ ference on Image Processing, pages 2299–2305, 2024. 1, 2,7        thetic Data all We Need? Benchmarking the Robustness of
+        [32] Zhaoyang Liu, Limin Wang, Wayne Wu, Chen Qian, and    Models Trained with Synthetic Images.     In Proceedings of
+ Tong Lu.               TAM: Temporal Adaptive Module for Video    the IEEE/CVF Conference on Computer Vision and Pattern
+ Recognition. In Proceedings of the IEEE/CVF International         Recognition Workshops, pages 2505–2515, 2024. 1
+ Conference on Computer Vision, pages 13688–13698, 2021.          [45] Fredrik Svanstr¨om,  Fernando  Alonso-Fernandez,    and
+ 2                                                                 Cristofer Englund.     A Dataset for Multi-Sensor Drone De-
+    [33] Yaowen Lv, Zhiqing Ai, Manfei Chen, Xuanrui Gong, Yux-    tection. Data in Brief, 39:107521, 2021. 1, 2, 3, 12, 13
+ uan Wang, and Zhenghai Lu. High-Resolution Drone Detec-            [46] Charalampos Symeonidis, Charalampos Anastasiadis, and
+ tion Based on Background Difference and SAG-YOLOv5s.              Nikos Nikolaidis.        A UAV Video Data Generation Frame-
+ Sensors, 22(15), 2022. 2                                          work for Improved Robustness of UAV Detection Methods.
+       [34] Aboli Marathe, Deva Ramanan, Rahee Walambe, and Ke-    In IEEE 24th International Workshop on Multimedia Signal
+ tan V. Kotecha.              WEDGE: A Multi-Weather Autonomous    Processing, pages 1–5, 2022. 2
+ Driving Dataset Built from Generative Vision-Language              [47] Martin Tran, Jordan Shipard, Hermawan Mulyono, Arnold
+ Models.     In       Proceedings of the IEEE/CVF Conference on    Wiliem, and Clinton Fookes. SafeSea: Synthetic Data Gen-
+ Computer Vision and Pattern Recognition Workshops, pages          eration for Adverse & Low Probability Maritime Conditions.
+ 3318–3327, 2023. 1                                                In Proceedings of the IEEE/CVF Winter Conference on Ap-
+     [35] Diego Marez, Samuel Borden, and Lena Nans. UAV Detec-    plications of Computer Vision Workshops, pages 821–829,
+ tion with a Dataset Augmented by Domain Randomization.            2024. 1
+ In Geospatial Informatics X, volume 11398, page 1139807.         [48] Ultralytics.  YOLOv8.2:      Unleashing Next-Gen AI Ca-
+ SPIE, 2020. 1, 2                                                  pabilities.     https://github.com/ultralytics/
+[36] Microsoft Research.     Welcome to AirSim.        https://    ultralytics, accessed: 2024-08-26. 7
+ microsoft.github.io/AirSim/, accessed:                   2024-      [49] Rejin Varghese and Sambath M. YOLOv8: A Novel Object
+ 08-26. 4                                                          Detection Algorithm with Enhanced Performance and Ro-
+[37] Mixall Studio.     Quadcopter Pack - Drones.      https://    bustness. In International Conference on Advances in Data
+ www.unrealengine.com/marketplace/en- US/                          Engineering and Intelligent Computing Systems (ADICS),
+ product / quadcopter - pack - drones.                accessed:    pages 1–6, 2024. 7
+ 2024-08-26. 4, 5                                                   [50] Chien-Yao Wang, I-Hau Yeh, and Hongpeng Liao. YOLOv9:
+      [38] Adnan Munir, Abdul Jabbar Siddiqui, and Saeed Anwar.    Learning What You Want to Learn Using Programmable
+ Investigation of UAV Detection in Images with Complex             Gradient Information. ArXiv, abs/2402.13616, 2024. 7
+
+To appear in Proc. WACV2025        10                                                                              © 2025 IEEE
+
+ [51] Ye Wang, Yueru Chen, Jongmoo Choi, and C.-C. Jay Kuo.
+ Towards Visible and Thermal Drone Monitoring with Con-
+ volutional Neural Networks. Asia-Pacific Signal and Infor-
+ mation Processing Association Transactions on Signal and
+ Information Processing, 8, 2018. 2, 3, 12, 13
+[52] Changfeng Yu, Shiming Chen, Yi Chang, Yibing Song, and
+ Luxin Yan. Both Diverse and Realism Matter: Physical At-
+ tribute and Style Alignment for Rainy Image Generation. In
+ Proceedings of the IEEE/CVF International Conference on
+ Computer Vision, pages 12353–12363, 2023. 1
+  [53] Yuni Zeng, Qianwen Duan, Xiangru Chen, Dezhong Peng,
+ Yao Mao, and Ke Yang. UAVData: A Dataset for Unmanned
+ Aerial Vehicle Detection.  Soft Comput., 25(7):5385––5393,
+ 2021. 2, 3, 12, 13
+ [54] Jie Zhao, Jingshu Zhang, Dongdong Li,   and      Dong
+ Wang.        Vision-Based Anti-UAV Detection and Tracking.
+ IEEE Transactions on Intelligent Transportation Systems,
+ 23(12):25323–25334, 2022. 2, 3, 4, 6, 7, 12, 13, 18
+[55] Ye Zheng, Zhang Chen, Dailin Lv, Zhixing Li, Zhenzhong
+ Lan, and Shiyu Zhao. Air-to-Air Visual Detection of Micro-
+ UAVs: An Experimental Evaluation of Deep Learning. IEEE
+ Robotics and Automation Letters, 6(2):1020–1027, 2021. 1,
+ 2, 3, 12, 13
+
+
+
+
+
+
+
+
+
+
+ To appear in Proc. WACV2025    11    © 2025 IEEE
+
+    Supplementary Material
+
+
+
+A. Details on Drone Detection Datasets UAV-Eagle. The UAV-Eagle dataset [5] is designed to
+   In the field of image-based drone detection, diverse evaluate the effectiveness of drone detection algorithms un-
+datasets have been established, each defined by specific at- der varying conditions, including diverse illumination set-
+tributes and features tailored to distinct application contexts tings, motion artifacts, and viewpoint alterations. It com-
+and objectives (see also Table I). Complementing the infor- prises 510 annotated images featuring complex environ-
+mation in Section 2.2 (main paper), Table I and the subse- ments characterized by diverse background objects (e.g.,
+quent sections offer a more comprehensive exploration of trees, buildings, clouds, vehicles, and people). Employing
+the distinctive properties of each dataset. a UAV-mounted camera for data collection, the dataset in-
+        cludes aerial images of both single- and multi-drone scenar-
+USC Drone Detection and Tracking. The USC Drone ios; however, limited to the Eagle quadcopter model.
+Detection and Tracking dataset [9,51] consists of 30 videos, UAVData. Zeng et al. [53] introduce UAVData, a dataset
+each with a resolution of 1920×1080 pixels. Recorded at designed for visual drone detection, consisting of 13,803
+a frame rate of 15 FPS and an approximate duration of manually recorded and annotated RGB images with a reso-
+one minute per video, the dataset contains approximately lution of 1280×720 pixels. The UAVData dataset captures
+27,000 images. The videos were captured on the Univer- a diverse array of real-world environments, encompassing
+sity of Southern California (USC) campus, featuring a wide both indoor settings (e.g., workshops and laboratories) and
+variety of backgrounds, camera angles, drone appearances, outdoor scenes featuring distinct background compositions
+and diverse weather and lighting conditions. Only a single (e.g., sky, trees, and buildings). This dataset aims to address
+drone model (DJI Phantom) was used for data generation. the challenges inherent in real-world scenarios by incorpo-
+        rating rapid illumination changes, complex scenarios, and
+Drone Dataset by [2]. The Drone Dataset, provided blurring effects caused by high-speed motion. In addition
+by Aksoy et al. [2], comprises approximately 4,000 an- to six common drone models, UAVData includes balloon
+notated RGB images sourced from YouTube drone videos distractors, thus yielding 7,320 uni-drone images, 4,346
+and Google image searches. These images exhibit a reso- multi-drone images, and 2,137 balloon images. Drone sizes
+lution range from 300×168 to 3840×2160 pixels (4K) and within the images range from 5×23 to 720×303 pixels.
+exclusively feature DJI Phantom drones. The dataset also
+includes images of various non-drone objects. Halmstad Data. The Halmstad Dataset, developed by
+        Svanstr¨om et al. [45], is a multi-sensor dataset for drone de-
+MAV-VID. The Multirotor Aerial Vehicle VID (MAV- tection, with a specific focus on detecting small UAVs. The
+VID) dataset by Rodriguez-Ramos et al. [41] comprises 64 dataset comprises 365 infrared (IR) and 285 visible light
+videos (i.e., 40,232 images) of single drones. The videos are (RGB) videos, each lasting 10 seconds, alongside audio
+captured in various setups using different recording tech- files. These recordings were primarily captured at airports
+niques, including handheld mobile devices, ground-based in Sweden (e.g., Halmstad Airport) under daylight condi-
+surveillance cameras, and other drones [26]. The average tions. The dataset encompasses a variety of drone models
+drone size within the dataset is 136×77 pixels. (including the Hubsan H107D, DJI Flame Wheel, and DJI
+        Phantom 4), as well as potential drone-like objects such as
+Det-Fly. The Det-Fly dataset by Zheng et al. [55] fo- birds and airplanes. In total, the dataset comprises 203,328
+cuses on air-to-air visual detection of micro UAVs and com- annotated frames (across both IR and RGB), categorizing
+prises 13,271 high-resolution images (3840×2160 pixels). objects into the classes drone, bird, airplane, and helicopter.
+The images, captured by another UAV, were sourced from However, the .mat format annotations are not directly com-
+videos at a sampling rate of 5 FPS or taken from selected patible with most DL frameworks.
+positions. They feature diverse environmental backgrounds
+(sky, urban, field, mountain) and perspectives (front, top, DUT Anti-UAV. The Dalian University of Technology
+bottom) based on relative viewing angles. Despite the con- (DUT) Anti-UAV dataset [54] consists of two subsets: one
+siderable variability in drone size, with nearly half of the for detection and one for tracking. The detection dataset
+drones occupying less than 5% of the total image area, includes 10,000 images, partially recorded in a sequential
+the dataset exclusively covers a single drone model (DJI manner. The image resolutions vary significantly, ranging
+Mavic). from 240×160 to 5616×3744 pixels. Object sizes within
+
+To appear in Proc. WACV2025 12 © 2025 IEEE
+
+Table I. Overview of additional characteristics of publicly available datasets for image-based drone detection. The symbols ✗ (does not
+apply) and ✓ (applies) indicate the designated computer vision (CV) task – detection (detect) and / or tracking (track) – the represented
+drone types (multicopter and / or fixed-wing), and the camera configurations (static and / or moving).
+
+ Dataset                              CV Task   Objective             Drone Type     Camera Config.
+     detect                            track                               multicopter  fixed-wing  static          moving
+ USC Drone Detect. & Track. [9, 51]   ✓  ✓      drone monitoring                ✓           ✗         ✓               ✓
+ Drone Dataset [2]                    ✓  ✗      drone detection                 ✓           ✗         –               –
+ MAV-VID [41]                         ✓  ✓      drone detection                 ✓           ✗         ✓               ✓
+ Det-Fly [55]                         ✓  ✗      detection of micro-             ✓           ✗         –               –
+                                                UAVs
+                                                UAV     detection        in
+ UAV-Eagle [5]                        ✓  ✓      unconstrained envi-             ✓           ✗         ✓               ✗
+                                                ronments
+ UAVData [53]                         ✓  ✓      UAV detection                   ✓           ✗         ✓               ✗
+ Halmstadt Data [45]                  ✓  ✓      drone   detection        at     ✓           ✗         ✓               ✓
+                                                airports
+ DUT Anti-UAV [54]                    ✓  ✓      anti-UAV detection              ✓           ✗         ✓               ✓
+ VisioDECT [1]                        ✓  ✗      detection of unau-              ✓           ✗         ✓               ✓
+                                                thorized UAVs
+ Malicious Drones [27]                ✓  ✗      hazardous           payload     ✓           ✗         –               –
+                                                drone detection
+ S-UAV-T [6] (synthetic)              ✓  ✗      UAV-to-UAV detec-               ✓           ✗         ✗               ✓
+                                                tion
+ Drone-vs-Bird Detection Ch. [11]     ✓  ✓      distinction between             ✓           ✓         ✓               ✓
+                                                drones and birds
+ Anti-UAV [28]                        ✗  ✓      single            UAV track-    ✓           ✗         ✓               ✓
+                                                ing
+
+the images also exhibit substantial variation, with an aver-      Malicious Drones.  Jamil et al. [27] introduce the Ma-
+age object area ratio of 0.013, indicating a high proportion      licious Drones dataset, specifically designed for detecting
+of small objects. DUT Anti-UAV features 35 different UAV          harmful drones (e.g., carrying hazardous payloads) and dif-
+types for data generation and is characterized by a high di-      ferentiating them from other aerial entities.  The dataset
+versity of scene information. It includes various outdoor         comprises 776 images categorized into five classes: aero-
+environments such as the sky, dark clouds, jungles, high-         plane, bird, drone, helicopter, and malicious drone, with
+rise buildings, residential buildings, farmland, and play-        drones (normal and malicious) accounting for approxi-
+grounds. Additionally, it encompasses diverse lighting set-       mately half of the dataset (∼ 399 images).      All images
+tings (day, night, dawn, and dusk) and weather conditions         are standardized to a resolution of 224×224 pixels. The
+(sunny, cloudy, and snowy days). In terms of object posi-         dataset aims to address the complexity of real-world sce-
+tioning, the majority of drones are located in the central area   narios by including scenarios characterized by low illumi-
+of the image.                                                     nation, reduced object visibility, occlusions, and adverse
+                                                                  weather conditions.
+VisioDECT.        The VisioDECT dataset [1] is a special-
+ized aerial dataset designed for scenario-based detection         S-UAV-T.    The S-UAV-T dataset by Barisic et al. [6] is the
+of unauthorized drones.     It comprises 20,924 annotated         only publicly available synthetic dataset for drone – more
+RGB images (852×480 pixels) recorded across three dis-            precisely UAV-to-UAV – detection. The dataset is gener-
+tinct scenarios: cloudy, sunny, and evening.   The images         ated via Blender [8] and the rendering engine Cycles [13],
+were captured at varying altitudes and locations, at dif-         with a particular emphasis on texture randomization. To re-
+ferent times, and under diverse climatic conditions, using        flect the diversity of real-world environments, the dataset
+six distinct drone models: Anafi Extended, DJI FPV, DJI           includes variations in drone models, the quantity of drones
+Phantom, EFT-E410S, Mavic2-Air, and Mavic2-Enterprise             per image, lighting conditions (daylight, partly cloudy, twi-
+Zoom. The collected data was manually cleaned (excluding          light), object scales, camera positions and angles, as well as
+images without drones) and annotated by domain experts.           a range of unconventional textures. The dataset comprises
+
+To appear in Proc. WACV2025                         13                                                        © 2025 IEEE
+
+52,500 drone images with a resolution of 608×608 pixels.            C. Further Details on SynDroneVision
+Drone-vs-Bird Detection Challenge.       The Drone-vs-Bird          C.1. Environments
+Detection Challenge dataset [11] is a comprehensive, man-
+ually annotated collection designed to assist in accurately         The creation of SynDroneVision, as outlined in Sec-
+distinguishing drones from birds across a wide range of con-        tion 3.1 (main paper), involved the application of diverse
+ditions. It comprises 77 video sequences for training, each         virtual environments. The majority of these environments
+averaging 1,384 frames, captured with both static and mov-          are publicly available (some free of charge and some re-
+ing cameras at resolutions from 720×576 to 3840×2160                quiring payment). The only exception is the University Site
+pixels.     The dataset includes eight types of commercial          environment, which was specifically designed to replicate
+drones - three fixed-wing and five rotary-wing models               a real-world scenario. Table II provides a comprehensive
+- recorded in diverse environments such as urban areas,
+woodlands, agricultural fields, and maritime regions across
+Central Europe and the Mediterranean. These videos fea-
+ture different weather conditions and times of day, intro-          SynDroneVision
+ducing challenges like direct sun glare and varying cam-            images
+era characteristics.    While drones are annotated, birds,
+which frequently appear as primary disturbance, are not.                                   train
+Drone sizes range from 15 pixels to over 1,000,000 pixels,                                     seq0001
+with most annotated drones being smaller than 32×32 pix-
+els. The test set, comprises 30 additional video sequences                                        00001.png
+without annotations, featuring new backgrounds, additional                                        00002.png
+drone types, and other disturbing objects like planes.                                            00003.png
+Anti-UAV. The Anti-UAV dataset, created by Jiang        et                                        ...
+al. [28], comprises 318 pairs of real RGB-T video se-                                          seq0001 B
+quences tailored for UAV tracking. Each pair features both
+RGB and thermal IR modalities, capturing a broad spectrum                                      seq0002
+of lighting conditions (day and night) and diverse back-                                       seq0002 B
+ground compositions (e.g., buildings, clouds, or trees). Fur-                                  ...
+thermore, the dataset includes prominent UAV models –
+specifically the DJI Inspire, DJI Phantom 4, DJI Marvic Air,                               val
+DJI Marvic Pro, DJI Spark, and Parrot. Similar to the DUT                                  test
+Anti-UAV dataset, the majority of drones in the Anti-UAV
+dataset are positioned centrally within the image frames. A         labels
+comprehensive three-stage annotation process was used to                                   train
+generate precise annotations. The dataset does not specify
+a version explicitly dedicated to object detection.                                            seq0001
+B. Dataset Structure                                                                              00001.txt
+                                                                                                  00002.txt
+The dataset is structured into two main folders:    images                                        00003.txt
+and labels. Each folders is further divided into training, test,                                  ...
+and validation sets. Within these subdivisions, there are dis-                                 seq0001 B
+tinct folders for each image sequence, along with a subset
+of randomly blurred images (denoted by the suffix ’ B’).                                       seq0002
+Annotations in the labels folder are provided as text files                                    seq0002 B
+according to the YOLO standard format:                                                         ...
+<object-class> <x> <y> <width> <height> .                                                  val
+Note that <x> and <y> correspond to the normalized coor-                                   test
+dinates of the bounding box center. The normalization ex-
+tends to both the bounding box coordinates and dimensions.
+Figure I shows SynDroneVision’s structural organization.            Figure I. Folder configuration of the SynDroneVision dataset.
+
+To appear in Proc. WACV2025        14                                                                 © 2025 IEEE
+
+Table II. Overview of environments used for synthetic data generation. The symbols ✓ (applies) and ✗ (does not apply) indicate an
+environment’s public availability (2nd column from the left) and mandatory cost (3rd column from the left).
+
+ Environment      Publ. Avail. Chargeable   Description
+                                            A custom-designed environment replicating a German university
+ University Site          ✗    –            campus situated within a wooded landscape. This urban setting
+                                            features mid-rise building structures and a moderate vegetation
+                                            density. Figure II: images 1–6 (rows 1–3).
+                                            A commercially available environment offering a realistic rep-
+                                            resentation of Venice.              The included demo map showcases
+ Venetian City [15]       ✓    ✓            Mediterranean-style buildings,    autumnal trees,     canals, stone
+                                            bridges, and additional exterior elements such as benches and
+                                            street lamps. Figure II: images 1–6 (rows 4–5).
+                                            A small agricultural environment featuring grain fields, fruit-
+                                            bearing trees, and a variety of vegetable plants. In addition, the
+ Farming Grounds [12]     ✓    ✓            scene includes a small greenhouse, multiple raised garden beds,
+                                            fencing, and other typical agricultural elements such as wooden
+                                            barrels and crates. Figure II: images 1–6 (row 6).
+                                            A publicly accessible environment capturing the expansive fields
+                                            and open spaces characteristic of the Australian countryside. It
+ Rural Australia [23]     ✓    ✗            includes detailed representations of natural elements, such as
+                                            rivers, creeks, and rock formations, as well as native vegetation
+                                            (e.g., shrubs and grasses) and local fauna (e.g., different bird
+                                            species in flight). Figure II: images 1–6 (row 7).
+                                            An urban park environment characterized by a rich diversity of
+                                            lush vegetation, including trees, shrubs, flowers, and grass. The
+                                            park features winding pathways and serene water features such
+ City Park [43]           ✓    ✗            as ponds and fountains.       In addition to a few small buildings,
+                                            the environment includes playgrounds, picnic areas, and sports
+                                            grounds, as well as urban furniture such as benches, lampposts,
+                                            and trash cans. Figure II: images 1–5 (row 8).
+                                            An open-access environment showcasing a factory site.        It ex-
+                                            hibits various aspects of industrial architecture, including struc-
+                                            tures such as warehouses, production facilities, assembly lines,
+ Factory Grounds [42]     ✓    ✗            and storage installations, along with an extensive network of
+                                            pipes, ducts, and other infrastructure. The environment also fea-
+                                            tures a variety of machinery and equipment commonly found in
+                                            factories or industrial settings.   Figure II: image 6 (row 8), im-
+                                            ages 1–6 (row 9).
+                                            A freely accessible environment featuring a Midwestern outdoor
+                                            mall. Thus, the buildings are predominantly commercial, includ-
+                                            ing shops, cafes, and restaurants. The urban design incorporates
+ Urban Downtown [39]      ✓    ✗            outdoor seating areas, green spaces, and playgrounds, set against
+                                            a backdrop of mountains. The represented vegetation comprises
+                                            flowers, small shrubs, and trees, evoking a summer-like setting.
+                                            Figure II: images 1–6 (row 10), images 1–4 (row 11).
+                                            An urban scene characterized predominantly by buildings (both
+                                            commercial and residential) with diverse architectural styles.
+ Modular Cityscape [40]   ✓    ✗            The environment     integrates    urban infrastructure,     including
+                                            streets and sidewalks, and is equipped with urban furniture such
+                                            as benches, bus stops, streetlights, and trash receptacles.    Fig-
+                                            ure II: images 5–6 (row 11), images 1–6 (last row)
+
+
+
+To appear in Proc. WACV2025                 15    © 2025 IEEE
+
+Figure II. Customized camera perspectives and lighting configurations tailored to each environment. The camera fields of view (FOVs)
+correspond to the following environments (arranged from left to right, top to bottom): University Site (rows 1-3), Venetian City (rows 4-5),
+Farming Grounds (row 6), Rural Australia (row 7), City Park (images 1-5, row 8), Factory Grounds (image 6, row 8; images 1-6, row 9),
+Urban Downtown (images 1-6, row 10; images 1-4, row 11), and Modular Cityscape (images 5-6, row 11; images 1-6, last row).
+
+
+    To appear in Proc. WACV2025    16    © 2025 IEEE
+
+       Table III. Parameter specifications for the Sun and Sky Actor to create environment-dependent illumination variations.
+
+ Environment      Solar Time                  Direct. Light Intensity                      Rayleigh Scattering (Channel Values)
+        (lux)                                                          Red                                Green        Blue
+                            from    to  min                    max           min    max    min     max             min        max
+ University Site            6.00  21.00  1                     126          0.014  0.708   0.148  0.900              0.361     1
+ Venetian City [15]         9.40  17.00  6                      15          0.100  0.565   0.199  0.739              0.410   0.990
+ Farming Grounds [12]       7.24  14.25  5                      13          0.119  0.599   0.188  0.836              0.361     1
+ Modular Cityscape [40]     6.87  17.30  15                     70          0.125  0.686   0.225  0.687              0.719     1
+
+      overview of the environments and their respective charac-                    Table IV. Post Process Volume settings.
+teristics. Figure II illustrates camera perspectives and light-
+ing configurations determined for each environment.                 Environment                min Tempmax                  minTintmax
+C.2. Illumination Parameters                                           University Site                    4,400   12,000    0     0.30
+           To enhance the range of illumination within the Syn-     Venetian City [15]                    3,840   15,000    0     0.25
+        DroneVision dataset, we primarily modified the settings     Farming Grounds [12]                  4,588    4,588   0.05   0.05
+        of the Sun and Sky Actor [21] and the Post Process Vol-     Modular Cityscape [40]                4,770    9,500  -0.02   0.03
+ume [20], essential tools within the Unreal Engine [22].
+Sun and Sky Actor.          For the Sun and Sky Actor, the fol-     •                Temperature Type – The Temperature Type parameter
+lowing parameters were systematically modified:                                  specifies the method for adjusting the color tempera-
+                                                                                  ture of a scene. Available options are White Balance
+ •         Solar Time – The solar time parameter of the Sun and                  (default) and Color Temperature. White Balance lever-
+        Sky Actor controls the position of the sun with respect                   ages the Temp value to calibrate the virtual camera,
+         to a pre-defined geographical location, simulating the                    maintaining accurate white tones. Color Temperature
+    natural progression of time during the day.         Adjust-                 utilizes the Temp value to directly adjust the scene’s
+      ing the solar time changes the sun’s position relative to                   overall color hue. Both methods were employed in the
+        the horizon, creating different lighting conditions and        generation process of SynDroneVision.
+    shadows.                                                        •               Temp – The Temp parameter regulates the white bal-
+                                                                       ance relative to the scene’s light temperature.           While
+ •  Directional Light Intensity         – The intensity parame-                    higher values introduce a warm (yellow) coloration,
+        ter of the Directional Light Actor controls the bright-                lower values generate a cool (blue) tint. Matching tem-
+    ness of the light.      Adjusting this parameter alters the        perature values ensure a neutral white light.
+         overall illumination and shadow strength in the scene.
+          Higher values increase brightness, while lower values     •         Tint – The Tint parameter refines the white balance tint
+    decrease it.                                                              of a scene, correcting color imbalances to attain a more
+                                                                              natural color representation across different light tem-
+ •  Rayleigh Scattering – The Rayleigh scattering parame-              peratures.
+            ter in Unreal’s Sky Atmosphere contains both an RGB
+           value and a scale. While the RGB value specifies the    The parameter value ranges are detailed in Table IV.
+    color tint of the scattering effect, the scale controls the
+        overall intensity. This affects the sky’s color and ap-    Rendering Settings.                The rendering settings of an Un-
+             pearance, simulating natural atmospheric phenomena               real project have a profound impact on both visual qual-
+         such as blue skies during the day and red hues at sun-    ity and system performance.               In the generation process
+    rise or sunset.                                                            of SynDroneVision, we employed the rendering configura-
+                                                                          tions specified in Table V for the majority of environments.
+        Table III summarizes the (environment-dependent) param-               Exceptions include the environments Factory Grounds [42]
+       eter value ranges employed in generating SynDroneVision.    and City Park [43], which retained the default settings.
+Post Process Volume.   To create variations in the scene’s         C.3. Object Area Ratio and Object Aspect Ratio
+     color grading, we refined the following color temperature-     Supplementing the      characteristics         presented   in Sec-
+related parameters within the Post Process Volume:                     tion 3.5 (main paper), Figure III illustrates the distributions
+
+To appear in Proc. WACV2025        17                                                                                      © 2025 IEEE
+
+Count 1E + 3  Count 1E + 3
+
+
+
+
+
+
+
+Count 1E + 3  Count 1E + 3
+
+
+
+
+
+
+
+Count 1E + 3  Count 1E + 3
+
+
+
+
+
+
+
+
+
+    SynDroneVision T R A I N I N G D A T A
+    + DUT Anti-UAV SynDroneVision      DUT Anti-UAV
+
+
+
+
+
+
+
+
+
+
+     Table V. Technical configuration details for Unreal projects.                                          E V A L U A T I O N     D A T A
+     Global Illumination                                                                                    DUT Anti-UAV         UAV-Eagle  Drone Dataset
+     Dynamic Global Illumination Methods                                                 Lumen
+     Reflection
+     Reflection Method                                                                   Lumen
+     Reflection Capture Resolution                                                        128
+     Reduce Lightmap Mixing on Smooth                                                      ✓
+     Surfaces
+     Support Global Clip Plane for Planar Re-                                     ✓ ★
+     flections
+     Lumen
+     Use Hardware Ray Tracing                                                     ✓
+     Ray Lighting Mode                                                               Surface Cache
+     Software Ray Tracing Mode                                                       Detail Tracing
+     Hardware Ray Tracing
+     Support Hardware Ray Tracing                                                          ✓
+     Path Tracing                                                                          ✓
+     Software Ray Tracing
+     Generate Mesh Distance Fields                                                         ✓
+     Distance Field Voxel Density                                              0.2                      Figure IV.     YOLOv9e detections on the DUT Anti-UAV test
+     ★ not enabled for University Site                                                                  set [54] (1st column), the UAV-Eagle dataset [5] (2nd column), and
+                                                                                                        the Drone Dataset by [2] (last column) demonstrating improved
+                   Training        2.5        Validation                      Test                      bounding box precision for models trained on both SynDroneVi-
+       3.0                                                         1.0                                  sion and DUT Anti-UAV data (last row). Predictions (red dashed
+       2.5                         2.0                             0.8                                  line) are marked alongside ground truth (solid blue line).
+       2.0                         1.5                             0.6
+       1.5                         1.0                             0.4
+       1.0                         0.5                             0.2                                  by [2], along with their corresponding detection outcomes
+       0.5
+     0 0     0.2   0.4 0.6   0.8 1  0 0    0.2  0.4 0.6  0.8  1    0 0    0.2 0.4 0.6 0.8 1             obtained using YOLOv9e. The effectiveness of the detec-
+        10   Object Area Ratio     0.7       Object Area Ratio         Object Area Ratio                tion results is compared across all three training strategies,
+                                   0.6
+        8                          0.5                             2.5                                  i.e., YOLOv9e trained (i) exclusively on SynDroneVision
+        6                          0.4                             2.0                                  (first row), (ii) solely on DUT Anti-UAV (second row), and
+        4                          0.3                             1.5                                  (iii) on a combination of both datasets (last row). The figure
+        2                          0.2                             1.0                                  illustrates the superior bounding box localization achieved
+                                   0.1
+        0 0    2   4   6     8   10  0    0  2  4     6   8   10   0.50   0 2              4 6 8        by the strategic combination of both datasets during train-
+             Object Aspect Ratio          Object Aspect Ratio                     Object Aspect Ratio   ing, supporting the significant performance enhancements
+                                                                                                        in mAP values discussed in Section 4.2 (main paper). Con-
+    Figure III.                            Object area and object aspect ratio distribution in the      versely, Figure V displays selected examples from DUT
+    SynDroneVision dataset across training, validation, and test splits.                                Anti-UAV where YOLOv9e fails to detect existing drones,
+                                                                                                        irrespective of the training data.
+    of object area (top) and object aspect ratios (bottom) for                                          D.2. Performance on Out-of-Distribution Data
+    drones in the SynDroneVision dataset.                                       Across all dataset            Section 4.2 (main paper) highlights that the perfor-
+    partitions – training, validation, and test – the distribution                                      mance and robustness enhancements achieved with Syn-
+    of object area ratios exhibit a pronounced rightward skew.                                          DroneVision on out-of-distribution data are not limited to
+    A comparable trend is observed in the distribution of aspect                                        YOLOv9e, but extend to other YOLO variants as well.
+     ratios.                                                                                            Evaluating YOLOv8m, YOLOv8l, and YOLOv9c on the
+                   D. Analysis Details                                                                  UAV-Eagle dataset also demonstrates that training exclu-
+                                                                                                        sively with either  SynDroneVision  or DUT Anti-UAV
+    D.1. Detection Examples                                                                             yields comparably strong results across all performance in-
+                                                                                                        dicators (see Table VI). In some cases, models trained solely
+                                                 Figure IV presents selected examples from the DUT      on SynDroneVision perform even better than those trained
+    Anti-UAV [54], the UAV-Eagle [5], and the Drone Dataset                                             on real-world data, particularly in terms of mAP values at
+
+    To appear in Proc. WACV2025                                                       18                                                               © 2025 IEEE
+
+Figure V. Small cut-outs of selected samples from the DUT Anti-UAV test set that failed to be detected by YOLOv9e, irrespective of the
+employed training data. Ground truth bounding boxes are marked in blue.
+
+Table VI. Performance of YOLOv8m, YOLOv8l, and YOLOv9c on the UAV-Eagle dataset [5] and the Drone Dataset by [2] (out-of-
+distribution data) across different training data configurations. The SynDroneVision dataset is abbreviated as SDV.
+
+ Evaluation Data     YOLO     Training Data                                    mAP ↑          FNR ↓  FDR ↓
+                        SDV (Ours)  DUT Anti-UAV                       @0.25   @0.5  @0.5-0.95
+                       (synthetic)     (real)
+                            ✓            –                             0.944   0.771   0.293  0.201  0.169
+                       v8m  –            ✓                             0.935   0.823   0.302  0.199  0.063
+                            ✓            ✓                             0.961   0.849   0.350  0.136  0.089
+ UAV-Eagle [5]         v8l  ✓–           ✓–                            0.951   0.786   0.304  0.217  0.125
+ (real)                     ✓            ✓                             0.920   0.725   0.217  0.180  0.224
+                                                                       0.979   0.869   0.368  0.126  0.074
+                            ✓            –                             0.926   0.770   0.289  0.216  0.163
+     v9c                    –            ✓                             0.922   0.799   0.275  0.219  0.077
+                            ✓            ✓                             0.975   0.859   0.353  0.141  0.092
+                            ✓            –                             0.758   0.527   0.188  0.310  0.138
+                       v8m  –            ✓                             0.801   0.560   0.208  0.278  0.113
+                            ✓            ✓                             0.824   0.613   0.232  0.196  0.114
+ Drone Dataset by [2]  v8l     ✓–      ✓–                              0.768   0.515   0.193  0.389  0.076
+ (real)                     ✓            ✓                             0.800   0.552   0.199  0.263  0.227
+                                                                       0.799   0.603   0.227  0.216  0.116
+                            ✓            –                             0.737   0.530   0.199  0.401  0.073
+                       v9c  –            ✓                             0.806   0.556   0.206  0.292  0.134
+                            ✓            ✓                             0.825   0.606   0.224  0.198  0.126
+
+an IoU threshold of 0.25. In analogy to YOLOv9e, the best       mance enhancements, as detailed in Table VI. The only ex-
+performance is achieved when combining both datasets dur-       ception seems to be YOLOv8l, where the mAP value at an
+ing training. Here, YOLOv8l exhibits the most significant       IoU threshold of 0.25 is marginally higher for the model
+improvement over exclusive real-world data training, fea-       trained exclusively on DUT Anti-UAV. However, the dis-
+turing a 14.4 percentage point increase in mAP at an IoU        crepancy is negligible, with a difference of only 0.001.
+threshold of 0.5 and a 10.51 percentage point improvement
+across a range of IoU thresholds from 0.5 to 0.95 (cf. Ta-      D.3. Performance on SynDroneVision
+ble VI). Furthermore, integrating synthetic and real-world
+data effectively lowers the FNR, whereas variations in the              To provide a comprehensive understanding of model
+FDR remain inconsistent.                                        performance, we also incorporate the SynDroneVision test
+                                                                set into our evaluation. Specifically, we focus on models
+For the Drone Dataset by [2], models trained exclusively        trained either exclusively on SynDroneVision or on a com-
+on SynDroneVision exhibit slightly lower mAP values com-        bination of SynDroneVision and DUT Anti-UAV. Table VII
+pared to those trained solely on DUT Anti-UAV. Neverthe-        highlights the consistently high performance of the models
+less, the integration of both datasets yields overall perfor-   across all performance indicators.
+
+To appear in Proc. WACV2025        19                                                                         © 2025 IEEE
+
+Table VII. Performance of YOLOv8m, YOLOv8l, YOLOv9c, and YOLO9e on the SynDroneVision test set across different training data
+configurations. The SynDroneVision dataset is abbreviated as SDV.
+
+YOLO Training Data        Evaluation on SynDroneVision
+ SDV (Ours)  DUT Anti-UAV                                           mAP ↑          FNR ↓  FDR ↓
+(synthetic)     (real)                                      @0.25   @0.5  @0.5-0.95
+v8m  ✓            –                                         0.995   0.995   0.944  0.013    0
+     ✓            ✓                                         0.995   0.995   0.942  0.014    0
+v8l  ✓            –                                         0.995   0.995   0.955  0.014  0.001
+     ✓            ✓                                         0.995   0.995   0.956  0.013    0
+v9c  ✓            –                                         0.995   0.995   0.952  0.014  0.001
+     ✓            ✓                                         0.995   0.995   0.954  0.014    0
+v9e  ✓            –                                         0.995   0.995   0.967  0.014  0.001
+     ✓            ✓                                         0.995   0.995   0.967  0.014    0
+
+
+
+
+
+
+
+
+
+
+To appear in Proc. WACV2025    20                                   © 2025 IEEE

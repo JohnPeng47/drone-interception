@@ -177,3 +177,10 @@ resources/drive/binaries/*
 /.runs/
 scripts/.runpod_pod.json*
 rl/scripts/.runpod_pod.json*
+
+# Local detection datasets and model artifacts
+/detection/data/
+/detection/datasets/
+/detection/models/
+/detection/research/pdfs/
+/detection/runs/

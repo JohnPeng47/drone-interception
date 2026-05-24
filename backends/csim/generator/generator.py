@@ -105,16 +105,15 @@ class PregeneratedSimGenerator(SimGenerator):
     ) -> list[SimInstance]:
         from .instance_store import read_sim_instances
 
-        instances = read_sim_instances(path)
         offset = int(offset)
         if offset < 0:
             raise ValueError("offset must be non-negative")
         if count is None:
-            return instances[offset:]
+            return read_sim_instances(path, offset=offset)
         count = int(count)
         if count < 0:
             raise ValueError("count must be non-negative")
-        return instances[offset:offset + count]
+        return read_sim_instances(path, count=count, offset=offset)
 
     def sample(self, *, seed: int, **kwargs: Any) -> SimInstance:
         if kwargs:

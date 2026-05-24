@@ -1,0 +1,55 @@
+# Sim2Air — Barisic et al. 2022 (RA-L)
+
+Synthetic aerial dataset for UAV monitoring. Open-source pipeline at larics/synthetic-UAV.
+Core thesis: shape-based representation (via *unrealistic* texture randomization) generalizes
+better than photoreal textures for UAV-to-UAV detection under aerial imaging conditions.
+
+```diagram
+┌─ PIPELINE (Blender + Cycles, 512 path-trace samples) ──────────────────────────┐
+│                                                                                 │
+│   3D MODELS         TEXTURES           HDRI               POSE SAMPLER         │
+│   ─────────         ─────────          ─────────          ─────────            │
+│   10 UAVs           32 textures:       10 PolyHaven       pitch  [-45°, 45°]   │
+│   - Eagle (custom)  - 4 BSDF shaders   - daylight         roll   [-45°, 45°]   │
+│   - 9 commercial    - patterned mix    - cloudy           yaw    [0°, 360°]    │
+│   - quad+hexa       - + 1 photoreal    - twilight         dist   [2 m, 20 m]   │
+│   (S-UAV-T set)     - random RGB color - etc                                    │
+│                                                                                 │
+│                      └──→ assigns to model uniformly at random                  │
+│                                                                                 │
+└─────────────────────────────────────────────────────────────────────────────────┘
+
+┌─ DATASETS BUILT ───────────────────────────────────────────────────────────────┐
+│   S-Eagle-B    32k img   1 model,  1 photoreal texture       (baseline)        │
+│   S-Eagle-T    32k img   1 model, 32 randomized textures     (texture-rand)    │
+│   S-UAV-T      52.5k img 10 models, 32 textures              (full release)    │
+└─────────────────────────────────────────────────────────────────────────────────┘
+
+┌─ KEY RESULT (mAP@0.5 on real test sets, YOLOv4-Tiny) ──────────────────────────┐
+│                                                                                 │
+│                  UAV-Eagle    T1      T2                                        │
+│   S-Eagle-B      86.84%       30.11%  64.76%       ← photoreal baseline         │
+│   S-Eagle-T      85.65%       47.16%  68.47%       ← +17pp on T1, +3.7pp on T2  │
+│                                                                                 │
+│   FINDING: photoreal texture overfits to one drone appearance.                  │
+│   Atypical textures force the network onto SHAPE features (frame, props,        │
+│   landing gear). Generalizes to unseen UAV models and to challenging lighting.  │
+└─────────────────────────────────────────────────────────────────────────────────┘
+
+┌─ ROBUSTNESS TO ILLUMINATION (mAP, T2 dataset) ─────────────────────────────────┐
+│                  Original   Challenging-illumination                            │
+│   S-Eagle-B      64.76%     46.02%   (-18.7pp drop)                             │
+│   S-Eagle-T      68.47%     62.28%   ( -6.2pp drop)   ← much more robust        │
+└─────────────────────────────────────────────────────────────────────────────────┘
+
+┌─ WHAT WE TAKE INTO THE PIPELINE ───────────────────────────────────────────────┐
+│   - Blender+Cycles renderer + Python automation hook                            │
+│   - 32-texture mixed pool (BSDF shaders + atypical patterns + photoreal)        │
+│   - HDRI environment maps (lighting and sky in one asset)                       │
+│   - 10-UAV S-UAV-T model set as starting fleet                                  │
+│   - Per-model bbox auto-annotation                                              │
+│ WHAT WE CHANGE                                                                  │
+│   - Pose sampling: random pitch/roll/yaw/dist  →  drawn from sim trajectories   │
+│   - Background: random per-frame  →  per-engagement (consistent in time)        │
+└─────────────────────────────────────────────────────────────────────────────────┘
+```

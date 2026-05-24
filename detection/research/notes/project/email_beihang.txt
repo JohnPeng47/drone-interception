@@ -1,0 +1,53 @@
+To:  Dawei Li <david@buaa.edu.cn>
+Cc:  Kun Yang <yangkun_buaa@buaa.edu.cn>; Hailong Yan <hlyan@mail.nwpu.edu.cn>
+Subject:  Question on detector choice in your IBVS interception work
+
+Dear Prof. Li, Dr. Yang, and Mr. Yan,
+
+I have been reading your recent papers on monocular IBVS interception
+("High-Speed Interception Multicopter Control by Image-based Visual
+Servoing", arXiv:2404.08296, IEEE TCST 2025; and "Precise Interception
+Flight Targets by Image-based Visual Servoing of Multicopter",
+arXiv:2409.17497, IEEE TIE 2025) and have a question I hope you might
+be willing to clarify.
+
+In the outdoor flight experiments, the intruder is a tethered red
+balloon, and the perception module is described as YOLOv7 without
+further detail on training. I assume the balloon was chosen partly to
+isolate the controller as the contribution and partly for safety and
+repeatability. My question is whether you considered, or have results
+from, training the detector on synthetic images of an actual drone
+target rather than relying on a high-contrast balloon proxy.
+
+There is a small but growing body of work showing that CNN drone
+detectors trained on rendered/synthetic imagery transfer reasonably
+well to real flight footage -- e.g., Barisic et al. (Sim2Air, RA-L
+2022, arXiv:2110.05145), Lenhard et al. (SynDroneVision, WACV 2025,
+arXiv:2411.05633), and Wisniewski et al. ("Drone Detection using Deep
+Neural Networks Trained on Pure Synthetic Data", arXiv:2411.09077).
+None of these have been deployed inside a closed-loop interception
+controller as far as I can tell, and your IBVS+DKF architecture seems
+like a natural fit.
+
+Specifically, I would be grateful to know:
+
+1.  Was a real-drone target attempted at any stage, and if so, what
+    were the dominant failure modes -- detection, controller, or
+    something else?
+2.  Do you see fundamental obstacles to substituting a synthetic-data-
+    trained drone detector for the balloon detector in your current
+    pipeline, or is it primarily a matter of engineering effort?
+3.  Are there plans (or already-in-submission work) to extend the
+    real-flight experiments to non-cooperative drone targets?
+
+I am exploring this combination as part of a research proposal and
+would not want to misrepresent the state of the art or duplicate work
+already underway in your group. Any pointers would be very much
+appreciated, and I am happy to share what I learn in return.
+
+Thank you for your time, and congratulations on the very nice results
+in both papers.
+
+Best regards,
+John Peng
+Autonomous Interception Drone Hobbyist

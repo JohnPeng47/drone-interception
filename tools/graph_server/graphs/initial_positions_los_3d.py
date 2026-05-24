@@ -7,8 +7,8 @@ from typing import Any
 
 import numpy as np
 
-DEFAULT_DATASET = Path(".runs/csim_generator_sampling/whole_sphere_fixed_camera_roll_1024/sobol_samples.csimin")
-DEFAULT_RECORDS = Path(".runs/csim_generator_sampling/whole_sphere_fixed_camera_roll_1024/sobol_sample_records.json")
+DEFAULT_DATASET = Path(".runs/csim_generator_sampling/camera_basis_grid_7200/sobol_samples.csimin")
+DEFAULT_RECORDS = Path(".runs/csim_generator_sampling/camera_basis_grid_7200/sobol_sample_records.json")
 DEFAULT_TARGET_W = np.array([0.0, 0.0, 3.0], dtype=float)
 TITLE = "Sobol initial positions and world LOS"
 

@@ -1,0 +1,1023 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Interception Sampling Coordinate Systems</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --ink: #0f172a;
+      --muted: #475569;
+      --line: #cbd5e1;
+      --panel: #f8fafc;
+      --target: #f59e0b;
+      --pursuer: #2563eb;
+      --camera: #16a34a;
+      --los: #dc2626;
+      --image: #7c3aed;
+      --world: #334155;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+      color: var(--ink);
+      background: white;
+      line-height: 1.5;
+    }
+
+    main {
+      max-width: 1240px;
+      margin: 0 auto;
+      padding: 28px 24px 64px;
+    }
+
+    h1 { margin: 0 0 6px; font-size: 30px; line-height: 1.15; }
+    h2 { margin: 32px 0 10px; font-size: 22px; }
+    h3 { margin: 18px 0 6px; font-size: 15px; text-transform: uppercase; letter-spacing: 0.04em; color: #334155; }
+    p  { margin: 8px 0; color: var(--muted); }
+
+    code {
+      font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+      font-size: 0.92em;
+      color: #0f172a;
+      background: #eef2ff;
+      border: 1px solid #dbeafe;
+      border-radius: 4px;
+      padding: 1px 5px;
+    }
+
+    .note {
+      border-left: 4px solid var(--camera);
+      background: #f0fdf4;
+      padding: 12px 14px;
+      color: #14532d;
+      margin: 16px 0;
+    }
+
+    .legend {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px 16px;
+      margin: 8px 0 0;
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .legend span { display: inline-flex; align-items: center; gap: 6px; }
+
+    .swatch {
+      width: 12px; height: 12px; border-radius: 50%;
+      display: inline-block;
+    }
+
+    .formula {
+      background: #0f172a;
+      color: #e5e7eb;
+      border-radius: 8px;
+      padding: 12px 14px;
+      overflow-x: auto;
+      font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+      font-size: 13px;
+      line-height: 1.55;
+      margin: 10px 0;
+      white-space: pre;
+    }
+
+    ul { margin: 6px 0 0; padding-left: 20px; color: var(--muted); }
+    li { margin: 4px 0; }
+
+    .grid2 {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 18px;
+      margin-top: 14px;
+    }
+
+    .panel {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      padding: 14px 16px;
+    }
+
+    .viz {
+      position: relative;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      background: linear-gradient(180deg, #fafbfd 0%, #f1f5f9 100%);
+      overflow: hidden;
+      margin: 12px 0 4px;
+    }
+
+    .viz canvas { display: block; }
+
+    .viz-layout {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 280px;
+      gap: 0;
+    }
+
+    .controls {
+      background: white;
+      border-left: 1px solid var(--line);
+      padding: 14px;
+      font-size: 13px;
+      color: var(--ink);
+      max-height: 560px;
+      overflow-y: auto;
+    }
+
+    .controls h3 {
+      margin: 0 0 8px;
+      font-size: 11px;
+    }
+
+    .controls .row {
+      margin: 8px 0;
+    }
+
+    .controls label {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      font-size: 12px;
+      color: #334155;
+      margin-bottom: 3px;
+    }
+
+    .controls label .val {
+      font-family: "SFMono-Regular", Consolas, monospace;
+      color: #0f172a;
+      font-size: 12px;
+    }
+
+    .controls input[type=range] {
+      width: 100%;
+      accent-color: #2563eb;
+    }
+
+    .controls .btn {
+      display: inline-block;
+      padding: 5px 9px;
+      font-size: 12px;
+      border: 1px solid var(--line);
+      border-radius: 5px;
+      background: white;
+      cursor: pointer;
+      color: var(--ink);
+    }
+    .controls .btn:hover { background: #f1f5f9; }
+    .controls .btn.active { background: #2563eb; color: white; border-color: #2563eb; }
+
+    .controls .group { margin-bottom: 12px; padding-bottom: 10px; border-bottom: 1px dashed var(--line); }
+    .controls .group:last-child { border-bottom: 0; margin-bottom: 0; padding-bottom: 0; }
+
+    .readout {
+      font-family: "SFMono-Regular", Consolas, monospace;
+      font-size: 11.5px;
+      color: #1e293b;
+      background: #f1f5f9;
+      border-radius: 6px;
+      padding: 6px 8px;
+      margin-top: 4px;
+      white-space: pre;
+      line-height: 1.5;
+    }
+
+    .hint {
+      position: absolute;
+      top: 10px;
+      left: 12px;
+      background: rgba(15, 23, 42, 0.78);
+      color: #f8fafc;
+      font-size: 11.5px;
+      padding: 5px 9px;
+      border-radius: 5px;
+      pointer-events: none;
+      font-family: ui-sans-serif, system-ui;
+    }
+
+    .caption {
+      font-size: 13px;
+      color: var(--muted);
+      margin-top: 6px;
+    }
+
+    @media (max-width: 920px) {
+      .grid2 { grid-template-columns: 1fr; }
+      .viz-layout { grid-template-columns: 1fr; }
+      .controls { border-left: 0; border-top: 1px solid var(--line); max-height: none; }
+    }
+  </style>
+
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+      "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+    }
+  }
+  </script>
+</head>
+<body>
+<main>
+  <h1>Interception Sampling Coordinate Systems</h1>
+  <p>
+    This document pins down the distinction between world LOS sampling and camera-basis sampling for
+    generated drone interception initial conditions. Both visualizations are fully interactive 3D &mdash;
+    drag the colored handles to move objects, rotate the view by dragging in empty space, scroll to zoom.
+  </p>
+
+  <div class="legend">
+    <span><i class="swatch" style="background: var(--target)"></i>Target</span>
+    <span><i class="swatch" style="background: var(--pursuer)"></i>Pursuer (camera)</span>
+    <span><i class="swatch" style="background: var(--los)"></i>LOS (pursuer&rarr;target)</span>
+    <span><i class="swatch" style="background: var(--camera)"></i>Camera frame (+x optical, +y horiz, +z vert)</span>
+    <span><i class="swatch" style="background: var(--image)"></i>Image-plane bearing (u, v)</span>
+    <span><i class="swatch" style="background: var(--world)"></i>World frame</span>
+  </div>
+
+  <section class="grid2">
+    <div class="panel">
+      <h2 style="margin-top: 12px">Known Objects</h2>
+      <ul>
+        <li><code>T_w</code>: target position in world coordinates.</li>
+        <li><code>P_w</code>: pursuer/camera position in world.</li>
+        <li><code>r</code>: range from pursuer to target.</li>
+        <li><code>los_w</code>: unit vector pursuer&rarr;target in world.</li>
+        <li><code>R_wc</code>: camera-to-world rotation matrix.</li>
+        <li><code>d_c(u, v)</code>: target ray in camera coords from image bearing.</li>
+      </ul>
+    </div>
+    <div class="panel">
+      <h2 style="margin-top: 12px">Camera Convention</h2>
+      <ul>
+        <li><code>+x_c</code>: optical axis, forward through image center.</li>
+        <li><code>+y_c</code>: horizontal image displacement.</li>
+        <li><code>+z_c</code>: vertical image displacement.</li>
+        <li><code>camera_u_fraction</code>, <code>camera_v_fraction</code> pick an image ray inside the FOV.</li>
+      </ul>
+    </div>
+  </section>
+
+  <section>
+    <h2>1. World position is underspecified by camera bearing alone</h2>
+    <p>
+      If we only know target position, range, and image bearing <code>(u, v)</code>, the world position is not unique.
+      The same image bearing can be produced from many world positions by rotating the whole camera-target geometry
+      around the target. Below, every blue pursuer sees the target at the <em>same</em> image bearing.
+    </p>
+
+    <div class="viz">
+      <div class="viz-layout">
+        <div style="position: relative">
+          <div class="hint">Drag empty space to orbit · scroll to zoom · drag the orange handle to move the target</div>
+          <div id="viz1" style="width: 100%; height: 540px"></div>
+        </div>
+        <div class="controls" id="ctrl1">
+          <div class="group">
+            <h3>Ring of pursuers</h3>
+            <div class="row">
+              <label>Number of pursuers <span class="val" id="v1-count">8</span></label>
+              <input type="range" id="s1-count" min="3" max="24" step="1" value="8">
+            </div>
+            <div class="row">
+              <label>Range r (m) <span class="val" id="v1-range">10.0</span></label>
+              <input type="range" id="s1-range" min="3" max="20" step="0.5" value="10">
+            </div>
+            <div class="row">
+              <label>Ring tilt (deg) <span class="val" id="v1-tilt">30</span></label>
+              <input type="range" id="s1-tilt" min="-89" max="89" step="1" value="30">
+            </div>
+          </div>
+          <div class="group">
+            <h3>Shared image bearing (u, v)</h3>
+            <div class="row">
+              <label>u (horizontal) <span class="val" id="v1-u">0.30</span></label>
+              <input type="range" id="s1-u" min="-1" max="1" step="0.02" value="0.30">
+            </div>
+            <div class="row">
+              <label>v (vertical) <span class="val" id="v1-v">-0.20</span></label>
+              <input type="range" id="s1-v" min="-1" max="1" step="0.02" value="-0.20">
+            </div>
+            <div class="row">
+              <label>HFOV (deg) <span class="val" id="v1-hfov">60</span></label>
+              <input type="range" id="s1-hfov" min="20" max="120" step="1" value="60">
+            </div>
+            <div class="row">
+              <label>VFOV (deg) <span class="val" id="v1-vfov">40</span></label>
+              <input type="range" id="s1-vfov" min="15" max="100" step="1" value="40">
+            </div>
+          </div>
+          <div class="group">
+            <h3>Display</h3>
+            <button class="btn active" id="s1-frustum">Frustums</button>
+            <button class="btn active" id="s1-image">Image planes</button>
+          </div>
+          <div class="group">
+            <h3>Highlighted pursuer</h3>
+            <div class="readout" id="v1-readout">P_w  = ...
+los_w = ...
+attitude solved from
+los_w and (u, v)</div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <p class="caption">
+      Same range, same image bearing, many possible world positions. The ring is just a sample &mdash;
+      the underspecified set is the full 2-sphere around the target.
+    </p>
+  </section>
+
+  <section>
+    <h2>2. Generator parameterization (interactive)</h2>
+    <p>
+      The current robust generator samples world LOS direction and image bearing, then solves camera attitude so
+      that the chosen image ray lands on the target. Drag the orange target or use the sliders. The camera is
+      always rotated so the dashed purple ray (the sampled image bearing) passes through the target.
+    </p>
+
+    <div class="viz">
+      <div class="viz-layout">
+        <div style="position: relative">
+          <div class="hint">Drag the orange handle (target) or the blue handle (pursuer) · orbit/zoom otherwise</div>
+          <div id="viz2" style="width: 100%; height: 580px"></div>
+        </div>
+        <div class="controls" id="ctrl2">
+          <div class="group">
+            <h3>Mode</h3>
+            <button class="btn active" id="m2-los">LOS sampling</button>
+            <button class="btn" id="m2-cam">Camera-basis sampling</button>
+            <p style="font-size: 11.5px; margin: 6px 0 0; color: #64748b">
+              LOS mode: sample LOS angles, derive camera. Camera-basis: sample camera yaw/pitch, derive LOS.
+            </p>
+          </div>
+          <div class="group">
+            <h3>LOS in world</h3>
+            <div class="row">
+              <label>Azimuth (deg) <span class="val" id="v2-az">35</span></label>
+              <input type="range" id="s2-az" min="-180" max="180" step="1" value="35">
+            </div>
+            <div class="row">
+              <label>Elevation (deg) <span class="val" id="v2-el">25</span></label>
+              <input type="range" id="s2-el" min="-89" max="89" step="1" value="25">
+            </div>
+            <div class="row">
+              <label>Range r (m) <span class="val" id="v2-r">12.0</span></label>
+              <input type="range" id="s2-r" min="3" max="25" step="0.5" value="12">
+            </div>
+          </div>
+          <div class="group">
+            <h3>Image bearing (u, v)</h3>
+            <div class="row">
+              <label>u <span class="val" id="v2-u">0.35</span></label>
+              <input type="range" id="s2-u" min="-1" max="1" step="0.02" value="0.35">
+            </div>
+            <div class="row">
+              <label>v <span class="val" id="v2-v">-0.25</span></label>
+              <input type="range" id="s2-v" min="-1" max="1" step="0.02" value="-0.25">
+            </div>
+          </div>
+          <div class="group">
+            <h3>Camera intrinsics</h3>
+            <div class="row">
+              <label>HFOV (deg) <span class="val" id="v2-hfov">65</span></label>
+              <input type="range" id="s2-hfov" min="20" max="120" step="1" value="65">
+            </div>
+            <div class="row">
+              <label>VFOV (deg) <span class="val" id="v2-vfov">45</span></label>
+              <input type="range" id="s2-vfov" min="15" max="100" step="1" value="45">
+            </div>
+          </div>
+          <div class="group">
+            <h3>State</h3>
+            <div class="readout" id="v2-readout">...</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="grid2">
+    <div class="panel">
+      <h2 style="margin-top: 12px">Current generator parameterization</h2>
+      <div class="formula">sample:
+  los_azimuth_deg, los_elevation_deg
+  camera_u_fraction, camera_v_fraction
+  range_m
+
+derive:
+  los_w = spherical(los_azimuth, los_elevation)
+  P_w   = T_w - range_m * los_w
+  d_c   = normalize([1, u*tan(hfov/2), v*tan(vfov/2)])
+  R_wc  s.t. R_wc * d_c = los_w</div>
+      <p>
+        Guarantees the target is in the FOV whenever <code>(u, v)</code> is inside camera limits: the camera
+        is rotated to make the chosen image ray point at the target.
+      </p>
+    </div>
+
+    <div class="panel">
+      <h2 style="margin-top: 12px">Camera-basis parameterization</h2>
+      <div class="formula">sample:
+  R_wc (camera orientation in world)
+  camera_u_fraction, camera_v_fraction
+  range_m
+
+derive:
+  d_c   = normalize([1, u*tan(hfov/2), v*tan(vfov/2)])
+  los_w = R_wc * d_c
+  P_w   = T_w - range_m * los_w</div>
+      <p>
+        Covers the same set of world LOS directions, but the sampled primitive is camera orientation rather
+        than pursuer position around the target.
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <h2>3. Key takeaways</h2>
+    <div class="note">
+      <strong>Confirmed:</strong> camera image bearing <code>(u, v)</code> plus range does not uniquely determine
+      a world position. You must also provide either a world LOS direction or the camera basis/orientation in world.
+    </div>
+    <ul>
+      <li>Current generator samples LOS angles, then solves camera attitude.</li>
+      <li>Camera-basis variant samples camera orientation in world, then derives <code>los_w</code> and <code>P_w</code>.</li>
+      <li>Both cover the same reachable world LOS directions when their respective sampling domains line up.</li>
+      <li>With fixed camera roll, two angles define camera pointing; <code>(u, v)</code> contributes two more inside the FOV.</li>
+    </ul>
+  </section>
+</main>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { TransformControls } from 'three/addons/controls/TransformControls.js';
+
+// ---------- shared helpers ----------
+
+const COLOR = {
+  target: 0xf59e0b,
+  pursuer: 0x2563eb,
+  los: 0xdc2626,
+  camX: 0x16a34a,
+  camY: 0x10b981,
+  camZ: 0x059669,
+  image: 0x7c3aed,
+  frustum: 0x16a34a,
+  grid: 0xcbd5e1,
+};
+
+function deg(r) { return r * 180 / Math.PI; }
+function rad(d) { return d * Math.PI / 180; }
+
+// World convention: x forward, y right, z up (matches generator)
+// Three.js default uses y-up, so we set camera up to +z and treat z as vertical.
+
+function makeArrow(from, to, color, headLen = 0.4, headWidth = 0.22) {
+  const dir = new THREE.Vector3().subVectors(to, from);
+  const len = dir.length();
+  if (len < 1e-6) return new THREE.Group();
+  const arrow = new THREE.ArrowHelper(dir.clone().normalize(), from, len, color, headLen, headWidth);
+  return arrow;
+}
+
+function disposeChildren(group) {
+  while (group.children.length) {
+    const c = group.children.pop();
+    if (c.geometry) c.geometry.dispose();
+    if (c.material) {
+      if (Array.isArray(c.material)) c.material.forEach(m => m.dispose());
+      else c.material.dispose();
+    }
+  }
+}
+
+// Build R_wc such that R_wc * d_c (a unit vector in camera frame, with +x = optical axis)
+// equals los_w. We choose a roll that keeps +z_c "as up as possible" in world (+z).
+function solveCameraAttitude(losW, dC) {
+  // Find rotation that takes dC -> losW
+  const a = dC.clone().normalize();
+  const b = losW.clone().normalize();
+  const q1 = new THREE.Quaternion().setFromUnitVectors(a, b);
+
+  // After q1, camera optical axis +x_c becomes some vector. We want world +z up to be "up" in the image,
+  // which means +z_c (camera up axis after rotation) should be close to world +z.
+  // Compute what +x_c becomes under q1 first to define optical axis world.
+  // Actually we need a rotation R_wc whose columns are x_c, y_c, z_c in world.
+  // Approach: build R_wc directly by picking optical axis, then aligning roll so that R_wc * dC = losW.
+  // Simpler: compute R0 mapping +x_c (1,0,0) -> losW, then rotate around losW so that R_wc * dC = losW.
+
+  // Build basis with optical axis = losW
+  const xC_w = losW.clone().normalize();
+  // pick up = world z, project orthogonal to xC
+  let upWorld = new THREE.Vector3(0, 0, 1);
+  if (Math.abs(xC_w.dot(upWorld)) > 0.98) {
+    upWorld = new THREE.Vector3(0, 1, 0);
+  }
+  // y_c (horizontal in image, world): want it in the horizontal plane, perpendicular to xC
+  const yC_w = new THREE.Vector3().crossVectors(upWorld, xC_w).normalize();
+  // z_c = x_c cross y_c
+  const zC_w = new THREE.Vector3().crossVectors(xC_w, yC_w).normalize();
+
+  // Initial R_wc with columns [xC_w, yC_w, zC_w] maps (1,0,0)->xC_w which equals losW.
+  // But we need R_wc * dC = losW. Currently R_wc * dC = dC.x * xC_w + dC.y * yC_w + dC.z * zC_w,
+  // which is not losW unless dC == (1,0,0). To fix: we need R_wc' such that R_wc' * dC = losW.
+  // That means we rotate the *whole* basis so that the image of dC under R_wc' equals losW.
+  // Let R_wc' = R_wc * Q^-1 where Q is rotation in camera frame that maps dC -> +x_c.
+  // Then R_wc' * dC = R_wc * Q^-1 * dC = R_wc * (1,0,0) = xC_w = losW. ✓
+  // So compute Q: rotation in camera frame taking dC -> (1,0,0).
+
+  const dCn = dC.clone().normalize();
+  const xCamRef = new THREE.Vector3(1, 0, 0);
+  const Q = new THREE.Quaternion().setFromUnitVectors(dCn, xCamRef); // rotates dC to xCamRef
+  // We want Q^-1 applied first (in camera frame), so final matrix multiplication.
+  const Rbasis = new THREE.Matrix4().makeBasis(xC_w, yC_w, zC_w);
+  const Qinv = Q.clone().invert();
+  const Qm = new THREE.Matrix4().makeRotationFromQuaternion(Qinv);
+  const R_wc = new THREE.Matrix4().multiplyMatrices(Rbasis, Qm);
+
+  return R_wc;
+}
+
+function sphericalToVec(azDeg, elDeg) {
+  const az = rad(azDeg), el = rad(elDeg);
+  return new THREE.Vector3(
+    Math.cos(el) * Math.cos(az),
+    Math.cos(el) * Math.sin(az),
+    Math.sin(el)
+  );
+}
+
+function vecToSpherical(v) {
+  const x = v.x, y = v.y, z = v.z;
+  const az = Math.atan2(y, x);
+  const el = Math.atan2(z, Math.sqrt(x*x + y*y));
+  return { az: deg(az), el: deg(el) };
+}
+
+// ---------- scene factory ----------
+
+function makeScene(container) {
+  const scene = new THREE.Scene();
+  scene.background = null;
+
+  const w = container.clientWidth, h = container.clientHeight;
+  const camera = new THREE.PerspectiveCamera(45, w / h, 0.05, 500);
+  camera.up.set(0, 0, 1);
+  camera.position.set(18, -22, 14);
+  camera.lookAt(0, 0, 0);
+
+  const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+  renderer.setSize(w, h);
+  container.appendChild(renderer.domElement);
+
+  const ambient = new THREE.AmbientLight(0xffffff, 0.85);
+  scene.add(ambient);
+  const dir = new THREE.DirectionalLight(0xffffff, 0.6);
+  dir.position.set(10, -8, 14);
+  scene.add(dir);
+
+  // Ground grid (in x-y plane, z = 0)
+  const grid = new THREE.GridHelper(40, 40, 0xcbd5e1, 0xe2e8f0);
+  grid.rotation.x = Math.PI / 2; // turn xz-plane grid into xy-plane
+  grid.position.z = 0;
+  grid.material.transparent = true;
+  grid.material.opacity = 0.5;
+  scene.add(grid);
+
+  // World axes
+  const axisLen = 3;
+  scene.add(makeArrow(new THREE.Vector3(0,0,0), new THREE.Vector3(axisLen,0,0), 0x64748b, 0.3, 0.18));
+  scene.add(makeArrow(new THREE.Vector3(0,0,0), new THREE.Vector3(0,axisLen,0), 0x64748b, 0.3, 0.18));
+  scene.add(makeArrow(new THREE.Vector3(0,0,0), new THREE.Vector3(0,0,axisLen), 0x64748b, 0.3, 0.18));
+  // Labels via small sprites
+  function addLabel(text, pos, color = '#334155') {
+    const cv = document.createElement('canvas');
+    cv.width = 128; cv.height = 64;
+    const ctx = cv.getContext('2d');
+    ctx.font = 'bold 36px ui-sans-serif, system-ui';
+    ctx.fillStyle = color;
+    ctx.fillText(text, 4, 44);
+    const tex = new THREE.CanvasTexture(cv);
+    tex.minFilter = THREE.LinearFilter;
+    const mat = new THREE.SpriteMaterial({ map: tex, depthTest: false });
+    const sp = new THREE.Sprite(mat);
+    sp.position.copy(pos);
+    sp.scale.set(1.0, 0.5, 1);
+    return sp;
+  }
+  scene.add(addLabel('+x', new THREE.Vector3(axisLen + 0.3, 0, 0)));
+  scene.add(addLabel('+y', new THREE.Vector3(0, axisLen + 0.3, 0)));
+  scene.add(addLabel('+z', new THREE.Vector3(0, 0, axisLen + 0.3)));
+
+  const controls = new OrbitControls(camera, renderer.domElement);
+  controls.enableDamping = true;
+  controls.dampingFactor = 0.08;
+  controls.target.set(0, 0, 2);
+
+  function onResize() {
+    const W = container.clientWidth, H = container.clientHeight;
+    renderer.setSize(W, H);
+    camera.aspect = W / H;
+    camera.updateProjectionMatrix();
+  }
+  new ResizeObserver(onResize).observe(container);
+
+  let dynamicGroup = new THREE.Group();
+  scene.add(dynamicGroup);
+
+  function animate() {
+    requestAnimationFrame(animate);
+    controls.update();
+    renderer.render(scene, camera);
+  }
+  animate();
+
+  return {
+    scene, camera, renderer, controls, dynamicGroup,
+    addLabel,
+  };
+}
+
+// ---------- frustum + camera-frame visualization ----------
+
+function buildCameraVisual(group, originW, R_wc, hfovDeg, vfovDeg, opts = {}) {
+  const showFrustum = opts.frustum !== false;
+  const showImage = opts.image !== false;
+  const showAxes = opts.axes !== false;
+  const imageDist = opts.imageDist || 1.6;
+  const uvPoint = opts.uvPoint; // { u, v } or null
+  const dashLOS = opts.dashLOS;
+  const target = opts.target;
+  const dimmed = !!opts.dimmed;
+
+  // Camera basis columns in world
+  const xC = new THREE.Vector3().setFromMatrixColumn(R_wc, 0);
+  const yC = new THREE.Vector3().setFromMatrixColumn(R_wc, 1);
+  const zC = new THREE.Vector3().setFromMatrixColumn(R_wc, 2);
+
+  if (showAxes) {
+    const len = 1.2;
+    const ax = new THREE.ArrowHelper(xC, originW, len, dimmed ? 0x9ca3af : COLOR.camX, 0.18, 0.12);
+    const ay = new THREE.ArrowHelper(yC, originW, len * 0.7, dimmed ? 0xa7f3d0 : 0x10b981, 0.15, 0.1);
+    const az = new THREE.ArrowHelper(zC, originW, len * 0.7, dimmed ? 0x6ee7b7 : 0x059669, 0.15, 0.1);
+    group.add(ax, ay, az);
+  }
+
+  // Frustum corners at distance imageDist along optical axis
+  const halfH = Math.tan(rad(hfovDeg) / 2);
+  const halfV = Math.tan(rad(vfovDeg) / 2);
+
+  // In camera coords, image plane is at x = imageDist
+  // y from -halfH*x to +halfH*x, z from -halfV*x to +halfV*x
+  function camToWorld(cx, cy, cz) {
+    return new THREE.Vector3(cx, cy, cz).applyMatrix4(R_wc).add(originW);
+  }
+
+  const c1 = camToWorld(imageDist,  halfH * imageDist,  halfV * imageDist);
+  const c2 = camToWorld(imageDist, -halfH * imageDist,  halfV * imageDist);
+  const c3 = camToWorld(imageDist, -halfH * imageDist, -halfV * imageDist);
+  const c4 = camToWorld(imageDist,  halfH * imageDist, -halfV * imageDist);
+
+  if (showFrustum) {
+    const lineMat = new THREE.LineBasicMaterial({ color: dimmed ? 0xa7f3d0 : COLOR.frustum, transparent: true, opacity: dimmed ? 0.35 : 0.85 });
+    const edges = [
+      originW, c1, originW, c2, originW, c3, originW, c4,
+      c1, c2, c2, c3, c3, c4, c4, c1
+    ];
+    const geo = new THREE.BufferGeometry().setFromPoints(edges);
+    const ls = new THREE.LineSegments(geo, lineMat);
+    group.add(ls);
+
+    // Translucent image-plane quad
+    const planeGeo = new THREE.BufferGeometry();
+    planeGeo.setAttribute('position', new THREE.Float32BufferAttribute([
+      c1.x,c1.y,c1.z, c2.x,c2.y,c2.z, c3.x,c3.y,c3.z,
+      c1.x,c1.y,c1.z, c3.x,c3.y,c3.z, c4.x,c4.y,c4.z,
+    ], 3));
+    planeGeo.computeVertexNormals();
+    const planeMat = new THREE.MeshBasicMaterial({
+      color: dimmed ? 0xbbf7d0 : 0x86efac,
+      transparent: true,
+      opacity: dimmed ? 0.06 : 0.15,
+      side: THREE.DoubleSide,
+      depthWrite: false,
+    });
+    if (showImage) group.add(new THREE.Mesh(planeGeo, planeMat));
+  }
+
+  if (uvPoint && target) {
+    const { u, v } = uvPoint;
+    // image-plane intersection at x = imageDist in camera coords
+    const cuv = camToWorld(imageDist, u * halfH * imageDist, v * halfV * imageDist);
+    // small sphere on image plane
+    const sph = new THREE.Mesh(
+      new THREE.SphereGeometry(0.09, 16, 16),
+      new THREE.MeshBasicMaterial({ color: dimmed ? 0xc4b5fd : COLOR.image })
+    );
+    sph.position.copy(cuv);
+    group.add(sph);
+
+    // dashed ray from pursuer through image bearing point to target
+    const rayGeo = new THREE.BufferGeometry().setFromPoints([originW, target.clone()]);
+    const rayMat = new THREE.LineDashedMaterial({
+      color: dimmed ? 0xc4b5fd : COLOR.image,
+      dashSize: 0.25, gapSize: 0.18,
+      transparent: true, opacity: dimmed ? 0.4 : 0.9,
+    });
+    const ray = new THREE.Line(rayGeo, rayMat);
+    ray.computeLineDistances();
+    group.add(ray);
+  }
+}
+
+// ---------- Scene 1: ring of pursuers, shared (u, v) ----------
+
+(function scene1() {
+  const container = document.getElementById('viz1');
+  const sc = makeScene(container);
+
+  // Target (orange, draggable)
+  const targetMesh = new THREE.Mesh(
+    new THREE.SphereGeometry(0.35, 32, 32),
+    new THREE.MeshStandardMaterial({ color: COLOR.target, emissive: 0x7c2d12, emissiveIntensity: 0.15 })
+  );
+  targetMesh.position.set(0, 0, 4);
+  sc.scene.add(targetMesh);
+
+  // Transform handle
+  const tc = new TransformControls(sc.camera, sc.renderer.domElement);
+  tc.attach(targetMesh);
+  tc.setSize(0.7);
+  tc.addEventListener('dragging-changed', e => sc.controls.enabled = !e.value);
+  tc.addEventListener('change', () => update());
+  sc.scene.add(tc);
+
+  const params = {
+    count: 8, range: 10, tilt: 30,
+    u: 0.30, v: -0.20,
+    hfov: 60, vfov: 40,
+    showFrustum: true, showImage: true,
+  };
+
+  function update() {
+    disposeChildren(sc.dynamicGroup);
+
+    const T = targetMesh.position.clone();
+    const halfH = Math.tan(rad(params.hfov) / 2);
+    const halfV = Math.tan(rad(params.vfov) / 2);
+    const dC = new THREE.Vector3(1, params.u * halfH, params.v * halfV).normalize();
+
+    // Ring axis: ring lies in a plane normal to "axis". Tilt = 0 means ring in horizontal plane.
+    // Use axis = rotate +z by tilt around +y
+    const tiltRad = rad(params.tilt);
+    const axis = new THREE.Vector3(Math.sin(tiltRad), 0, Math.cos(tiltRad)).normalize();
+    // pick two basis vectors in the ring plane
+    let u1 = new THREE.Vector3(0, 1, 0);
+    if (Math.abs(axis.dot(u1)) > 0.95) u1 = new THREE.Vector3(1, 0, 0);
+    u1 = new THREE.Vector3().crossVectors(axis, u1).normalize();
+    const u2 = new THREE.Vector3().crossVectors(axis, u1).normalize();
+
+    for (let i = 0; i < params.count; i++) {
+      const theta = (i / params.count) * Math.PI * 2;
+      const offset = u1.clone().multiplyScalar(Math.cos(theta) * params.range)
+                       .add(u2.clone().multiplyScalar(Math.sin(theta) * params.range));
+      const P = T.clone().add(offset);
+      const losW = T.clone().sub(P).normalize();
+
+      const highlight = (i === 0);
+
+      // pursuer sphere
+      const sph = new THREE.Mesh(
+        new THREE.SphereGeometry(highlight ? 0.28 : 0.18, 24, 24),
+        new THREE.MeshStandardMaterial({
+          color: COLOR.pursuer,
+          emissive: highlight ? 0x1d4ed8 : 0x000000,
+          emissiveIntensity: highlight ? 0.4 : 0,
+        })
+      );
+      sph.position.copy(P);
+      sc.dynamicGroup.add(sph);
+
+      // LOS arrow
+      sc.dynamicGroup.add(makeArrow(P, T, COLOR.los, 0.25, 0.14));
+
+      // camera attitude
+      const R_wc = solveCameraAttitude(losW, dC);
+      buildCameraVisual(sc.dynamicGroup, P, R_wc, params.hfov, params.vfov, {
+        frustum: params.showFrustum,
+        image: params.showImage,
+        axes: highlight,
+        uvPoint: { u: params.u, v: params.v },
+        target: T,
+        dimmed: !highlight,
+      });
+
+      if (highlight) {
+        const sph2 = vecToSpherical(losW);
+        document.getElementById('v1-readout').textContent =
+`P_w   = (${P.x.toFixed(2)}, ${P.y.toFixed(2)}, ${P.z.toFixed(2)})
+los_w = (${losW.x.toFixed(2)}, ${losW.y.toFixed(2)}, ${losW.z.toFixed(2)})
+  az  = ${sph2.az.toFixed(1)}°  el = ${sph2.el.toFixed(1)}°
+(u,v) = (${params.u.toFixed(2)}, ${params.v.toFixed(2)})  [shared]`;
+      }
+    }
+  }
+
+  // wire sliders
+  function bind(id, key, fmt) {
+    const el = document.getElementById(id);
+    const v  = document.getElementById('v1-' + key);
+    el.addEventListener('input', () => {
+      params[key] = parseFloat(el.value);
+      if (key === 'count') params.count = parseInt(el.value);
+      v.textContent = fmt ? fmt(params[key]) : params[key];
+      update();
+    });
+  }
+  bind('s1-count', 'count', x => x);
+  bind('s1-range', 'range', x => x.toFixed(1));
+  bind('s1-tilt', 'tilt', x => x);
+  bind('s1-u', 'u', x => x.toFixed(2));
+  bind('s1-v', 'v', x => x.toFixed(2));
+  bind('s1-hfov', 'hfov', x => x);
+  bind('s1-vfov', 'vfov', x => x);
+
+  document.getElementById('s1-frustum').addEventListener('click', e => {
+    params.showFrustum = !params.showFrustum;
+    e.target.classList.toggle('active', params.showFrustum);
+    update();
+  });
+  document.getElementById('s1-image').addEventListener('click', e => {
+    params.showImage = !params.showImage;
+    e.target.classList.toggle('active', params.showImage);
+    update();
+  });
+
+  update();
+})();
+
+// ---------- Scene 2: full generator parameterization ----------
+
+(function scene2() {
+  const container = document.getElementById('viz2');
+  const sc = makeScene(container);
+  sc.controls.target.set(0, 0, 3);
+
+  const targetMesh = new THREE.Mesh(
+    new THREE.SphereGeometry(0.35, 32, 32),
+    new THREE.MeshStandardMaterial({ color: COLOR.target, emissive: 0x7c2d12, emissiveIntensity: 0.15 })
+  );
+  targetMesh.position.set(0, 0, 5);
+  sc.scene.add(targetMesh);
+
+  const pursuerMesh = new THREE.Mesh(
+    new THREE.SphereGeometry(0.28, 24, 24),
+    new THREE.MeshStandardMaterial({ color: COLOR.pursuer, emissive: 0x1d4ed8, emissiveIntensity: 0.25 })
+  );
+  sc.scene.add(pursuerMesh);
+
+  const tcT = new TransformControls(sc.camera, sc.renderer.domElement);
+  tcT.attach(targetMesh);
+  tcT.setSize(0.7);
+  tcT.addEventListener('dragging-changed', e => sc.controls.enabled = !e.value);
+  tcT.addEventListener('change', () => update());
+  sc.scene.add(tcT);
+
+  const tcP = new TransformControls(sc.camera, sc.renderer.domElement);
+  tcP.attach(pursuerMesh);
+  tcP.setSize(0.5);
+  tcP.addEventListener('dragging-changed', e => {
+    sc.controls.enabled = !e.value;
+    if (e.value) draggingPursuer = true; else draggingPursuer = false;
+  });
+  tcP.addEventListener('change', () => {
+    if (draggingPursuer) updateFromPursuer();
+    else update();
+  });
+  sc.scene.add(tcP);
+
+  let draggingPursuer = false;
+
+  const params = {
+    mode: 'los',   // or 'cam'
+    az: 35, el: 25, r: 12,
+    u: 0.35, v: -0.25,
+    hfov: 65, vfov: 45,
+  };
+
+  function updateFromPursuer() {
+    // Pursuer moved; recompute LOS angles from T - P
+    const T = targetMesh.position;
+    const P = pursuerMesh.position;
+    const dvec = T.clone().sub(P);
+    params.r = Math.max(0.5, dvec.length());
+    const losW = dvec.normalize();
+    const sph = vecToSpherical(losW);
+    params.az = sph.az;
+    params.el = sph.el;
+    document.getElementById('s2-az').value = params.az;
+    document.getElementById('s2-el').value = params.el;
+    document.getElementById('s2-r').value = params.r;
+    document.getElementById('v2-az').textContent = params.az.toFixed(0);
+    document.getElementById('v2-el').textContent = params.el.toFixed(0);
+    document.getElementById('v2-r').textContent = params.r.toFixed(1);
+    update(true);
+  }
+
+  function update(skipPursuerPos) {
+    disposeChildren(sc.dynamicGroup);
+
+    const T = targetMesh.position.clone();
+    const losW = sphericalToVec(params.az, params.el);
+    const P = T.clone().sub(losW.clone().multiplyScalar(params.r));
+
+    if (!skipPursuerPos) {
+      pursuerMesh.position.copy(P);
+    }
+
+    // LOS arrow pursuer -> target
+    sc.dynamicGroup.add(makeArrow(pursuerMesh.position, T, COLOR.los, 0.35, 0.22));
+
+    // sphere of constant range around target (faint)
+    const sphGeo = new THREE.SphereGeometry(params.r, 32, 16);
+    const sphMat = new THREE.MeshBasicMaterial({
+      color: 0xfde68a, transparent: true, opacity: 0.07,
+      side: THREE.BackSide, depthWrite: false,
+    });
+    const sphereMesh = new THREE.Mesh(sphGeo, sphMat);
+    sphereMesh.position.copy(T);
+    sc.dynamicGroup.add(sphereMesh);
+    // wireframe ring at the LOS plane
+    const ringGeo = new THREE.TorusGeometry(params.r, 0.02, 8, 64);
+    const ringMat = new THREE.MeshBasicMaterial({ color: 0xfcd34d, transparent: true, opacity: 0.6 });
+    const ring = new THREE.Mesh(ringGeo, ringMat);
+    ring.position.copy(T);
+    sc.dynamicGroup.add(ring);
+
+    // camera attitude
+    const halfH = Math.tan(rad(params.hfov) / 2);
+    const halfV = Math.tan(rad(params.vfov) / 2);
+    const dC = new THREE.Vector3(1, params.u * halfH, params.v * halfV).normalize();
+    const R_wc = solveCameraAttitude(losW, dC);
+
+    buildCameraVisual(sc.dynamicGroup, pursuerMesh.position, R_wc, params.hfov, params.vfov, {
+      frustum: true, image: true, axes: true,
+      uvPoint: { u: params.u, v: params.v },
+      target: T,
+      imageDist: 2.0,
+    });
+
+    // readout
+    const losDeg = vecToSpherical(losW);
+    document.getElementById('v2-readout').textContent =
+`T_w   = (${T.x.toFixed(2)}, ${T.y.toFixed(2)}, ${T.z.toFixed(2)})
+P_w   = (${pursuerMesh.position.x.toFixed(2)}, ${pursuerMesh.position.y.toFixed(2)}, ${pursuerMesh.position.z.toFixed(2)})
+los_w = (${losW.x.toFixed(2)}, ${losW.y.toFixed(2)}, ${losW.z.toFixed(2)})
+  az  = ${losDeg.az.toFixed(1)}°  el = ${losDeg.el.toFixed(1)}°
+range = ${params.r.toFixed(2)} m
+d_c   = (${dC.x.toFixed(2)}, ${dC.y.toFixed(2)}, ${dC.z.toFixed(2)})
+FOV   = ${params.hfov}° × ${params.vfov}°`;
+  }
+
+  function bind(id, key, fmt, parse = parseFloat) {
+    const el = document.getElementById(id);
+    const v  = document.getElementById('v2-' + key);
+    el.addEventListener('input', () => {
+      params[key] = parse(el.value);
+      v.textContent = fmt ? fmt(params[key]) : params[key];
+      update();
+    });
+  }
+  bind('s2-az', 'az', x => x.toFixed(0));
+  bind('s2-el', 'el', x => x.toFixed(0));
+  bind('s2-r', 'r', x => x.toFixed(1));
+  bind('s2-u', 'u', x => x.toFixed(2));
+  bind('s2-v', 'v', x => x.toFixed(2));
+  bind('s2-hfov', 'hfov', x => x.toFixed(0));
+  bind('s2-vfov', 'vfov', x => x.toFixed(0));
+
+  document.getElementById('m2-los').addEventListener('click', () => {
+    params.mode = 'los';
+    document.getElementById('m2-los').classList.add('active');
+    document.getElementById('m2-cam').classList.remove('active');
+  });
+  document.getElementById('m2-cam').addEventListener('click', () => {
+    params.mode = 'cam';
+    document.getElementById('m2-cam').classList.add('active');
+    document.getElementById('m2-los').classList.remove('active');
+  });
+
+  update();
+})();
+</script>
+</body>
+</html>

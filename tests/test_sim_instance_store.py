@@ -68,6 +68,15 @@ def test_pregenerated_generator_reads_slices_from_disk(tmp_path):
     assert [instance.seed for instance in generator.sample_many(count=2, seed_start=1)] == [1, 2]
 
 
+def test_read_sim_instances_supports_bounded_reads(tmp_path):
+    path = tmp_path / "instances.bin"
+    write_sim_instances(path, [_instance(seed=1), _instance(seed=2), _instance(seed=3), _instance(seed=4)])
+
+    assert [instance.seed for instance in read_sim_instances(path, count=2)] == [1, 2]
+    assert [instance.seed for instance in read_sim_instances(path, count=2, offset=2)] == [3, 4]
+    assert read_sim_instances(path, count=2, offset=10) == []
+
+
 def _instance(seed: int) -> SimInstance:
     target = TargetConfig(
         id="red_balloon",

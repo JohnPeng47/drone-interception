@@ -1,0 +1,63 @@
+# Track Boosting and Synthetic Data Aided Drone Detection — Akyon et al. 2021
+
+First-place solution at the AVSS 2021 Drone-vs-Bird Challenge. The synthetic-data
+contribution is small in scale (rendered drones on 2D backgrounds) but the *empirical
+findings* about HOW to use synthetic data are the most actionable in the literature.
+
+```diagram
+┌─ FINDING 1: SELECTIVE MIXING > BULK MIXING ────────────────────────────────────┐
+│                                                                                 │
+│   YOLOv5m6 fine-tuned on Drone-vs-Bird, mAP@0.5 on val:                         │
+│                                                                                 │
+│                                          mAP   mAP-s  mAP-m  mAP-l              │
+│   Real only (104 frames)                 74.6  86.0   67.1   33.4               │
+│   Synthetic only (104 frames)            55.6  63.0   55.6   35.2  (-19 pp!)    │
+│   Combined (104 real + 500 synthetic)    78.1  84.8   72.0   65.2  (+3.5 pp)    │
+│                                                                                 │
+│   IMPLICATION: synthetic data alone underperforms real data, BUT a small,       │
+│   well-chosen synthetic sub-sample on top of real data IMPROVES results.        │
+│   Adding ALL the synthetic data hurts — distribution shift dominates.           │
+│                                                                                 │
+│   This is the "selective synthetic mixing" rule.                                │
+└─────────────────────────────────────────────────────────────────────────────────┘
+
+┌─ FINDING 2: BLUR IS THE DOMINANT SYNTHETIC FEATURE ────────────────────────────┐
+│                                                                                 │
+│   Ablated synthetic features (Fig. 4 in paper):                                 │
+│     - Original (no post-process)        → baseline                              │
+│     - + film-grain noise                → moderate gain                         │
+│     - + drone size ~ Normal(real_dist)  → moderate gain                         │
+│     - + Gaussian blur matched to bg     → LARGEST gain                          │
+│                                                                                 │
+│   IMPLICATION: the most important thing to get right is matching the            │
+│   motion-blur signature of the deployment camera. Background realism, drone     │
+│   appearance, model count — all secondary to blur.                              │
+└─────────────────────────────────────────────────────────────────────────────────┘
+
+┌─ FINDING 3: TRACKING + TRACK-BOOSTING > FRAME-WISE DETECTION ──────────────────┐
+│                                                                                 │
+│   YOLOv5 + Kalman tracker + track boost:                                        │
+│     - Tracker drops ephemeral false positives (one-frame blips) — random FPs    │
+│       fail to build up the hit count needed to form a track.                    │
+│     - Track boosting averages max-confidence-in-track with current detection    │
+│       confidence: S'_{i,j} = (S_{i,j} + max(s_i)) / 2                           │
+│     - Combined dataset gain: +1.3 mAP from tracker, +0.6 from track boost       │
+│                                                                                 │
+│   This is not a synthetic-data contribution — it's a downstream-consumer        │
+│   contribution. Relevant to Phase 2: the RL controller will consume tracker     │
+│   output, not raw detections. So Phase 1 detector FP rate matters less than     │
+│   detector consistency-within-a-track.                                          │
+└─────────────────────────────────────────────────────────────────────────────────┘
+
+┌─ WHAT WE TAKE INTO THE PIPELINE ───────────────────────────────────────────────┐
+│   - Selective synthetic mixing: cap dataset size to ~50k after filtering,       │
+│     not 500k unfiltered. Dataset diversity > frame count.                       │
+│   - Blur is highest-priority augmentation. Tune kernel σ to match the actual    │
+│     deployment camera by capturing a calibration sequence early.                │
+│   - Match drone-size distribution to real data (ours: from trajectory sim).     │
+│ FOLLOW-ON IMPLICATION FOR PHASE 2                                               │
+│   - Phase 2 controller consumes tracked bbox, not raw detection — Phase 1's     │
+│     detector FP rate is partly absorbed by the tracker. Optimize Phase 1 for    │
+│     bbox jitter and drop rate, not raw FPR.                                     │
+└─────────────────────────────────────────────────────────────────────────────────┘
+```

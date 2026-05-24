@@ -1,0 +1,823 @@
+arXiv:2411.09077v1 [cs.CV] 13 Nov 2024
+
+
+
+
+
+
+
+
+
+
+        1
+
+Drone Detection using Deep Neural Networks
+       Trained on Pure Synthetic Data
+
+    Mariusz Wisniewski, Zeeshan A. Rana, Ivan Petrunin, Alan Holt, Stephen Harman
+
+
+
+
+                   Abstract—Drone detection has benefited from improvements in   enable the use of authorized drones for approved unmanned
+               deep neural networks, but like many other applications, suffers   operations, whilst preventing unauthorized drones from flying
+                from the availability of accurate data for training. Synthetic   in excluded parts of the airspace.
+                data provides a potential for low-cost data generation and has
+                 been shown to improve data availability and quality. However,      Drones can be detected using different sensors such as radar,
+           models trained on synthetic datasets need to prove their ability to   radio frequency (RF), acoustic, and electro-optical/infrared
+               perform on real-world data, known as the problem of sim-to-real   [7]. State-of-the-art detection methods typically fuse some of
+               transferability. Here, we present a drone detection Faster-RCNN   these sensors. Our research focuses on drone detection using
+                 model trained on a purely synthetic dataset that transfers to   a visible spectrum camera.
+    real-world data. We found that it achieves an AP₅₀                of 97.0%
+               when evaluated on the MAV-Vid - a real dataset of flying drones            Recent advances in neural networks (NNs) allow for much
+- compared with 97.8% for an equivalent model trained on real- more accurate detection, tracking, and classification of drones
+world data. Our results show that using synthetic data for drone in images or video feeds. However, accurate data for training
+detection has the potential to reduce data collection costs and the NN models remains difficult to obtain. In this article, we
+improve labelling quality. These findings could be a starting explore the use of structured domain randomization (SDR)
+point for more elaborate synthetic drone datasets. For example,
+realistic recreations of specific scenarios could de-risk the dataset within a simulated environment to generate a synthetic dataset
+generation of safety-critical applications such as the detection of of drones. We test whether a synthetic dataset generated
+drones at airports. Further, synthetic data may enable reliable using this method is generalizable to real-world datasets, by
+drone detection systems, which could benefit other areas, such as comparing the results to an established benchmark.
+unmanned traffic management systems. The code¹ and datasets²
+are available.
+  Index Terms—Drone Detection, Synthetic Data, Structured A. Literature
+    Domain Randomization, Machine Learning, Drone Dataset                                   We focus on the optical detection of drones using NNs
+                                                                                 trained on synthetic data. Although object detection in images
+    D      I. INTRODUCTION                                                       has been extensively studied, drone detection poses unique
+                           RONE intrusions pose a risk to airports. In 2018, a   challenges, usually caused by environmental, or systematic
+                       reported drone sighting disrupted the operations at the   issues. For example, weather effects impact the image, the
+                      Gatwick airport, UK, for 3 days. Since then, drones have   drones can be small in the video frame making them hard to
+                 been used for other illicit purposes, such as smuggling drugs   detect or classify, and the movement of UAVs is complicated to
+                 into prisons [1], [2]. Although a serious disruption, such as   predict. Classification of the objects in the sky such as drones
+                  the one in Gatwick, has not occurred since, reports of drone   and birds is also a key issue. We investigate the literature on
+             sightings at UK airports persist [3]–[5]. To prevent this, the UK   NNs, the use of synthetic data for training NNs, applications
+                     Government presented a counter-unmanned aircraft strategy   of NNs for drone detection, and finally, the use of synthetic
+    [6]. It sets the detection of drones as a key objective.                     data for drone detection.
+                          On the other hand, UAS traffic management (UTM) is a   1) DNN advances and architectures: Recent advances in
+             relatively new area of research. It is concerned with integrating   deep neural network (DNN) architectures (e.g. AlexNet [8])
+                  drones and air taxis with the current air traffic management   became the state-of-the-art method for object recognition.
+                     (ATM). For UTM to work in urban environments, camera sys-   They were later expanded to detect object bounding boxes,
+                  tems will likely have to work alongside RF/radar sensors due   segment objects, and track them across videos. Object de-
+               to interference from buildings. Accurate detection systems will   tection architectures comprise of single-stage and two-stage
+     Mariusz Wisniewski is with Cranfield University, College Road, Cranfield,   detectors. Examples of one-stage detectors are YOLO [9],
+    Bedfordshire, MK43 0AL. (e-mail: m.wisniewski@cranfield.ac.uk)               [10] and SSD [11]. Examples of two-stage detectors are Fast-
+        Zeeshan A. Rana is with Cranfield University, College Road, Cranfield,   RCNN [12], Faster-RCNN [13]. One-stage detectors do the
+    Bedfordshire, MK43 0AL and Prince Mohammad Bin Fahd University.              detection/classification directly from the extracted features,
+     Ivan Petrunin is with Cranfield University, College Road, Cranfield, Bed-   without a separate region proposal. Two-stage detectors gener-
+    fordshire, MK43 0AL.
+     Alan Holt is with Department for Transport.                                 ate region proposals (i.e. regions of the image where it thinks
+     Stephen Harman is with Thales UK.1                                          an object might exist) and then classify each of the proposed
+      The code is available https://github.com/mazqtpopx/cranfield-synthetic-d   regions. In theory, two-stage detectors should produce better
+    rone-detection
+    2The datasets are available https://huggingface.co/datasets/mazqtpopx/cran   accuracy at a higher computational cost than one-stage de-
+    field-synthetic-drone-detection                                              tectors. However, in practice, they tend to vary for different
+
+                                                                                                                                        2
+
+    applications and are sensitive to training parameters. An ex-        Their approach employs DR by inputting random shapes,
+    ample of this is Isaac-Medina et al. [14], where the results         textures, and cars in unrealistic positions, with the aim of
+    of different architectures vary across different datasets. More      generating more variety to focus the neural networks on the
+    recently, transformers [15] which use an attention mechanism         structure of the object of interest. Prakash et al. [23] propose
+    and an encoder-decoder architecture, showed improvements             the use of structured domain randomization (SDR) - a variant
+    in performance over traditional RNNs and CNNs as they are            of domain randomization, which takes into account the context
+    more parallelizable. This led to detection architectures such        of the scene. Hence instead of generating random scenes with
+    as DETR [16]. DETR matches Faster R-CNN in terms of                  unrealistic textures and objects, it aims to generate realistic
+    performance on the COCO object detection dataset.                    scenes, while randomizing other parameters in a structured
+  2) Synthetic Data, Sim-to-Real, and Domain Randomiza- way. They find that SDR provides performance improvements
+tion: Accurate data for training neural networks is expensive over DR. Borrego et al. [24] propose the use of synthetic DR
+and may be hard to obtain. Creating real-life images or videos datasets as an alternative to pre-trained networks. Alghonaim
+has a cost associated with it, which varies depending on & Johns [25] investigate the parameters used to randomize the
+the application. After the data is recorded, it needs to be simulation such as camera position, target colour, and lighting
+manually labelled with the ground truth by a human. Synthetic variations to find the most important parameters for sim-
+data offers an automated alternative. By using 3D models to-real transfer. They found that more high-quality realistic
+and rendering software, synthetic images along with accurate images improved the performance of sim-to-real. This comes
+ground truth labels can be generated. This presents a research in contrast with some of the earlier works (Tobin et al. [21] and
+question: can images rendered by 3D software be used to train Trembley et al. [22]) which focused on unrealistic, low-quality
+    NN models and transferred to real-world applications?                generated images. They also found that the randomization of
+  The use of synthetic data comes with advantages and disad- distractor objects and background textures was important for
+vantages. The primary advantage is the potential reduction in generalising to new environments. Hinterstoisser et al. [26]
+the time cost required to generate the dataset. An algorithm can propose a ’trick’ to freeze the layers responsible for feature
+generate a very large dataset with no human input required. extraction of a NN trained on real-world images, and train only
+The primary disadvantage is that NN models trained on the remaining layers on synthetic images. They show that their
+synthetic data are hard to transfer to real-world problems. approach works well on architectures such as Faster-RCNN,
+Hence, the primary objective of synthetic data research is and Mask-RCNN.
+    bridging the sim-to-real gap - the transfer of a NN model                     Hence, there appear two schools of thought. DR produces
+    trained on synthetic data to perform equivalently on real-world      unrealistic images with the aim of expanding the domain to
+    data.                                                                allow the NN to better learn the features in settings that
+  However, machine learning algorithms used to train neural might not necessarily be used during test time. SDR produces
+networks rely on the training and evaluation datasets coming realistic images with the aim of making the training data
+from the same source distribution. We are fundamentally similar to the real-world data used at test time.
+breaking this assumption by using synthetic data for training
+and evaluating on real-world data. This is referred to as the B. Visual Drone Detection
+    out-of-distribution generalization [17].                                Visual drone detection is the process of finding the position
+  There exist multiple strategies for achieving out-of- of a drone in images or video feeds produced by visible-
+distribution generalization such as transfer learning [18], do- spectrum cameras. It has become a popular area of research,
+main adaptation [19], and domain generalization [20]. Each of largely driven by the recent advances in machine learning.
+these relies on different assumptions between the training data, Most approaches [27]–[30] typically use some of the detection
+access to test data, and training conditions. To achieve sim- architectures described in section I-A1, or a modification of
+to-real transfer, domain generalization is the most relevant to the network for drone detection purposes, trained and tested
+our problem, as we assume that we cannot see the real-world on one of the publicly available drone datasets, or on a private
+test data during training. For the problem of sim-to-real for dataset.
+    images, the most popular method of domain generalization is                  Isaac-Medina et al. [14] present a benchmark of multiple
+    domain randomization.                                                DNN algorithms (SSD, YOLOv3, Faster R-CNN, and DETR)
+                  Domain randomization (DR) is a method of introducing   on publicly available datasets of flying drones (MAV-VID,
+    model generalizability. This is done by randomizing parame-          Drone-vs-Bird, Anti-UAV). They present two benchmarks: the
+    ters used to synthesize the source distribution, with the goal       accuracy of detection, and the accuracy of tracking algorithms.
+    of making the data distribution so wide and varied that the          They present the results of each of the models trained and
+    model trained on this dataset is transferable to the target          tested on each of the datasets. Note that they create three
+    distribution. Lighting, textures, poses, and other parameters        distinct sets of weights for each of the datasets. We were
+    are randomized. Popular approaches aim to make the scenes            able to independently reproduce the test metrics shown by
+    as unrealistic as possible. Tobin at al. [21] is an example,         Isaac-Medina et al. based on their published model weights
+    which employs DR by randomizing the textures of the objects          for the Faster-RCNN model (although, we did not attempt to
+    to make the network invariant to changes in scene conditions.        reproduce the training of the models).
+    Trembley et al. [22] use DR to bridge the sim-to-reality gap for             Freudenmann et al. [31] explore the effects of data aug-
+    object detection of cars for an autonomous driving application.      mentation strategies on the performance of their NN models.
+
+        3
+
+They set up their experiments by training a Faster R-CNN downloaded from the internet. They find that using a pre-
+model on the Drone vs Bird dataset. They then test their NN trained model improves their performance significantly, and
+model on other datasets: a subset of the Drone vs Bird dataset, using occluded drone images improves their performance by
+Anti-UAV dataset, background test dataset (images of drones 1%. However, their test dataset of images downloaded from
+scraped from the internet), Disturbing Objects dataset (to find the internet might not be representative of a real-world security
+false positives), and New UAV Types (unseen UAV images scenario. We were also unable to find a copy of their test
+scraped from the internet). They find that by test a model dataset online which makes it hard to directly compare the
+trained on the DvB dataset, on the Anti-UAV dataset, the results to. Dieter et al. [39] attempt to bridge the sim-to-real
+accuracy drops significantly. The authors propose the cause to gap by generating a synthetic dataset in Unreal Engine. They
+be the mosaics and artefacts found in the Anti-UAV dataset. test their models on synthetic and real data. Overall, they find
+To reduce this effect, the authors propose the use of mosaic + that, generally, models trained on synthetic data fall short in
+standard dataset transforms. This increases the mAP to 78.7% terms of the performance of the models trained on real-world
+from 54.2% with no augmentations. The augmentations appear data. However, by using a small share of real-world data, they
+to train the model to reduce the false positive rate. Still, this improve the results and get close to the results produced by
+falls short of the results presented by Isaac-Medina et al. where using real-world data only. DronePose [40] uses 3D models of
+the Faster R-CNN model trained on the Anti-UAV dataset and a DJI Mavic, and a DJI Inspire, to create a synthetic dataset
+tested on the subset of the Anti-UAV dataset achieves 97.7%. using Unreal Engine. They also create a neural network based
+This highlights the challenge of transferring models trained on on a U-Net architecture, to segment parts of the drone, find the
+one dataset to other datasets - a drone detection model trained orientation, and identify the drone model. The use of GANs
+on one dataset is not guaranteed to perform equivalently on to generate a synthetic dataset was attempted by Li et al. [41].
+another dataset. This is done to better understand the deep feature space of
+  Mediavilla et al. [32] present a benchmark of Swin, how drones are represented by neural networks. Further, they
+YOLOv4, CenterNet, CenterNet2, and Faster-RCNN architec- use Topological Data Analysis to acquire missing data. This
+tures on CACHOW - a helicopter dataset - and Drone vs Bird study looks at something that not many other studies consider -
+datasets. However, the results are not directly comparable with how neural networks learn to represent drones within the latent
+Isaac-Medina et al. as the test configurations are different. space. Carrio et al. [42] use synthetic images to predict drones
+  Other approaches consider the temporal dimension. Thai et using depth maps for the application of obstacle detection of
+al. [33] present a spatio-temporal NN design, in which multiple avoidance. By using a synthetic environment, they are able to
+frames of the video feed are stacked together before being create accurate ground truth depth maps, which they later use
+input into the NN. They show that this approach is more to train a NN.
+accurate, but comes with a higher computational cost as more
+data needs to be processed. Craye and Ardjoune [34] use U-
+Net to segment the position of the drone, classify it, and then D. Outro - Contribution and Outline
+use a spatio-temporal filter. Sangam et al. [35] present a spatio- This work is largely a continuation of Wisniewski et al.
+temporal transformer for drone-to-drone detection. [43], [44]. It expands the method of synthetic data generation
+        to object detectors, which can detect the position of the drone
+C. Synthetic Data for Drone Detection in each of the frames. Isaac-Medina et al. created a UAV
+  Synthetic data approaches have been attempted in the field detection benchmark, in which they compare common object
+of drone detection. One of the first attempts that we were detection architectures. This benchmark is used as a baseline
+able to find is Rozantsev et al. [36] which uses domain to compare the results from our models trained on synthetic
+randomization techniques (without referring to them as such - data.
+the paper was published before domain randomization became We present a method of systematically generating a syn-
+a common term in literature), such as randomizing the position thetic dataset of drones alongside pixel-accurate ground truth
+of the drones, varying the motion blur, adding random noise, segmentation masks using a form of structured domain
+and randomizing object material properties. They also repeat randomization. This presents an advantage over real-world
+this process for aircraft and cars. datasets which are costly to annotate and may not be as accu-
+  Marez et al. [37] create a synthetic dataset of UAVs using rate. Further, synthetic datasets allow flexibility over standard
+DR and test it on the Drone vs Bird dataset. They create approaches such as being able to add new drones to the dataset
+a baseline model (trained only on DvB) and compare the using only a 3D model. They also allow for the creation of
+models trained only on the DR datasets, and models pre- complex scenarios that may be hard to record in real life such
+trained on the DR datasets and finetuned on real-world data. as forest fires, or drones flying in stormy conditions. Generally,
+They find that DR-only datasets perform the worst, while drones should not be flown in windy conditions in real life
+the finetuned models perform better but still fall short of and this might make creating a research study case hard due
+the baseline. This highlights the challenge of transferring to safety concerns.
+synthetically trained models to real-world datasets. Peng et The challenge with this approach is that the synthetic dataset
+al. [38] use 3D models of drones and random HDRIs to may not be representative of the real-world data, and a model
+generate a photorealistic synthetic dataset, and train a Faster- trained on this dataset might not translate to real-world datasets
+RCNN model. It is tested on a real-life dataset of images - this is the sim-to-real problem of transferring domains, as
+
+                                                                                                                                                 4
+
+                    explored in section I-A2. We present and compare multiple    have found attempts in the literature to use domain random-
+                     datasets which are generated by processes of SDR and DR.    ization techniques for drone detection, we were unable to
+    The reasons for focusing on the dataset are:                                 find systematic studies to quantify which aspects of domain
+  • The publicly available drone datasets vary in quality. randomization improve the results of drone detection.
+                           Because they use human-labeled ground truth boxes,              To the best of our knowledge, previous attempts to test
+                       these are imperfect at times. They are also limited in    the sim-to-real transferability used private real-world datasets.
+        that they do not have the segmentation ground truth.                     Instead, we directly compare our results to the benchmark
+  • Some of the previously publicly available datasets are no presented by Isaac-Medina et al. [14] which uses publicly
+        longer available.                                                        available datasets.
+     •  New real-world datasets are costly to produce.                                    We present a successful sim-to-real transfer for the ap-
+                        These items make researching drone detection and com-    plication of drone detection. We prove that our NN model
+                 paring results between studies challenging. We address these    trained on a purely synthetic dataset successfully transfers to
+              points by releasing our synthetic dataset. The contributions of    the MAV-Vid dataset. Our model achieves a mean of 97.0%
+    this publication are:                                                        compared with the Isaac-Medina et al. model, which was
+  • Multiple synthetic datasets with pixel-accurate segmenta- trained on the MAV-Vid dataset, of 97.8%.
+                    tion masks, generated by the process of structured domain    This  paper   is divided into five sections. In    section     II
+        randomization.                                                           we explain the methodology. This includes explaining the
+  • A study into the ability of the neural network model rendering process used to generate the datasets. We explain
+     trained on synthetic data to generalize to real-world drone different styles of datasets generated using different domain
+     detection scenarios. This differs from SOTA in the review randomization styles. We describe the NN training process,
+     because the synthetic drone detection applications mixed we explore the use of data augmentations, in particular noise
+     real-world data with their synthetic data for the training and JPEG compression, and finally, we explain the testing
+     to achieve sim-to-real. They also didn’t use open-access procedure, to measure the accuracy of sim-to-real transfer.
+        datasets such as Drone-vs-Bird or Anti-UAV.                              In section III we explain the results. We perform tests on
+     •  Study of different domain randomization styles.                          camera bounds randomization, effects of data augmentations,
+  • Generalizable Faster R-CNN model weights for drone and variation in domain randomization styles, and lastly, we
+     detection; trained purely on synthetic images, tested on compare our results to the literature. In section IV we conclude
+        multiple real-life datasets.                                             the findings. In section V we discuss further work.
+                    Through our literature review, we have identified several              II. M
+               faults within some of the research in the drone detection area              ETHODOLOGY
+    that we attempted to remedy during our study:                                          This section describes the 3 stages of our experimental
+  • Use of private datasets. Using private datasets makes process: synthetic dataset generation (section II-A), training
+     it impossible for other researchers to reproduce results. of neural networks (NNs) (section II-B), and the testing of
+     To remedy this, we open-source our dataset, and we use the NN models on real-world datasets (section II-C). The
+        publicly available datasets for testing.                                 experimental process broken up into these stages is shown
+     •                       Lack of a common baseline to compare the results    in figure 1.
+                          to. This is a common problem which makes it hard to
+                     directly compare the results of one method over another.    A. Synthetic Dataset Generation using Structured Domain
+                       To remedy this, we use the results of the Isaac-Medina    Randomization
+        et al. benchmark to compare our results.                                 This  section  describes the methodology used     to       create
+  • Repeatability of results. Many publications present the synthetic datasets using Blender [45] for the purpose of drone
+     results as a single value. However, due to the randomness detection. This is done by the process of Structured Domain
+     of neural network training, retraining yields different Randomization (SDR) [23]. Blender allows the rendering of
+     results. To remedy this, we present our results as a mean photorealistic images using a ray-trace-based Cycles engine.
+        with a 95 per cent confidence interval.                                  It also allows for programmatic randomization of simulation
+  • Reproducibility of results. A lot of research in this area parameters, and the creation of pixel-level accurate ground
+     is hard to reproduce. To remedy this, we open-source3 our truth segmentation masks. The primary advantage of this
+     synthetic dataset, as well as the code used for training and approach is that the labelling of ground truth is automated
+        testing of the NN models.                                                - compared with real-life approaches, where manual labelling
+  We believe that this is one of the first attempts to study is required. We continue this section by describing the process
+the use of structured domain randomization for the generation of SDR used to generate the datasets and the multiple datasets
+of synthetic drone datasets. Further, we perform a study that are generated using different styles.
+                  comparing different domain randomization techniques to find           SDR is a technique for generating random synthetic images.
+                     out how much they influence drone detection. Although we    It differs from domain randomization (DR) in that it aims
+    3Datasets https://huggingface.co/datasets/mazqtpopx/cranfield-synthetic-d    to generate scenes that have a realistic context. DR aims
+   rone-detection, and source code https://github.com/mazqtpopx/cranfield-syn    to expand the domain used to train the NN model outside
+    thetic-drone-detection                                                       of the operating domain to improve the performance of the
+
+                                                                                                                                                                               5
+
+                                          Dataset Generation                                                        of drones: DJI Phantom, DJI Inspire, 2 DJI Mavics, and a DJI
+     Camera Position, Focal Length                                  Drone Models                                        FPV. We model the drones as a swarm travelling in a path
+                 Randomization
+                       Z                                                                                              from one point to another. The drones are animated for 300
+                     Y                                              HDRIs                                          frames. After the 300 frames, a new path is generated and the
+                                                                                                                     HDRI (background and lighting) is changed. Every frame, the
+                                                                                                                  position of the camera and the focal length is randomized. The
+                            X                                                                                         camera is influenced to look towards the drones. The focus
+                                                                                                                    point of the camera is set to a very large distance. This is
+                                                                                                                     done to model security cameras, which are typically focused
+                                          Training Datasets                                                       on infinity. A limitation of Blender is that it does not model
+                 Dataset 1            Dataset 2        Dataset 3           Dataset 4      Dataset 5
+                  Drones Only         Birds      Generic Distractors   Realistic Distractors Random Backgrounds    the function to focus on infinity within its camera model, so
+     Rendered                                                                                                     we get around this limitation by setting the focus distance to
+     Image                                                                                                         a very large value. The illustrations of the DJI drone models
+     Segmentation                                                                                                and the overall dataset generation process are shown at the top
+         Mask                                                                                                   of figure 1).
+                                                                                                                2) Variations in Synthetic Datasets:       We create a few vari-
+                                                 Training                                                             ations of the datasets based on different methods from the
+                                                                                                                literature to test if they improve the performance   of      the
+                                                                                                                  detection model. The variations that we create are drones with
+                                                                                                                   birds, drones with generic distractors, drones with realistic
+                                                                           Classifier                           distractors, and drones with unrealistic backgrounds.
+                                                                                                                          Drones Only (SDR) shown in figure 2(a) is a dataset of
+                                      ResNet-50  ROI Pooling                                                         flying drones. It is the standard version of the dataset as
+                                                     Faster R-CNN Architecture                                  described in section II-A1.
+                                                   Test Datasets                                                Drones     with    Birds   (SDR)  shown in figure 2(b),     is a
+                 MAV-VID                         Drone-vs-Bird                           Anti-UAV                     variation of the drones-only dataset, with the addition of
+                                                                                                                      animated birds flying alongside the drones. It is designed
+                                                                                                                      as a synthetic version of the Drone-vs-Bird dataset, which
+                                                                                                                     contains images of drones with birds acting as distractors.
+                                                                                                                    The advantage of the synthetic version is that the birds are
+    Fig. 1: The experimental process is split into 3 parts: synthetic                                             labelled in the ground truth mask, unlike in the real dataset,
+    dataset generation, training of neural networks (NNs), and                                                     where the birds are not labelled at all. But, for consistency
+    testing. During the synthetic dataset generation, the position                                                 with the Drone-vs-Bird dataset, we will not be using the bird
+    of the camera and HDRIs (background and lighting setup) are                                                 labels during training.
+    randomized. 4 distinct synthetic datasets are created: drones                                                    Drones with Generic Distractors        (DR) shown in figure
+    only, drones and birds, drones and generic distractors, drones                                            2(c), is a variation of the drones-only dataset, with the addition
+    and detailed distractors. A Faster-RCNN model is trained on                                                 of generic distractors - cubes, cones, and other basic geometric
+    the synthetic datasets. The Faster-RCNN model is then tested                                                      shapes with random colours added to the scene with the aim
+    on each of the real-world datasets: MAV-VID, Drone-vs-Bird,                                                     of ’distracting’ the model. This is based on the findings of
+    and Anti-UAV.                                                                                                   Alghonaim & Johns [25] who report that adding distractors to
+        the synthetic dataset is a key technique for reducing sim-to-real
+        error. This technique is common across domain randomization
+model within the operating domain. This is achieved by applications such as Marez et al. [37] who use distractors for
+implementing unrealistic textures, backgrounds, and contexts. drone detection, and Trembley et al. [22] who add generic
+SDR differs in that it aims to recreate the operating domain distractors to improve car detection.
+    within the simulation and uses realistic textures, backgrounds,                                                       Drones with Realistic Distractors (DR) shown in figure
+    and contexts, but continues to randomize global parameters                                                       2(d), is designed as a variation of the generic distractors
+    (such as lighting, camera poses, and layout of scenarios).                                                   dataset, with a different style of distractors. The distractors
+     Hence, we will refer to realistic datasets as SDR, and unre-                                                  consist of realistic 3D models of objects such as cars, lamp-
+    alistic datasets as DR. We will refer to a drone with realistic                                            posts, cones, traffic signs, etc. (as opposed to geometric shapes
+    textures in a realistic context as SDR, and we will refer to                                               in the generic distractors dataset). We label this as a variation
+    a flying cube object with a random texture as DR. Although                                                        of DR and not SDR, because although the objects themselves
+    our drone dataset is generated using the SDR technique, we                                                  are realistic, they are not structured in any realistic way.
+    also attempt the use of DR methods by creating unrealistic                                                  Drones        with Unrealistic    Backgrounds (DR)         shown
+distractors in datasets with generic and realistic distractors in figure 2(e) is a variation of the drones-only dataset,
+    (these can be seen in Figure 2).                                                                                      with the realistic HDRI backgrounds replaced by random
+  1) Rendering Process: We use a Python script within coloured/patterned backgrounds. This was not done in the
+Blender to generate the datasets. We use 5 different 3D models style of a particular paper, although Alghonaim & Johns did
+
+                                                                                                                                6
+
+                                                                           The Faster R-CNN [13] network is trained using ResNet-
+                                                                  50 as a backbone. The network is pretrained on the MS
+                                                                  COCO dataset [46]. Unless otherwise specified, the settings
+                                                                  of the model are unchanged from the default implementation
+                                                                  in PyTorch [47], [48], an SGD optimizer is used with a
+    (a) Drones Only                                               learning rate of 0.0003, momentum of 0.9, and weight decay
+                                                                  of 0.0005. We use a step learning rate scheduler which decays
+                                                                  the learning rate by 0.1 every 3 epochs. The networks are
+                                                                  trained for 10 epochs.
+                                                                             1) Data Augmentations: Cropping, Noise, and Compres-
+                                                                  sion: Augmentations   are a common way to   improve the
+                                                                  diversity of the dataset by performing common operations
+ (b) Drones and Birds                                             such as cropping, changing contrast, blurring, etc. Adding
+                                                                  noise to datasets as an augmentation has been tried in syn-
+                                                                  thetic data literature with conflicting reports. Some articles
+                                                                  report a performance improvement [22], while others report
+                                                                  it to be negligible [21]. Wisniewski et al. [43] find that
+                                                                  adding synthetic noise improves the sim-to-real performance
+                                                                  of drone classification. The images generated by Blender are
+ (c) Generic Distractors                                          in the lossless PNG format. However, the real-life datasets
+                                                                  are compressed in the JPEG format, reducing the size, but
+                                                                  also reducing the quality. We speculated that this might affect
+                                                                  the ability of the network to transfer to real-world datasets.
+                                                                  Poyser et al. [49] investigate the impact of compression on the
+                                                                  performance of CNNs. They show that, in the task of object
+                                                                  detection, a model not trained on compressed imagery drops
+                                                                  performance when tested on compressed imagery. However,
+ (d) Realistic Distractors                                        they find that after retraining the model on compressed im-
+                                                                  agery the performance improves for even highly compressed
+                                                                  images (although the performance of the FRCNN model still
+                                                                  drops as the images are compressed more).
+                                                                        To quantify the effects of this, we perform an experiment
+                                                                  where we compare a model trained on only lossless PNG
+                                                                  images, with a model where 50% of the images in the dataset
+ (e) Random Backgrounds                                           are compressed uniformly in a range of 0-95%. To achieve
+Fig. 2: Synthetic datasets generated by using different styles.   this we use the imgaug library [50].
+(a) Drones only, (b) drones and birds, (c) generic distractors,
+(d) realistic distractors, (e) random backgrounds.                C. Testing: Datasets and Performance Metrics
+                                                                           The goal of this study is to find whether the use of a
+experiment with different background types. We hypothesized       purely synthetic drone dataset to train the neural network
+that if the unrealistic textures and objects can improve the      for sim-to-real transfer is feasible. Ideally, the model should
+performance of the detector (as shown by the majority of          be transferrable to many different real-life datasets (and not
+domain randomization literature), random backgrounds should       just a single one). This goes against the ethos of neural
+act similarly. The random backgrounds are generated using         networks, which assume that the testing dataset should be
+random colour palettes, with random shapes. Different blend-      a subset of the training dataset. Instead, we are aiming for
+ing modes are also applied to the images.                         out-of-domain generalization, wherein the training datasets
+                                                                  and testing datasets originate from different domains, hence
+                                                                  bridging the sim-to-real gap. To this end, we test our neural
+B. Neural Network Architecture and Training                       network model on three different real-life datasets: MAV-VID,
+                                                                  Anti-UAV, and Drone-vs-Bird. We compare our results with
+The primary aim of this study is to compare the results           a benchmark developed by Isaac-Medina et al., where they
+with Isaac-Medina et al. hence any of the architectures they      trained a model for each of the datasets, and tested each model
+used (Faster R-CNN, SSD, YOLO, DETR) was acceptable.              on a subset of the dataset that they were trained on. Instead,
+Faster R-CNN was also used in other publications such as          we propose a single set of weights which is tested on unseen
+Freudenmann et al. [31], hence we chose it as our architecture.   real-life datasets.
+Keeping the architecture common allows us to compare the               We aim for the sim-to-real to be accurate, and we also aim
+impact of the dataset while controlling for other variables.      for it to be generalizable - we want the weights to perform
+
+                                                                                                                                          7
+
+                                                                          different results. This is rarely presented in results, with most
+                                                                          publications that we have observed simply presenting the
+                                                                          results from a single run. The initial seed has an effect on
+                              lead                                        the results of the training, as presented by Picard [55]. Picard
+        shows that the distributions generated from random seeds
+        generally follow a normal distribution (even though some of
+        their results do appear skewed). Although he mentions black
+        swan events [56], we believe they meant this in the context
+        of extreme values on the sides of the Gaussian distribution
+Fig. 3: A zoomed-in example of an inaccurate ground truth as opposed to a fat-tailed distribution. Hence, we assume
+on the MAV-Vid dataset. Although the model prediction (blue the results from our training runs will follow a Gaussian
+rectangle) is more accurate than the ground truth (white distribution. To report our results we will take 8 samples
+rectangle), it falls below the intersection over union (IoU) of at each configuration and report the mean alongside the 95
+    0.5 required for a correct prediction.                                percent confidence interval.
+
+    well on any drone dataset. We use the publicly available real-
+    world datasets used by Isaac-Medina et al. in their benchmark:        III. RESULTS
+    MAV-Vid, Drone-vs-Bird, and Anti-UAV.
+               MAV-VID [51] consists of 29,500 images used for training
+    and 10,732 images for validation. It contains videos of drones                 This section shows the results of the Faster-RCNN object
+    captured by other flying drones and drones captured from a            detection architecture trained on a purely synthetic dataset of
+    ground camera.                                                        drones generated in Blender described in section II-A. The
+                Drone-vs-Bird [52], [53] consists of 85,904 images used   trained model is tested on three separate datasets: MAV-Vid,
+    for training and 28,856 images for validation. The videos are         Drone-vs-Bird (DvB), and Anti-UAV described in section II-C.
+    taken from static cameras near backdrops of buildings, fields,        The aim of these experiments is to understand whether sim-to-
+    lakes, and landscapes. The aim of the dataset is to reduce false      real, the process of transferring a model trained on synthetic
+    positives with regard to birds coming up as positive objects          data to real-world scenarios, is possible for drone detection,
+    instead of drones. However, the birds are not labelled in the         and if so, which variables impact the sim-to-real transfer.
+    dataset (only drones are).                                                      We perform the following studies: camera bounds random-
+             Anti-UAV [54] consists of 149,478 images used for training   ization (section III-A), dataset augmentations (section III-B,
+    and 37,016 images for validation. It features videos of drones        dataset size (section III-C), and domain randomization styles
+    captured by a pan-tilt-zoom (PTZ) security camera, on a               (section III-D). Lastly, we compare our results to literature in
+    backdrop of cities. The PTZ camera is manually operated to            section III-E. Unless otherwise specified, the experiments use
+    track the drones. The dataset features videos from an optical         the training parameters described in section II-B, a camera
+    camera in the visible spectrum and from an infrared (IR)              bounding size of 40 m is used, a dataset size of 5,000 is
+    camera. We will focus on the visible spectrum images only.            used, JPEG compression is enabled, noise is enabled, and each
+    Although its aim is to benchmark UAV tracking capabilities,           experiment is repeated 8 times to produce a mean and a 95
+    we can still use it to benchmark drone detection.                     per cent confidence interval.
+            The datasets described contain only drone labels and do not
+    contain labels for other objects (such as birds, or other flying
+    objects). COCO metrics (that we will be using for performance
+    metrics in this chapter) work by finding the Intersection over        A. Camera Bounds Randomization
+    Union between the prediction and the ground truth.
+              The accuracy of the manual ground truth labels within the            The position of the camera with respect to drones is one
+    datasets varies in quality. Figure 3 shows an example of a            of the parameters randomized in the simulation. The size of
+    ground truth (white rectangle) which is inaccurate. In this case,     camera bounds in turn is correlated to the size of the drones in
+    the model prediction (blue rectangle) is more accurate than the       the images in the dataset. Smaller camera bounds translate into
+    ground truth, but because it falls below the intersection over        a higher proportion of large-sized drones, and larger camera
+    union (IoU) of 0.5 it is not counted as a correct prediction.         bounds translate into a higher proportion of small-sized drones
+    This is generally the case, especially for smaller instances of       in the dataset. Smaller images of drones may make it harder
+    drones. Because it is hard to quantify how many of the ground         for the network to learn their shape, but may also improve
+    truth labels are inaccurate, and costly to remedy, we will take       the performance of the network on datasets which contain
+    the labels as they are.                                               drones further away from the camera. Hence it is important to
+    D. Repeatability                                                      find a balance between the two. To understand the relationship
+        between the bounds of the camera position randomization and
+  The process of NN training inherently contains randomness, the performance on the real-world data, we create 5 datasets
+hence repeating training with the same settings produces with different bounds: 20 m, 40 m, 80 m, 160 m, and 320 m.
+
+AP 0.5
+
+
+
+
+
+
+
+
+
+
+AP 0.5
+
+
+
+
+
+
+
+
+
+
+    8
+
+
+    100                          Bounding Box Size Study                                                 100        Data Augmentations Study
+     90    96.8          97.0                                         95.0                                90    96.6    96.5      97.1      97.0
+     80                                                                       88.4                        80
+     70                                                                                                   70
+     60        67.3            67.8                                       66.3      61.6                  60      63.0      63.9      66.7                         67.4
+     50    51.9            49.8         53.2      52.9                                                    50
+     40                                                                                                   40      48.4      47.4      49.7                     49.7
+     30                                     35.9                                            34.0          30
+     20                                                                                                   20
+     10                                MAV-Vid      DvB                                     Anti-UAV
+                                                                                            14.3          10        MAV-Vid      DvB                           Anti-UAV
+      0                                                                                                    0
+           20 m            40 m         80 m      160 m                                     320 m            No Augmentations JPEG Compression Only Noise Only JPEG Compression and Noise
+
+                                           Fig. 5: Results of the bounding size study for 20 m, 40 m,    Fig. 6: Results of the data augmentations study. Average
+                                            80 m, 160 m, and 320 m bounds. Average Precision at .50      Precision at .50 IoU (AP0.5) on the y axis, presented as a
+                                            IoU (AP0.5) on the y-axis, presented as a mean of 8 runs     mean of 8 runs along with 95 percent confidence interval, and
+                                         along with a 95 percent confidence interval, and the selected   the data augmentation on the x axis. Each model is tested on
+                                          bounding size on the x-axis. Each bounding size is tested on   the MAV-Vid, Drone-vs-Bird (DvB), and Anti-UAV datasets.
+                                            the MAV-Vid, Drone-vs-Bird (DvB), and Anti-UAV datasets.
+
+                                                                                                         competitive on the DvB dataset, showing a mean        AP0.5                   of
+                                       Z                                                                 53.6%. This is likely because the DvB dataset contains more
+                                                                                                         images of smaller drones and larger camera bounds produce
+                                                                                                         more images of smaller drones. Hence, it seems that the model
+                                      160        Y                                                       benefits from a higher proportion of smaller drones for higher
+                                                                                                         DvB performance, but suffers on MAV-Vid as a result. At
+                                                                       80                                320 m, the model struggles to learn the shape of the drones
+               -160                                                           -160                       the performance significantly drops across all 3 datasets. This
+                           -80                                         40  -80                           study has shown that the bounds do not have a strong effect on
+                                 -40   -40                                                               the sim-to-real transferability if kept within reasonable bounds
+                                 40     40                                                               between 20 m and 80 m. The peak performance also varies
+                     160   80                                         -40 80      X                      across the 3 real-world datasets. Both MAV-Vid and Anti-UAV
+                                                                      -80      160                       perform best on the 40 m dataset, while the DvB performance
+                                                                                                         peaks between 80 m and 160 m.
+                                      -160
+
+                                                                                                         B. Data Augmentations (JPEG Compression and Noise)
+                                           Fig. 4: A representation selected bounds within which the                             We investigate the effects of JPEG compression and Gaus-
+                                          camera position is randomized. Red: 40 m, blue: 80 m, green:   sian noise data augmentations, as described in II-B1.
+                                          160 m. Each frame, the position of the camera is randomized                         Figure 6 shows the results of the data augmentations study,
+                                           within these bounds. We also present results from 20 m and    testing whether JPEG compression and noise have any effects
+    320 m bounds, which are not illustrated here.                                                        on the sim-to-real transferability. The dataset with no augmen-
+                                                                                                         tations applied achieves a mean AP0.5                           of 96.6% on MAV-
+                                          Figure 4 shows the bounds within which the camera position     Vid, 48.4% on DvB, and 63.0% on the Anti-UAV dataset.
+                                         is randomized. Some of the bounds, red: 40 m, blue: 80 m, and   When applying JPEG compression, the results do not show
+                                            green: 160 m are shown. The bounds of 20 m and 320 m are     a significant difference. Adding noise seems to have a slight
+                                          not shown in the illustration but are used in the comparison   effect, producing a mean AP0.5 of 97.1% on MAV-Vid, 49.7%
+                                         results. Each of the bound sizes is used to create a distinct   on DvB, and 66.7% on the Anti-UAV dataset. Adding both
+                                          dataset to train a NN model. The focal length is randomized    JPEG compression and noise does not produce a significant
+                                              between 15 mm and 300 mm, and this range stays fixed       difference compared with just adding noise. This suggests
+                                          throughout. All of the other parameters stay fixed for this    that JPEG compression has no noticeable effect on sim-to-
+                                           experiment. An ablation study is performed by training the    real transferability. Adding noise has a weak effect, slightly
+    NN model on each of the datasets.                                                                    improving the mean AP0.5 across the three datasets.
+                                            Figure 5 shows the results of the bounding size ablation
+                                          study. 20 m, 40 m, and 80 m bounding sizes all show reason-    C. Dataset Size
+                                      ably similar results across the three different test datasets, with                   We investigate the effects of the dataset size on the perfor-
+a mean AP0.5 ranging from 95.0% to 97.0% on the MAV- mance of the model. We consider 8 different sizes: 50, 100,
+Vid dataset, 49.8% to 53.2% on DvB, and 66.3% to 67.8% 250, 500, 1,000, 2,500, 5,000, and 15,000 images. The 15,000
+on Anti-UAV. 160 m shows a significant drop on the MAV- image dataset is concated using the 20 m, 40 m, and 80 m
+Vid dataset down to a mean of 88.0% AP0.5, but remains datasets as described in section III-A.
+
+AP 0.5
+
+
+
+
+
+
+
+
+
+
+  AP 0.5
+
+
+
+
+
+
+
+
+
+
+                                                                                                                                                                  9
+
+    100                     Dataset Size Study                                             100                    Domain Randomization Style Study
+     90                     91.4          97.0        96.0                                  90     97.0   97.3         97.3                        95.8      93.5
+     80                                                                                     80
+     70                                                                                     70
+     60        68.8     58.4        62.5           67.4       61.8                          60      67.4        69.1       63.5      66.2              69.3
+     50                                                                                     50  49.7                   48.2                          57.9
+     40                                           49.7    47.7                              40
+     30                 37.6    38.6                                                        30                 40.3                  41.8             33.5          40.0
+     20    20.7 25.0                                                                        20
+     10                     MAV-Vid           DvB         Anti-UAV                          100                            MAV-Vid17.4             DvB     Anti-UAV
+      0    3.9                                                                                 Drones     Drones and   Generic       Realistic     Realistic       Random
+           500          1,000   2,500             5,000   15,000                                Only           Birds   Distractors   Distractors   Distractors  Backgrounds
+                                          (combination of 20 m, 40 m, 80 m datasets)                                                               (lr 0.0001)
+    Fig. 7: Results of the dataset size study for 50, 100, 250, 500,                    Fig. 8: Results of the domain randomization techniques study
+    1,000, 2,500, 5,000, and 15,000* images. Average Precision                          for drones only, drones and birds, drones with generic dis-
+    at .50 IoU (AP0.5) on the y-axis, and the selected dataset size                     tractors, drones with realistic distractors, and drones with
+    on the x-axis. Each bounding size is tested on the MAV-Vid,                         unrealistic backgrounds. Average Precision at .50 IoU (AP0.5)
+    Drone-vs-Bird, and Anti-UAV datasets. *Note that the 15,000                         on the y-axis, presented as a mean of 8 runs along with
+    is composed by concatenating the 20 m, 40 m, and 80 m                               a 95 per cent confidence interval, and the selected domain
+    datasets from the bounds study.                                                     randomization technique on the x-axis. Each bounding size
+                                                                                        is  tested     on the  MAV-Vid,             Drone-vs-Bird,    and  Anti-UAV
+                                                                                        datasets.
+     Unlike in other tests, we did not perform a repeat of these
+    experiments (apart from 5,000 and 15,000 images). Further, a
+    limitation of this study is the 15,000 dataset as it is compiled                                         Figure 8 shows the results of the domain randomization
+    from the different bounds datasets. However, because each of                        style study. The drones only, drones and birds, and generic
+    the standalone datasets presented similar results, by combining                     distractors datasets all perform reasonably well across the
+    them we should notice size differences, if any.                                     three test datasets with some small but noticeable differences.
+   Figure 7 shows the results of the dataset size study. As They all perform very similarly on the MAV-Vid dataset,
+expected, larger datasets result in better results. This appears to achieving 97.0% to 97.3% AP. On the DvB dataset, the drones-
+taper off at around 5,000 images, with no significant difference only dataset achieves the highest AP0.5 across the whole
+found between a dataset size of 5,000 and 15,000. A limitation study, of 49.7%. Generic distractors achieve a similar mean
+of this study is that a single learning rate is used. Larger of 0.482. The drones and birds dataset surprisingly performs
+datasets may benefit from different learning rates. This result the worst on the DvB dataset out of the three, with a significant
+is consistent with the studies performed by Trembley et al. drop to 40.3%. This result counters our hypothesis when
+[22], who find that above a training dataset size of 10,000, designing this dataset - that adding synthetic bird distractors
+the results remain consistent (roughly +/- 1% AP at .50 IoU will improve the performance of the model, especially on
+for a pre-trained model between a dataset size of 10,000 and the DvB dataset, which was designed with the intention of
+900,000). However, their study is for a different application challenging detection networks to detect drones with birds as
+of car detection with different training and test datasets, with distractors. Overall, none of the domain randomization styles
+different training parameters, although they do use domain have achieved significant improvements over the drones-only
+randomization for their training dataset. Hence, it is possible dataset.
+that the similarity is a coincidence.
+        E. Comparison to Literature
+    D. Domain Randomization Styles                                                                           These experiments were designed based on the benchmark
+   Domain randomization styles can be implemented in many of Isaac-Medina et al. [14]. Our experimental procedure
+different ways, with no generally accepted consensus, and a slightly varies from Isaac-Medina et al. in that we present a
+lack of detailed quantitative studies. The problem is made mean and a standard deviation, while they present the results
+harder because the findings are not necessarily transferable to of a single run. Another difference is that Isaac-Medina et al.
+different applications. As discussed in the literature section, trained a separate model for each of the datasets. That means
+although some studies utilize domain randomization for drone that for the MAV-Vid dataset, they split the dataset for training
+detection, we found a lack of quantitative data comparing and evaluation. They trained a model on the training subset and
+what works and what does not. In section II-A2 we describe then tested it on the evaluation subset. They then trained and
+the process of generating datasets using different styles of evaluated another model from scratch for the DvB and Anti-
+domain randomization. We presented the following datasets: UAV datasets. Hence, they present three sets of model weights,
+drones only, drones with birds, drones with generic distractors, each one for the particular dataset. Instead, we present a single
+drones with realistic distractors, and drones with unrealistic set of model weights, trained purely on the synthetic dataset,
+backgrounds. We train the Faster-RCNN model using each of that has not seen any of the test datasets. Further, they tested
+    the datasets and compare the results.                                               a number of architectures together: Faster RCNN, SSD512,
+
+                                                                                                                            10
+
+    TABLE I: Comparison of our results, of the Faster-RCNN model trained on the drones-only dataset with 40 m bounds, to
+    results from literature
+
+     Dataset         Model                     AP      AP0.5   AP0.75   APS     APM     APL     AR      ARS     ARM     ARL
+     MAV-VID         Ours                      0.526   0.970   0.503    0.058   0.493   0.586   0.599   0.402   0.580   0.664
+        Isaac-Medina et al. [14] 0.592 0.978 0.672 0.154 0.541 0.656 0.659 0.369 0.621 0.721
+     Drone-vs-Bird   Ours                      0.187   0.498   0.075    0.170   0.336   0.294   0.246   0.307   0.496   0.322
+                     Isaac-Medina et al.       0.283   0.632   0.197    0.218   0.473   0.506   0.356   0.298   0.546   0.512
+     Anti-UAV-RGB    Ours                      0.299   0.678   0.173    0.000   0.304   0.291   0.359   0.000   0.449   0.343
+                     Isaac-Medina et al.       0.581   0.977   0.641    0.523   0.623   -       0.636   0.602   0.663   -
+                     Freudenmann et al. [31]   -       0.542   -        -       -       -       -       -       -       -
+                     Freudenmann et al.        -       0.787   -        -       -       -       -       -       -       -
+                     (With Augmentations)
+
+
+
+    YOLOv3, and DETR. For consistency, we only compare to            artefacts. Freudenmann et al. [31] performed a study on this,
+    their Faster-RCNN results.                                       in which they found that a model trained on Drone vs Bird
+  Table I shows the comparison of the results of our Faster- dataset gets an AP0.5 of 54.2% when tested on the Anti-UAV
+RCNN model trained on the drones-only dataset (with 40 dataset. Note that we are unsure whether they used the same
+m bounds) compared with Isaac-Medina et al. Faster-RCNN subset of the Anti-UAV dataset for evaluation, so the values
+benchmark results. We focus on the AP0.5 metric because we should not be directly compared but can be used as guidance.
+believe it is the most important in this context. Because of They find that, by applying certain dataset augmentations they
+imperfect labels in the real-world datasets, we don’t believe are able to increase the performance to 78.7%. Because Isaac-
+the AP and AP0.75 to be as relevant. On the MAV-Vid test Medina et al. trained their model on the Anti-UAV dataset,
+dataset, our model achieves a mean (across 8 runs) AP0.5 the model was trained not to be affected by these artefacts. By
+of 0.970, compared with the 0.978 from Medina. On the DvB performing a data augmentation strategy or domain adaptation,
+dataset, our model achieves a mean AP0.5 of 0.498, compared we believe that the performance of our model could be
+with the 0.632 from Medina. This presents a considerable gap increased. However, this falls outside the scope of this study.
+in performance of 13.4%. Lastly, on the Anti-UAV dataset, Finally, another aspect of the Anti-UAV dataset that has not
+our model achieves a mean AP0.5 of 0.678, compared with been considered so far, is that a subset of the videos are filmed
+the 0.977 from Medina. This is the biggest gap across the three during nighttime. We included these in the test dataset to be
+test datasets of 29.9%. Hence, our model translates very well consistent with Isaac-Medina et al., but as the synthetic dataset
+    to MAV-Vid, moderately to DvB, and poorly to Anti-UAV.           did not include any truly nighttime scenarios (where you truly
+     We believe that the nature of the test datasets has a severe    cannot see the drone, and the only way to distinguish it is
+    impact on how well our synthetic-data-trained model will         by its lights) it is not surprising that the performance drops
+    translate to real life. MAV-Vid, the dataset on which our        during this particular comparison.
+    model performs well, contains videos of drones following
+    other drones and ground-based cameras. The dataset is the                           IV. C
+    most straightforward out     of the three test datasets.  DvB                            ONCLUSION
+    contains videos of drones filmed in complex environments.        To conclude,  we have   been     successful at our    original
+However, the majority of our HDRI backgrounds (that we aim of creating a synthetic dataset using structured domain
+used for generating the synthetic dataset) are skies. Our model randomization and training a Faster-RCNN model which trans-
+performs reasonably well on the small and medium AP/recall fers to real-world datasets. We presented quantifiable results
+(achieving 0.170 APS, and 0.336 APM compared with 0.218 and compared them with real-world-based datasets. We have
+APS and 0.473 APM from Isaac-Medina et al.) but drops presented a Faster-RCNN model trained on a purely synthetic
+in performance on the large objects AP/recall (0.294 APL dataset that successfully bridges the sim-to-real gap on the
+compared with 0.506 APL from Isaac-Medina et al.). The real MAV-Vid dataset, achieving an AP0.5 of 97.0%, which
+inclusion of more complex modelled environments as opposed is shy of the 97.8% for an equivalent model trained on the
+to HDRIs only in our synthetic dataset could potentially MAV-Vid dataset. The model also performs reasonably on
+improve the sim-to-real for this particular dataset. However, the Drone-vs-Bird (DvB) dataset, achieving AP0.5 of 49.8%,
+the realistic distractors dataset aimed at creating these realistic, compared with 63.2% for an equivalent model trained on the
+complex distractors, did not improve the performance over the DvB dataset. The model translates poorly to the Anti-UAV
+standard drones-only dataset. Lastly, the Anti-UAV dataset is dataset, achieving AP0.5 of 67.8%, compared with 97.7% for
+unique in that it contains artefacts from the recording camera an equivalent model trained on the DvB dataset. However, we
+(including Chinese letters, numerical values, crosshairs, etc.). believe this to be the case due to artefacts that are unique to the
+This makes models susceptible to false positives. We believe Anti-UAV dataset. The model still outperforms Freudenmann
+that the poor performance of our model on this dataset can et al. [31] model which was trained on the Drone-vs-Bird
+be attributed to our model not being trained to handle these dataset only, and achieved 54.2% when tested on the Anti-
+
+                                                                                                                                                         11
+
+    UAV dataset. This shows that, despite not quite matching the                               the datasets themselves do contain these in the segmentation
+    benchmark, our weights prove to be generalizable.                                           masks, labelled in blue (drones are labelled in white). De-
+                  The purpose of this chapter is not to try and improve on                        tecting two classes might make the detector more accurate
+    the results of the Isaac-Medina et al. benchmark, but rather                                  (although preliminary studies did not show this to be the
+    to examine the sim-to-real performance of a model trained                                 case, hence it is not something we pursued with much detail).
+    on a purely synthetic dataset and understand the variables                                 However, with the correct training strategy, it is something
+    which impact sim-to-real transferability of the model. Hence,                              that might hold the potential for increasing the sim-to-real
+    we did not try to find a model which performs well on a                 performance.
+    single dataset but rather aimed to investigate which variables                                      Because it was not the aim of our study, we did not
+    affect the generalizability across all three of the real-life                                consider modifying the default parameters of the Faster R-
+    datasets. Our hypothesis is, that by improving the sim-to-                                  CNN network. However, an ablation study into the parameters
+    real performance across the three datasets, we would also                                    of the Faster R-CNN network could be performed. This could
+    improve the performance for unseen datasets of drones. We                                 include using a different pre-trained model, trying different
+    have achieved this by focusing on the mean metrics as opposed           learning strategies, freezing different layers, etc.
+    to finding the well-performing outliers, which can be caused                                    The presented segmentation masks can be used to train a
+    by the random seed which randomizes the convergence of NN                                      segmentation model such as Mask-RCNN or U-Net to present
+    models during training.                                                                      pixel-accurate detections of drones. We did not do this in
+                  Our domain randomization style study III-D has failed to                     this study because it did not benefit the detection accuracy
+    find evidence that any of the proposed styles significantly             comparisons.
+    improve the sim-to-real transferability. This is surprising be-
+    cause it disputes our hypothesis based on the literature review                   A
+    that domain randomization and distractors improve the sim-                        CKNOWLEDGMENTS
+    to-real transferability. This could be explained by domain                                      This project was funded through the UK Government’s In-
+    randomization not being applicable to the application of drone                            dustrial PhD Partnership (IPPs) Scheme by the Future Aviation
+    detection, our domain randomization styles not working for                                     Security Solutions Programme (FASS) - a joint Department
+    our test datasets, or our learning strategy favouring the drones-                          for Transport and Home Office venture, in collaboration with
+    only dataset. Still, we conclude that we have failed to find            Aveillant Ltd. and Autonomous Devices Ltd.
+    evidence that the addition of distractors or randomization of
+    backgrounds has improved the sim-to-real transferability.                                               REFERENCES
+  We believe this research to be an important step towards the
+use of synthetic data for creating operational neural network [1] B. News, “Increase in use of drones for prison smuggling,” BBC News,
+models for drone detection. We have shown the benefits or [2] Apr. 2023.
+    using synthetic data and the potential for generalizability, what                      ——, “Drugs, weapons ’smuggled to prisoners by drone’,” BBC News,
+        Feb. 2022.
+works and what does not from general synthetic data literature, [3] ——, “Heathrow airport: Drone sighting halts departures,” BBC News,
+as well as the limitations such as inaccuracies within specific [4] Jan. 2019.
+    datasets.                                                                          C. Skopeliti, “Flights diverted at East Midlands airport after drone
+                                                                                  sightings,” The Guardian, Jun. 2022.
+                                                                             [5]  “Dublin airport: Flights suspended for 30 minutes after drone sightings,”
+        V. FURTHER WORK                                                      [6]  https://www.bbc.com/news/articles/c72mvndez5jo, Feb. 2023.
+  Temporal networks - convolutional networks with multiple [7] “UK Counter-Unmanned Aircraft Strategy,” p. 38.
+        G. Lykou, D. Moustakas, and D. Gritzalis, “Defending Airports from
+    frames concatenated, or recurrent layers - are being to be                               UAS: A Survey on Cyber-Attacks and Counter-Drone Sensing Tech-
+explored in the literature (e.g. Thai et al. [33]). This is another [8] nologies,” Sensors, vol. 20, no. 12, p. 3537, Jun. 2020.
+    area where synthetic data could be useful, although the flight                  A. Krizhevsky, I. Sutskever, and G. E. Hinton, “ImageNet classification
+                                                                                       with deep convolutional neural networks,” Communications of the ACM,
+    mechanics of the drones should be modelled correctly. In this                 vol. 60, no. 6, pp. 84–90, May 2017.
+study, we focused on single-frame detection. Our dataset, as [9] J. Redmon, S. Divvala, R. Girshick, and A. Farhadi, “You Only Look
+it stands, is also incompatible with this kind of architecture [10] Once: Unified, Real-Time Object Detection,” May 2016.
+        J. Redmon and A. Farhadi, “YOLO9000: Better, Faster, Stronger,” in
+    because the camera position changes every frame (so the                                 2017 IEEE Conference on Computer Vision and Pattern Recognition
+animations are not consistent). However, this is something [11] (CVPR). Honolulu, HI: IEEE, Jul. 2017, pp. 6517–6525.
+    that could     be modified  to generate animations  of          drones                W. Liu, D. Anguelov, D. Erhan, C. Szegedy, S. Reed, C.-Y. Fu, and
+                                                                                         A. C. Berg, “SSD: Single Shot MultiBox Detector,” 2016, vol. 9905,
+    flying realistic realistic trajectories. If modelled correctly, this          pp. 21–37.
+presents a potential for much more accurate drone-vs-bird [12] R. Girshick, “Fast R-CNN,” Sep. 2015.
+detection. In our results, we investigated the effects of JPEG [13] S. Ren, K. He, R. Girshick, and J. Sun, “Faster R-CNN: To-
+    compression, but the real-world datasets are also encoded                              wards Real-Time Object Detection with Region Proposal Networks,”
+        arXiv:1506.01497 [cs], Jan. 2016.
+using video compression which we were not able to test. [14] B. K. S. Isaac-Medina, M. Poyser, D. Organisciak, C. G. Willcocks,
+    Together     with temporal  networks, an  animated  dataset         of                T. P. Breckon, and H. P. H. Shum, “Unmanned Aerial Vehicle Visual
+    drones and birds might be the answer to bridging the sim-                              Detection and Tracking using Deep Neural Networks: A Performance
+                                                                                          Benchmark,” in 2021 IEEE/CVF International Conference on Computer
+    to-real gap.                                                                  Vision Workshops (ICCVW).          Montreal, BC, Canada: IEEE, Oct. 2021,
+             We did not train our networks to detect the birds or distrac-        pp. 1223–1232.
+tor objects to be consistent with the test datasets. However, [15] A. Vaswani, N. Shazeer, N. Parmar, J. Uszkoreit, L. Jones, A. N. Gomez,
+        L. Kaiser, and I. Polosukhin, “Attention Is All You Need,” Dec. 2017.
+
+    12
+
+
+[16] N. Carion, F. Massa, G. Synnaeve, N. Usunier, A. Kirillov, and [40] S. Scholes, A. Ruget, G. Mora-Martin, F. Zhu, I. Gyongy, and J. Leach,
+          S. Zagoruyko, “End-to-End Object Detection with Transformers,” May                 “DronePose: The identification, segmentation, and orientation detection
+          2020.                                                                              of drones via neural networks,” arXiv:2112.05488 [cs], Dec. 2021.
+[17] J. Liu, Z. Shen, Y. He, X. Zhang, R. Xu, H. Yu, and P. Cui, “Towards [41] C. Li, S. C. Sun, Z. Wei, A. Tsourdos, and W. Guo, “Scarce Data Driven
+          Out-Of-Distribution Generalization: A Survey,” Jul. 2023.                          Deep Learning of Drones via Generalized Data Distribution Space,”
+    [18]  F. Zhuang, Z. Qi, K. Duan, D. Xi, Y. Zhu, H. Zhu, H. Xiong, and Q. He,             arXiv:2108.08244 [cs], Aug. 2021.
+          “A Comprehensive Survey on Transfer Learning,” Jun. 2020.                    [42]  A. Carrio, S. Vemprala, A. Ripoll, S. Saripalli, and P. Campoy, “Drone
+    [19]  G. Csurka, “Domain Adaptation for Visual Applications: A Comprehen-                Detection Using Depth Maps,” Aug. 2018.
+          sive Survey,” Mar. 2017.                                                     [43]  M. Wisniewski, Z. A. Rana, and I. Petrunin, “Drone Model Classification
+    [20]  K. Zhou, Z. Liu, Y. Qiao, T. Xiang, and C. C. Loy, “Domain General-                Using Convolutional Neural Network Trained on Synthetic Data,” p. 20,
+          ization: A Survey,” IEEE Transactions on Pattern Analysis and Machine              2022.
+          Intelligence, pp. 1–20, 2022.                                                [44]  ——, “Drone Model Identification by Convolutional Neural Network
+    [21]  J. Tobin, R. Fong, A. Ray, J. Schneider, W. Zaremba, and P. Abbeel,                from Video Stream,” in 2021 IEEE/AIAA 40th Digital Avionics Systems
+          “Domain randomization for transferring deep neural networks from sim-              Conference (DASC).           San Antonio, TX, USA: IEEE, Oct. 2021, pp.
+          ulation to the real world,” in 2017 IEEE/RSJ International Conference              1–8.
+     on Intelligent Robots and Systems (IROS). Vancouver, BC: IEEE, Sep. [45] B. Foundation, “Blender - a 3D modelling and rendering package.”
+          2017, pp. 23–30.                                                             [46]  T.-Y. Lin, M. Maire, S. Belongie, L. Bourdev, R. Girshick, J. Hays,
+    [22]  J. Tremblay, A. Prakash, D. Acuna, M. Brophy, V. Jampani, C. Anil,                 P. Perona, D. Ramanan, C. L. Zitnick, and P. Doll´ar, “Microsoft COCO:
+          T. To, E. Cameracci, S. Boochoon, and S. Birchfield, “Training Deep                Common Objects in Context,” Feb. 2015.
+     Networks with Synthetic Data: Bridging the Reality Gap by Domain [47] A. Paszke, S. Gross, F. Massa, A. Lerer, J. Bradbury, G. Chanan,
+          Randomization,” arXiv:1804.06516 [cs], Apr. 2018.                                  T. Killeen, Z. Lin, N. Gimelshein, L. Antiga, A. Desmaison, A. Kopf,
+    [23]  A. Prakash, S. Boochoon, M. Brophy, D. Acuna, E. Cameracci, G. State,              E. Yang, Z. DeVito, M. Raison, A. Tejani, S. Chilamkurthy, B. Steiner,
+          O.  Shapira,  and   S.  Birchfield, “Structured    Domain    Randomization:        L. Fang, J. Bai, and S. Chintala, “PyTorch: An Imperative Style, High-
+          Bridging the Reality Gap by Context-Aware Synthetic Data,” in 2019                 Performance Deep Learning Library,” p. 12.
+          International Conference on Robotics and Automation (ICRA), May              [48]  “Vision/torchvision/models/detection/faster rcnn.py at main           ·
+          2019, pp. 7249–7255.                                                               pytorch/vision,”           https://github.com/pytorch/vision/blob/main/
+    [24]  J. Borrego, A. Dehban, R. Figueiredo, P. Moreno, A. Bernardino, and                torchvision/models/detection/faster rcnn.py.
+     J. Santos-Victor, “Applying Domain Randomization to Synthetic Data [49] M. Poyser, A. Atapour-Abarghouei, and T. P. Breckon, “On the Impact
+          for Object Category Detection,” Jul. 2018.                                         of Lossy Image and Video Compression on the Performance of Deep
+    [25]  R. Alghonaim and E. Johns, “Benchmarking Domain Randomisation for                  Convolutional Neural Network Architectures,” Jul. 2020.
+          Visual Sim-to-Real Transfer,” May 2021.                                      [50]  A. Jung, “Imgaug,” Nov. 2023.
+[26] S. Hinterstoisser, V. Lepetit, P. Wohlhart, and K. Konolige, “On Pre- [51] A. Rodriguez-Ramos, J. Rodriguez-Vazquez, C. Sampedro, and P. Cam-
+          Trained Image Features and Synthetic Images for Deep Learning,”                    poy, “Adaptive Inattentional Framework for Video Object Detection
+          arXiv:1710.10710 [cs], Nov. 2017.                                                  With Reward-Conditional Training,” IEEE Access, vol. 8, pp. 124 451–
+    [27]  B. Aydin and S. Singha, “Drone Detection Using YOLOv5,” Eng, vol. 4,               124 466, 2020.
+          no. 1, pp. 416–433, Mar. 2023.                                               [52]  A. Coluccia, A. Fascista, A. Schumann, L. Sommer, M. Ghenescu, A. O.
+    [28]  F. Samadzadegan, F. Dadrass Javan, F. Ashtari Mahini, and M. Gho-                  Avenue, and T. Piatrik, “Drone-vs-Bird Detection Challenge at IEEE
+          lamshahi, “Detection and Recognition of Drones Based on a Deep                     AVSS2019,” p. 7.
+     Convolutional Neural Network Using Visible Imagery,” Aerospace, [53] A. Coluccia, A. Fascista, A. Schumann, L. Sommer, A. Dimou,
+          vol. 9, no. 1, p. 31, Jan. 2022.                                                   D. Zarpalas, M. M´endez, D. de la Iglesia, I. Gonz´alez, J.-P. Mercier,
+    [29]  Y. Fan, O. Li, and G. Liu, “An Object Detection Algorithm for Rotary-              G. Gagn´e, A. Mitra, and S. Rajashekar, “Drone vs. Bird Detection: Deep
+          Wing UAV Based on AWin Transformer,” IEEE Access, vol. 10, pp.                     Learning Algorithms and Results from a Grand Challenge,”       Sensors,
+          13 139–13 150, 2022.                                                               vol. 21, no. 8, p. 2824, Jan. 2021.
+[30] F. Dadrass Javan, F. Samadzadegan, M. Gholamshahi, and [54] N. Jiang, K. Wang, X. Peng, X. Yu, Q. Wang, J. Xing, G. Li, J. Zhao,
+          F. Ashatari Mahini, “A Modified YOLOv4 Deep Learning Network for                   G. Guo, and Z. Han, “Anti-UAV: A Large Multi-Modal Benchmark for
+          Vision-Based UAV Recognition,” Drones, vol. 6, no. 7, p. 160, Jul.                 UAV Tracking,” arXiv:2101.08466 [cs], Feb. 2021.
+          2022.                                                                        [55]  D. Picard, “Torch.manual seed(3407) is all you need: On the influence
+    [31]  L. Freudenmann, L. Sommer, and A. Schumann, “Exploitation of data                  of random seeds in deep learning architectures for computer vision,”
+          augmentation strategies for improved UAV detection,” in           Automatic        May 2023.
+     Target Recognition XXXI, vol. 11729. SPIE, Apr. 2021, pp. 119–132. [56] N. N. Taleb, The Black Swan: The Impact of the Highly Improbable.
+    [32]  C. Mediavilla, L. Nans, D. Marez, and S. Parameswaran, “Detecting                  Random house, 2007, vol. 2.
+          aerial objects: Drones, birds, and helicopters,” in Artificial Intelligence
+          and Machine Learning in Defense Applications III, J. Dijk, Ed.       Online
+          Only, Spain: SPIE, Sep. 2021, p. 18.
+    [33]  P. Thai, S. Alam, N. Lilith, and B. Nguyen, “Small Flying Object
+          Detection and  Tracking     in     Digital Airport Tower  through  Spatial-
+          Temporal ConvNets,” In Review, Preprint, Mar. 2023.
+    [34]  C. Craye and S. Ardjoune, “Spatio-Temporal Semantic Segmentation
+          for Drone Detection,” in 2019 16th IEEE International Conference on
+          Advanced Video and Signal Based Surveillance (AVSS).        Taipei, Taiwan:
+          IEEE, Sep. 2019, pp. 1–5.
+    [35]  T. Sangam, I. R. Dave, W. Sultani, and M. Shah, “TransVisDrone:
+          Spatio-Temporal Transformer for Vision-based Drone-to-Drone Detec-
+          tion in Aerial Videos,” Aug. 2023.
+    [36]  A. Rozantsev, V. Lepetit, and P. Fua, “On Rendering Synthetic Images
+          for Training an Object Detector,”          Computer Vision and Image Under-
+          standing, vol. 137, pp. 24–37, Aug. 2015.
+    [37]  D. Marez, S. Borden, and L. Nans, “UAV detection with a dataset
+          augmented by domain randomization,” in Geospatial Informatics X, vol.
+          11398.         SPIE, May 2020, pp. 39–50.
+    [38]  J. Peng,   C. Zheng,       T. Cui,  Y. Cheng, and    L. Si, “Using   Images
+          Rendered by PBRT to Train Faster R-CNN for UAV Detection,” in
+          26. International Conference in Central Europe on Computer Graphics,
+          Visualization and Computer Vision’2017, 2018.
+    [39]  T. R. Dieter, A. Weinmann, S. J¨ager, and E. Brucherseifer, “Quantifying
+          the Simulation–Reality Gap for Deep Learning-Based Drone Detection,”
+          Electronics, vol. 12, no. 10, p. 2197, Jan. 2023.

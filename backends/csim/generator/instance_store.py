@@ -25,6 +25,7 @@ from backends.csim.bindings.types import (
 
 SIM_INSTANCE_MAGIC = b"CSIMINST"
 SIM_INSTANCE_FORMAT_VERSION = 5
+SIM_INSTANCE_WRITE_BLOCK_BYTES = 8 * 1024 * 1024
 _HEADER = struct.Struct("<8sIIQ")
 _U8 = struct.Struct("<B")
 _U16 = struct.Struct("<H")
@@ -34,40 +35,82 @@ _F32 = struct.Struct("<f")
 
 
 def write_sim_instances(path: str | Path, instances: Iterable[SimInstance]) -> None:
-    records = list(instances)
-    payload = bytearray()
-    for instance in records:
-        _write_sim_instance(payload, instance)
-    header = _HEADER.pack(
-        SIM_INSTANCE_MAGIC,
-        SIM_INSTANCE_FORMAT_VERSION,
-        len(records),
-        len(payload),
-    )
-    Path(path).write_bytes(header + payload)
+    out_path = Path(path)
+    tmp_path = out_path.with_name(f"{out_path.name}.tmp")
+    count = 0
+    payload_len = 0
+    block = bytearray()
+    try:
+        with tmp_path.open("wb") as handle:
+            handle.write(_HEADER.pack(SIM_INSTANCE_MAGIC, SIM_INSTANCE_FORMAT_VERSION, 0, 0))
+            for instance in instances:
+                record = bytearray()
+                _write_sim_instance(record, instance)
+                block.extend(record)
+                count += 1
+                payload_len += len(record)
+                if len(block) >= SIM_INSTANCE_WRITE_BLOCK_BYTES:
+                    handle.write(block)
+                    block.clear()
+                    handle.flush()
+            if block:
+                handle.write(block)
+                block.clear()
+                handle.flush()
+            handle.seek(0)
+            handle.write(
+                _HEADER.pack(
+                    SIM_INSTANCE_MAGIC,
+                    SIM_INSTANCE_FORMAT_VERSION,
+                    count,
+                    payload_len,
+                )
+            )
+        tmp_path.replace(out_path)
+    except Exception:
+        tmp_path.unlink(missing_ok=True)
+        raise
 
 
-def read_sim_instances(path: str | Path) -> list[SimInstance]:
-    data = Path(path).read_bytes()
-    if len(data) < _HEADER.size:
-        raise ValueError(f"{path} is too small to be a SimInstance table")
-    magic, version, count, payload_len = _HEADER.unpack_from(data)
-    if magic != SIM_INSTANCE_MAGIC:
-        raise ValueError(f"{path} is not a SimInstance table")
-    if version != SIM_INSTANCE_FORMAT_VERSION:
-        raise ValueError(
-            f"Unsupported SimInstance table version {version}; "
-            f"expected {SIM_INSTANCE_FORMAT_VERSION}"
-        )
-    payload_start = _HEADER.size
-    payload_end = payload_start + int(payload_len)
-    if payload_end != len(data):
-        raise ValueError(f"{path} has an invalid SimInstance table length")
+def read_sim_instances(
+    path: str | Path,
+    *,
+    count: int | None = None,
+    offset: int = 0,
+) -> list[SimInstance]:
+    offset = int(offset)
+    if offset < 0:
+        raise ValueError("offset must be non-negative")
+    requested_count = None if count is None else int(count)
+    if requested_count is not None and requested_count < 0:
+        raise ValueError("count must be non-negative")
 
-    cursor = _Cursor(data[payload_start:payload_end])
-    instances = [_read_sim_instance(cursor) for _ in range(int(count))]
-    cursor.expect_finished(path)
-    return instances
+    in_path = Path(path)
+    with in_path.open("rb") as handle:
+        header = handle.read(_HEADER.size)
+        if len(header) < _HEADER.size:
+            raise ValueError(f"{path} is too small to be a SimInstance table")
+        magic, version, total_count, payload_len = _HEADER.unpack(header)
+        if magic != SIM_INSTANCE_MAGIC:
+            raise ValueError(f"{path} is not a SimInstance table")
+        if version != SIM_INSTANCE_FORMAT_VERSION:
+            raise ValueError(
+                f"Unsupported SimInstance table version {version}; "
+                f"expected {SIM_INSTANCE_FORMAT_VERSION}"
+            )
+        payload_end = _HEADER.size + int(payload_len)
+        if in_path.stat().st_size != payload_end:
+            raise ValueError(f"{path} has an invalid SimInstance table length")
+
+        cursor = _FileCursor(handle, payload_end)
+        for _ in range(min(offset, int(total_count))):
+            _read_sim_instance(cursor)
+        remaining = max(int(total_count) - offset, 0)
+        read_count = remaining if requested_count is None else min(requested_count, remaining)
+        instances = [_read_sim_instance(cursor) for _ in range(read_count)]
+        if requested_count is None and offset == 0:
+            cursor.expect_finished(path)
+        return instances
 
 
 class _Cursor:
@@ -85,6 +128,25 @@ class _Cursor:
 
     def expect_finished(self, path: str | Path) -> None:
         if self.offset != len(self.data):
+            raise ValueError(f"{path} has trailing bytes after SimInstance records")
+
+
+class _FileCursor:
+    def __init__(self, handle, payload_end: int):
+        self.handle = handle
+        self.payload_end = int(payload_end)
+
+    def read(self, size: int) -> bytes:
+        end = self.handle.tell() + int(size)
+        if end > self.payload_end:
+            raise ValueError("Unexpected end of SimInstance table")
+        chunk = self.handle.read(int(size))
+        if len(chunk) != int(size):
+            raise ValueError("Unexpected end of SimInstance table")
+        return chunk
+
+    def expect_finished(self, path: str | Path) -> None:
+        if self.handle.tell() != self.payload_end:
             raise ValueError(f"{path} has trailing bytes after SimInstance records")
 
 

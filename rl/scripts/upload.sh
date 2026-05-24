@@ -1,54 +1,47 @@
 #!/usr/bin/env bash
-# Rsync the gavin_puffer dir up to the running pod, excluding build artifacts.
-# Reads rl/scripts/.runpod_pod.json for SSH endpoint.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 META="$ROOT/rl/scripts/.runpod_pod.json"
 [ -f "$META" ] || { echo "no $META - run rl/scripts/runpod_setup.sh first"; exit 1; }
 
+SCENARIO_TABLE=${SCENARIO_TABLE:-.runs/csim_generator_sampling/camera_basis_grid_589824/sobol_samples.csimin}
+SCENARIO_MANIFEST=${SCENARIO_MANIFEST:-.runs/csim_generator_sampling/camera_basis_grid_589824/sobol_samples_grid_manifest.json}
+
 IP=$(jq -r '.runtime.ports[] | select(.privatePort==22) | .ip' "$META")
 PORT=$(jq -r '.runtime.ports[] | select(.privatePort==22) | .publicPort' "$META")
+SSH_OPTS="-p $PORT -o StrictHostKeyChecking=accept-new -o UserKnownHostsFile=/dev/null"
+SSH="ssh $SSH_OPTS"
 
-SSH="ssh -p $PORT -o StrictHostKeyChecking=accept-new -o UserKnownHostsFile=/dev/null"
+$SSH root@$IP 'command -v rsync >/dev/null || (export DEBIAN_FRONTEND=noninteractive; apt-get update -qq; apt-get install -y -qq rsync)'
 
-# Wait up to 90s for sshd to bind after pod start.
-for i in $(seq 1 18); do
-    $SSH -o ConnectTimeout=5 -o BatchMode=yes root@$IP 'echo ready' >/dev/null 2>&1 && break
-    sleep 5
-done
+echo ">> Uploading repo to /workspace/drone-interception"
+rsync -az --delete \
+    -e "ssh $SSH_OPTS" \
+    --exclude='__pycache__/' \
+    --exclude='.git/' \
+    --exclude='.runs/' \
+    --exclude='.cache/' \
+    --exclude='checkpoints/' \
+    --exclude='detection/' \
+    --exclude='logs/' \
+    --exclude='papers/' \
+    --exclude='renders/' \
+    --exclude='wandb/' \
+    --exclude='.wandb_key' \
+    "$ROOT/" "root@$IP:/workspace/drone-interception/"
 
-# rsync isn't in the runpod/pytorch image — install it before transfer.
-# Need apt-get update first (fresh container has empty apt cache).
-$SSH root@$IP 'command -v rsync >/dev/null || \
-    (export DEBIAN_FRONTEND=noninteractive; \
-     apt-get update -qq 2>&1 | tail -2; \
-     apt-get install -y -qq rsync 2>&1 | tail -2)'
+echo ">> Uploading scenario table"
+$SSH root@$IP 'mkdir -p /workspace/drone-interception/data/scenarios'
+rsync -az -e "ssh $SSH_OPTS" "$ROOT/$SCENARIO_TABLE" \
+    "root@$IP:/workspace/drone-interception/data/scenarios/sobol_samples.csimin"
+rsync -az -e "ssh $SSH_OPTS" "$ROOT/$SCENARIO_MANIFEST" \
+    "root@$IP:/workspace/drone-interception/data/scenarios/sobol_samples_grid_manifest.json"
 
-# Push wandb key to pod if present locally.
 if [ -f "$ROOT/.wandb_key" ]; then
-    scp -q -P $PORT -o StrictHostKeyChecking=accept-new -o UserKnownHostsFile=/dev/null \
+    scp -q -P "$PORT" -o StrictHostKeyChecking=accept-new -o UserKnownHostsFile=/dev/null \
         "$ROOT/.wandb_key" root@$IP:/root/.wandb_key
     $SSH root@$IP 'chmod 600 /root/.wandb_key'
-    echo ">> wandb key staged on pod"
 fi
 
-echo ">> Uploading to root@$IP:$PORT:/workspace/gavin_puffer"
-rsync -az --delete \
-    -e "ssh -p $PORT -o StrictHostKeyChecking=accept-new -o UserKnownHostsFile=/dev/null" \
-    --exclude='build/' \
-    --exclude='raylib-5.5_*/' \
-    --exclude='__pycache__/' \
-    --exclude='*.so' \
-    --exclude='*.o' \
-    --exclude='.runs/' \
-    --exclude='/experiments/' \
-    --exclude='checkpoints/' \
-    --exclude='logs/' \
-    --exclude='wandb/' \
-    --exclude='rl/scripts/.runpod_pod.json' \
-    --exclude='.wandb_key' \
-    "$ROOT/" "root@$IP:/workspace/gavin_puffer/"
-
-echo ">> Done. SSH in with:"
-echo "   ssh -p $PORT root@$IP"
+echo ">> Done. SSH: ssh -p $PORT root@$IP"

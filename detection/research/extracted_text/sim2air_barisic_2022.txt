@@ -1,0 +1,513 @@
+arXiv:2110.05145v2 [cs.CV] 8 Mar 2022
+
+
+
+
+
+
+
+
+
+
+     © 2022 IEEE. Personal use of this material is permitted. Permission from IEEE must be obtained for all other uses, in any
+    current or future media, including reprinting/republishing this material for advertising or promotional purposes, creating new
+    collective works, for resale or redistribution to servers or lists, or reuse of any copyrighted component of this work in other
+    works.
+
+     Journal: IEEE Robotics and Automation Letters
+     DOI: 10.1109/LRA.2022.3147337
+     URL: https://ieeexplore.ieee.org/document/9699390
+
+    IEEE ROBOTICS AND AUTOMATION LETTERS. PREPRINT VERSION. ACCEPTED JANUARY 2022    1
+
+Sim2Air - Synthetic Aerial Dataset for UAV
+                Monitoring
+
+    Antonella Barisic, Frano Petric and Stjepan Bogdan
+
+
+                    Abstract—In this paper we propose a novel approach to gener-
+    ate a synthetic aerial dataset for application in UAV monitoring.
+    We propose to accentuate shape-based object representation by
+    applying texture randomization. A diverse dataset with photo-
+    realism in all parameters such as shape, pose, lighting, scale,
+    viewpoint, etc. except for atypical textures is created in a 3D
+    modelling software Blender. Our approach specifically targets two
+    conditions in aerial images where texture of objects is difficult
+    to detect, namely challenging illumination and objects occupying
+    only a small portion of the image. Experimental evaluation of
+    YOLO and Faster R-CNN detectors trained on synthetic data
+    with randomized textures confirmed our approach by increasing
+    the mAP value (17 and 3.7 percentage points for YOLO; 20 and
+    1.1 percentage points for Faster R-CNN) on two test datasets
+    of real images, both containing UAV-to-UAV images with motion
+    blur. Testing on different domains, we conclude that the more             Fig. 1: A 3D model of a custom quadcopter Eagle, created in Blender
+    the generalisation ability is put to the test, the more apparent         [1]. The Eagle on the right has realistic textures that match a real
+    are the advantages of the shape-based representation.                      aircraft, while the Eagle in the upper left corner has unrealistic
+                                                                                  textures.
+    Index Terms—AI-Enabled     Robotics,     Data Sets  for              Robotic
+    Vision, Aerial Systems: Perception and Autonomy.                                  The synthetically generated data may look indistinguishable
+                                                                                        to humans compared to real data, but this is not the case
+        I. INTRODUCTION                                                                   with CNNs, and this is called the Sim2Real gap. When we
+    S YNTHETIC datasets offer a potential solution to data-                       add specific imaging conditions of aerial object detection that
+                            hungry deep learning models that could drive the de-      affect detection accuracy and robustness, we have a Sim2Air
+    velopment of robotics and bring robotics closer to everyday                   gap to bridge.
+    applications. Today, and even more so in the future, robotic                           The focus of this work is on the creation of synthetic
+systems such as unmanned aerial vehicles (UAVs) often rely aerial datasets for UAV detection, considering the imaging
+on vision-sensors to sense the world and convolutional neural conditions specific for air-to-air imagery and unconstrained
+networks (CNNs) to understand the environment and the environments. We target two major challenges in aerial object
+objects within it. One such task is UAV monitoring, which detection, namely long-range detection and detection under
+involves protecting a specific area of interest from unfriendly changing illumination. The hypothesis of this work is that
+UAVs. As the number of UAVs in the world increases every given the aforementioned challenges, shape-based represen-
+year, both commercial and non-commercial, the UAV mon- tation of objects contributes to aerial detection performance.
+itoring systems are becoming an essential part of all high The key contributions of this paper are:
+    security areas. The performance of such systems depends on                     •        A shape-based representation achieved by randomly as-
+    the quality and quantity of available data. To address this                            signed unrealistic textures to improve the performance
+    issue, researchers are exploring the ability of CNNs to learn                        of aerial object detection in the face of changing illu-
+    from synthetically generated data. Unlike real data, which                              mination conditions in unconstrained environments and
+    is expensive, time-consuming, and labour-intensive to collect                     the difficult detection of objects that occupy only a small
+    and annotate, synthetic data can be generated automatically                              portion of the image, which is very common in aerial
+    and in unlimited quantities. Synthetic annotations are highly                     object detection;
+    accurate and resistant to human error. Moreover, synthetic                     •  A procedural pipeline for generating synthetic       aerial
+    data enables balanced datasets that cover all desired versions                           dataset for UAV monitoring with diversity of models,
+    of real data that may be difficult or impossible to obtain.                         backgrounds, lightning, times of day, weather conditions,
+                                                                                      positions and orientations, camera pan and tilt angles, and
+               Manuscript received: September 9, 2021; Revised December 7, 2021;      distances from camera to object;
+    Accepted January 11, 2022.                                                     •      A first publicly available synthetic dataset for object
+              This paper was recommended for publication by Editor Markus Vincze      detection of UAVs.
+    upon evaluation of the Associate Editor and Reviewers’ comments.
+    Authors are with the University of Zagreb, Faculty of Electrical Engineering      The remainder of the paper is organized as follows: Section
+    and Computing, LARICS Laboratory for Robotics and Intelligent Control       II presents recent state-of-art works and findings, while Section
+    Systems, Unska 3, 10000 Zagreb, Croatia;                 (antonella.barisic,
+    frano.petric, stjepan.bogdan)@fer.hr                                              III gives a problem description of aerial object detection.
+    Digital Object Identifier (DOI): see top of this page.                        Section  IV describes the proposed  method to bridge        the
+
+    2                                                         IEEE ROBOTICS AND AUTOMATION LETTERS. PREPRINT VERSION. ACCEPTED JANUARY 2022
+
+    Sim2Air gap, while experimental validation of the proposed         solves the data problem, it does not address the specific
+    hypothesis is described in Section V.                              imaging conditions for drones, does not provide a balanced
+                                                                       dataset covering all possible variations of the real world, and
+        II. RELATED WORK                                               suffers from unrealistic lighting due to the simple insertion
+  Synthetic datasets. Synthetically generated data has the technique. Therefore, 3D modelling software such as Blender
+potential to completely overcome the problem of tedious is a more resourceful solution to create synthetic datasets in a
+manual creation of large annotated datasets for training data- controlled manner. Controlling the diversity in a dataset using
+driven deep learning models. Currently, there are three popular a procedural pipeline for rendering, like in [16], allows to
+paradigms in the synthetic dataset community: combining cover all real-world variations and create balanced datasets.
+real and synthetic data outperforms pure real data, domain Most similar to our approach is the work of Peng et al.
+adaptation, and domain randomization. The first one has been [17] who propose a procedural pipeline using physically-based
+validated by many researchers [2], [3], [4], while the other rendering toolkit (PBRT) to render as photorealistic images as
+two paradigms continue to be the subject of research. Domain possible. However, our approach differs not only in having
+adaptation techniques aim to bridge the Sim2Real gap by min- a larger number of models, a different rendering engine and
+imising the difference between synthetic and real data, while a lightweight detector, but also in emphasising shape-based
+domain randomization techniques aim to randomise synthetic representation to reduce texture bias and improve the accuracy
+data to the point where the real world is considered just another and robustness of aerial object detectors.
+    synthetically generated variant. Tobin et al. [5] proposed do-                 III. AERIAL OBJECT DETECTION
+    main randomization in task of object grasping by randomizing       Object  detection from images captured on-board                  UAV
+    the RGB values of the object texture. A year later, Trembley et    presents additional challenges due to the nature of the aircraft’s
+    al. [4] proposed randomizing lighting, pose, and textures in an    motion and operating conditions. Aerial perspective means
+    unrealistic way and adding flying distractors. Both works show     that the detector must be able to detect objects at different
+    compelling performance compared to CNNs trained on purely          pan and tilt angles, at different altitudes, and in 360 degrees.
+    real data. Another interesting direction proposed in [6] is to     Therefore, it is necessary to distinguish between detection in
+    explore the texture bias of neural networks. They have shown       still images captured by humans, also called generic object
+    that texture plays an important role, even more than global        detection, and detection on aerial images captured from a
+    object shapes, and that shape-based representations might be       moving aircraft. From a robotics perspective, object detection
+    more informative. With respect to implementation, there are        of specific instances such as other UAVs, plants, buildings,
+    multiple approaches to generating synthetic data, which can        etc. is of greater interest.
+    be summarized in two broad categories: 1) deep learning:
+    using models such as Generative Adversarial Networks and
+    Variational Autoencoders [7] to generate synthetic data; 2) 3D
+    rendering: using 3D modelling software such as Unity, Unreal
+    or Blender to generate synthetic data. Two most common
+    approaches in synthetic data generation using 3D rendering are
+    aimed towards using realistic models and/or realistic sensors
+    [8]. Herein, we propose a procedural pipeline that uses realistic
+    models of the object, augmented with unrealistic textures to
+    emphasize geometric shape of the object in the process of
+    learning.
+        Visual UAV monitoring.            Monitoring UAV activity in a
+    predefined area of special interest requires three technologies:
+    detection, interdiction, and evidence collection [9]. The use
+    of image sensors for UAV surveillance, especially for the
+    detection part, has attracted much attention recently. One
+    approach to general UAV-to-UAV detection is to collect and
+    annotate a large amount of real images using different UAV
+    models and types, at different times of the day and under
+    different weather conditions, in different locations to cover a
+    variety of backgrounds, in different positions and orientations,
+    and  at different scales  and viewpoints. There are several
+    works [10], [11], [12], [13] that use the above approach to
+    train the detector on real images that had to be collected
+    and manually labelled over a long period of time. In the
+    absence of publicly available datasets, few works [14], [15]
+    have trained UAV detectors on artificial datasets created by       Fig. 2: Imaging conditions of aerial object detection from UAV-Eagle
+    pasting object models on background images. Although this
+                                                                       dataset.
+
+    BARISIC et al.: SIM2AIR - SYNTHETIC AERIAL DATASET FOR UAV MONITORING    3
+
+
+              Intra-class variations, which are the main factor affecting   within the procedural pipeline:
+    accuracy and challenging the generalisation ability of the              •  3D models of different quadcopters and hexacopters,
+    detector, can be divided into two categories [18]: intrinsic            •  number of objects in a single image,
+    factors and imaging conditions. Intrinsic factors are variations        •    environment maps with different lighting conditions such
+    in appearance within a class, such as different sizes, shapes,             as daylight, partly cloudy, twilight, etc.
+    textures, etc., which can be addressed by synthetic datasets            • distance between camera and objects, i.e. scale of objects,
+    with high diversity. On the other hand, variations in appearance        •     angle of the camera (pan, tilt and yaw) with respect to
+    caused by imaging conditions such as lighting, pose, weather               the world origin,
+    conditions, background clutter, and viewing angles are an               •  location of the camera with respect to the world origin,
+    innate consequence of unstructured environments. Since UAVs             •  a mixture of atypical textures.
+typically operate in such unstructured dynamic environments,
+aerial imaging conditions must be considered when preparing TABLE I: Details of the datasets used for training: Synthetic Eagle
+synthetic datasets. Two problems that are particularly specific Baseline (S-Eagle-B), Synthetic Eagle with Textures (S-Eagle-T),
+to aerial object detection, namely long-range detection and Synthetic UAVs with Textures (S-UAV-T) and Real UAV (R-UAV);
+detection under changing illumination, are shown in Fig. 2 and for testing: UAV-Eagle, T₁ and T₂.
+    using a UAV-Eagle dataset [19] acquired in an unstructured                     Train datasets
+    environment. Under varying illumination the same object can                Models     S-Eagle-B1  S-Eagle-T1   S-UAV-T  R-UAV
+    appear very different [20], especially in color, depending on              Backgrounds      10         10         10     ∼20
+                                                                                                                      10      ∞
+    the relative position and orientation between the object and               Textures         1          32         32     N/A
+    the light source in the scene. On the other hand, objects                  Pitch [◦]    [-45, 45]  [-45, 45]  [-45, 45]  N/A
+    located at a great distance occupy only a small part of the                Roll [◦]     [-45, 45]  [-45, 45]  [-45, 45]  N/A
+                                                                               Yaw [◦]       [0, 360]   [0, 360]   [0, 360]  N/A
+    image, which makes them more difficult to detect because they              Distance [m]  [2, 20]    [2, 20]    [2, 20]   N/A
+    contain less information about their appearance and require                Image No.      32 000     32 000     52 500  11 700
+    more precise localization. In both problems, shape is more                     Test datasets
+    visible and prominent than texture. Therefore, our goal is to                  Models     UAV-Eagle1          ∼20T1   T12
+    guide the object detector towards shape-based detection in                     Backgrounds     3              ∞          5
+    order to bridge the Sim2Air gap.                                               Image No.     510              1300    285
+
+        IV. METHODOLOGY                                                           Each model is rendered in all environment maps from the
+                In this section, the proposed methodology is described in  set, and each texture from a set of mixed textures is assigned
+    detail and the main components are outlined.                               to the model. Then for each iteration, a predefined number
+                                                                             of random values for pan, tilt, and the distance between the
+    A. General pipeline                                                      camera and the objects are selected. With such configuration
+            All synthetic datasets in this paper were created in Blender,    in a scene, a set of images is rendered by animating the yaw
+    an open source software for 3D modelling. Blender offers a                  angle of the camera around objects. All components except
+    wide range of tools for modelling all kinds of objects, surfaces,        texture are modelled to reflect the real world as closely as
+    lighting, environments, etc. There are two options available as           possible. Details of the parameters of each dataset used to
+    rendering engines: Eevee and Cycles. The first is for real-time      train the aerial object detector are given in the Table I, where
+    rendering, the second for ultra-realistic ray-trace rendering. In     the first letter of the dataset name indicates the type of data
+    our pipeline, we used Cycles for rendering with 512 samples         (synthetic or real), the middle part indicates the type of models
+    of path-tracing the light for each pixel. An important feature           used (Eagle quadcopter only or multiple UAV models), and the
+    of Blender is its built-in Python interpreter. User can access    last letter indicates the type of technique, if any, used to create
+    Blender objects and tools via Python scripts and manipulate             the dataset (e.g., -T for texture randomization).
+    them in a variety of ways. This allows us to take full advan-           B. Models
+    tage of the automation and scalability properties of synthetic                 The first model in this paper is the Eagle quadcopter.
+    datasets. For example, our pipeline allows the user to choose                The Eagle is a custom aerial platform that is used for a
+    how many textures or how many random panning angles to                    variety of tasks as its modular design allows for different
+    use when rendering a synthetic dataset. Other parameters are            sensor configurations. A custom UAV presents a more difficult
+    scaled accordingly to render the desired number of images.                   problem than other commercial UAVs because data (images)
+    Therefore, scalability of the dataset is easily feasible with the          collection is more challenging. One should collect a large
+    proposed procedural pipeline. In parallel with image rendering,      number of air-to-air images to realistically reflect the imaging
+    all objects in the current image are automatically and precisely           conditions of UAV detection from the air. To overcome this
+    labelled with bounding boxes enclosing each object. The labels                  problem, we propose to use 3D models of custom aerial
+    are stored in a appropriate format for later training of the               platforms such as Eagle. The photorealistic model of Eagle
+    detector.                                                                shown in Fig. 1, which closely resembles an actual aircraft,
+              Considering all the aspects of aerial object detection men-   was created using standard modelling techniques in Blender.
+    tioned in Section III, and to account for the diversity of the real         In addition to the 3D model of Eagle, another 9 models of
+    world, we implement variations in the following components                quadcopters and hexacopters were used to create a synthetic
+
+    4    IEEE ROBOTICS AND AUTOMATION LETTERS. PREPRINT VERSION. ACCEPTED JANUARY 2022
+
+
+
+
+
+
+
+
+
+
+    Fig. 3: All 3D models of UAVs used to create a synthetic dataset for     Fig. 4: Sample of textures used for a texture-randomization technique.
+    aerial object detection.
+    aerial dataset for UAV monitoring. Three models were found               containing them are difficult to collect. Collecting images
+    online [21], while the other six models were obtained from               could take months to cover different weather conditions such
+    Gazebo simulations, mainly from the RotorS [22] library. All             as sunny, cloudy, foggy, etc., take place at different times
+    these together result in a set of 10 different UAV models,               of the day to cover all lighting conditions, and would also
+    which are shown in Fig. 3.                                               require at least two UAV operators. All of these problems
+                                                                             are addressed with a set of 10 HDRI maps, acquired from
+    C. Textures                                                              Polyhaven [23], with different lighting conditions and different
+               Each time the generation of a synthetic dataset is started,   types of outdoor environments.
+    a different mixture of textures is created (see Fig. 4), which
+    can later be assigned to objects in a scene. Some of the tex-            V. RESULTS
+    tures are procedurally created by an algorithm that combines                       To verify our claims, a general object detector suitable for
+different material properties with random colors. Different on-board UAV processing was trained on several datasets.
+material properties are implemented by so-called shaders, The experiments are divided into two parts. First, we train
+which determine how light is scattered across the surface of the detector on datasets based on a single custom model
+the object. For a predefined number of procedurally generated of UAV, with and without applying random unrealistic tex-
+textures, a shader is selected from four shaders, namely tures, to show the impact of the proposed technique on
+diffuse, glossy, glass and translucent bidirectional scatter- the generalisation and robustness of the aerial object detec-
+ing distribution function (BSDF). Each shader implements a tor. Second, we create a larger dataset with different UAV
+different mathematical function that describes the reflection, models and compare the performance between synthetic and
+refraction, and absorption of light. A diffuse shader is the real data in the UAV monitoring task. The quantitative and
+most realistic material for UAVs, while the others contribute to qualitative results of how our method improves the detection
+the unrealism of the textures. To demonstrate the irrelevance of objects in the air are presented below. The synthetic
+of colors to the detector, each material is assigned a random datasets are available at https://github.com/larics/synthetic-
+RGB value for color. The second part of the texture mixture is UAV and the video of our approach can be found at
+created by importing image files with textures that are atypical https://www.youtube.com/watch?v=7pPGEk8t Tw.
+for UAVs, e.g. bathroom tiles, lollipop texture, Christmas A. Training of object detector
+    ornaments, kitchen towel, wood, chip texture, marble, metal,                        In this paper, two object detectors, each representative of
+    etc. In the end, a realistic texture of carbon-made UAV is               its category, are trained and evaluated for the task of aerial
+    added to the mixture in order to treat the real texture as               object detection. The first one comes from a well-established
+    another random variation. The thus created mixture of textures           family of one-stage detectors called You Only Look Once
+    using both monochromatic and patterned textures, typical and             (YOLO) [24], [25]. YOLO detectors treat object detection as
+    atypical colors, artificial and man-made textures, reflective and        a regression problem and use features from the entire image
+    non-reflective materials, etc. leads the detector to pay more            to detect objects, implicitly including contextual information.
+    attention to the shape of the UAV.                                       There are two advantages of YOLO that led us to choose
+    D. Environment maps                                                      it as an object detector. The first important advantage is
+  Instead of modelling a series of complex scenes, a set of the low inference time, which accommodates the limited
+environment maps is used to replicate typical unstructured en- computational resources of on-board processing. The second
+vironments of UAVs. The environment maps are implemented advantage is the accessibility of the network implementation
+using High Dynamic Range Imaging (HDRI), a 360-degree along with the continuous development and wide community
+panoramic image with extensive brightness data. The HDRI support, which allows easy portability to any application. In
+maps not only serve as a background for the scene, but also selecting the detector, we looked for a lightweight network
+provide realistic illumination of the scene. This is especially and therefore selected a lightweight version, called Tiny, of
+useful in the case of custom aerial platforms, as images the fourth generation of YOLO networks. Taking into account
+
+    BARISIC et al.: SIM2AIR - SYNTHETIC AERIAL DATASET FOR UAV MONITORING    5
+
+
+
+
+
+
+
+
+
+
+    Fig. 5: Examples of images in the synthetically generated datasets S-Eagle-T (top row) and S-UAV-T (bottom row). Both datasets contain
+    randomized textures, while S-UAV-T contains 9 other UAV models in addition to Eagle quadcopter.
+
+    that bird’s eye objects usually occupy only a small part of        UAV model, the custom aerial platform Eagle, and contain
+    the image, the network architecture was slightly modified by       the same number of images. The main difference is that the
+    adding another YOLO layer to better detect both small and          baseline dataset was created with a photorealistic texture that
+    large objects. On the other hand, we chose the Faster R-CNN        mimics the real aircraft: a carbon frame with a synthetic plastic
+    [26], a representative of the two-stage object detectors, as the   texture for smaller parts of the model, as shown in the lower
+    second detector to show that the proposed method does not          right corner in Fig. 1. The S-Eagle-T dataset was created with
+    depend on the type of detector. We utilize a base model with       32 unrealistic textures to accentuate the geometric shape of
+    a backbone combination of ResNet-50 and Feature Pyramid            the UAV. Samples from the S-Eagle-T dataset are shown in
+    Network with a 3x learning rate scheduler. In general, the         the top row of Fig. 5.
+    Faster R-CNN is a more accurate detector than YOLO, but it
+    requires significantly more time for inference and is therefore
+    generally not suitable for on-board processing.
+                 All training and dataset rendering was performed on a
+    computer equipped with a Intel Core i7-10700 CPU @ 2.9
+    GHz x 16, an Nvidia GeForce RTX 3090 24 GB GPU,
+    and 64 GB RAM. The YOLO detector was trained within
+    Darknet framework and Faster R-CNN within               Detectron2
+    [27] framework, both using default anchors and starting from
+    weights pretrained on the COCO dataset [28]. For training,
+    we used an image size of 608, a learning rate of 0.00261, a
+    momentum of 0.9 and a decay of 0.0005. Each model was
+    trained for 200 epochs, using a batch size of 64 for YOLO
+    and a batch size of 16 for Faster R-CNN. The best weights          Fig. 6: Distribution of data in the training and testing datasets
+    were determined using an early stopping method based on            obtained by the k-means++ algorithm. The colors indicate the 9
+    the mean average precision (mAP) to avoid overfitting. The         clusters of computed anchor boxes that best correspond to the actual
+    training parameters were the same for all datasets.                size of the objects in the dataset. The coordinates of each pixel
+                                                                       correspond to the width and height of each bounding box.
+    B. Texture-invariant dataset of Eagle UAV                          The detectors trained on S-Eagle-B and S-Eagle-T datasets
+  To test our hypothesis that a shape-based, i.e. texture- were evaluated on three different test datasets, all consisting
+invariant, representation of UAVs boosts performance of aerial of real images only. The details are given in Table I. The
+object detectors, we created two datasets: Synthetic Eagle first dataset is UAV-Eagle [19], which contains images of real
+Baseline (S-Eagle-B) and Synthetic Eagle with Textures (S- Eagle UAV in an unconstrained environment with pronounced
+Eagle-T) dataset. Both datasets were created using a single illumination effects, distant objects, and a highly cluttered
+
+    6                                                        IEEE ROBOTICS AND AUTOMATION LETTERS. PREPRINT VERSION. ACCEPTED JANUARY 2022
+
+background. The second test dataset is part of our previous
+work [11], [19], where we collected a large number of real
+images from the Internet. The labelling was done partly by
+manual labelling and partly by pseudo-labelling. This dataset
+consists of 13 000 images which are divided into two parts: a
+training dataset called R-UAV containing 90% of the images,
+and a test dataset T1 containing the remaining 10%. Some
+of the images in T1 were taken in the studio, some indoors,
+some outdoors, and most of the images feature commercial
+drones. The third and last dataset for evaluation, called T2, is
+a test dataset from [10]. The T2 dataset consists of real images
+of the author’s custom UAV taken in different unstructured
+environments. The datasets have different domains, from the
+style of the images to the type of objects and the size of the Fig. 7: Detection results of the baseline S-Eagle-B (red) and our
+objects in the images. The T2 dataset is the most difficult in method S-Eagle-T (green) on images with different textures. While
+terms of detecting small objects, as can be seen in Fig. 6, both detectors accurately detect the original image (a), the proposed
+followed by UAV-Eagle. An additional challenge in the UAV- method performs better than the baseline method on stylized images
+Eagle and T2 datasets are images of UAVs captured from (b,c,d) without texture cues. TP stands for true positive, FP for false
+UAVs, which introduce significant amount of motion blur. positive and FN for false negative detection.
+The T1 and R-UAV datasets, on the other hand, contain larger
+    objects.                                                              tectors are compared on the test dataset T2, which contains
+                                                                          images of a custom UAV that were not in the training data of
+    TABLE II: Evaluation results of detectors YOLOv4 Tiny and Faster      any detector. Using a texture-invariant approach, an increase
+    R-CNN trained on baseline and proposed approach.                      in mAP of 3.71 percentage points for YOLO and 1.07 for
+         Detector    Train dataset UAV-Eagle T1      T2                   Faster R-CNN is observed. This is further confirmation that
+                                                                          our approach improves the performance of the aerial object
+         YOLO          S-Eagle-B  86.84%   30.11%  64.76%                 detector, as it has better generalisation ability and robustness
+                       S-Eagle-T  85.65%   47.16%  68.47%
+         Faster R-CNN  S-Eagle-B  92.28%   65.50%  64.68%                 to small objects on T2       dataset. The larger increase in mAP
+                       S-Eagle-T  89.01%   85.39%  65.75%                 when evaluating on the T1        dataset can be explained by the
+                                                                          larger difference in domain between the T1         and synthetic
+             The evaluation results in terms of the mean Average Preci-   datasets. Thus, the more the ability to generalise is put to the
+    sion (mAP) with an Intersection over Union (IoU) threshold            test, the more evident becomes the influence of shape-based
+    of 0.5 are presented in Table II. On the UAV-Eagle dataset,           representation on the improvement of accuracy.
+    the detectors trained with realistic texture achieve a better         C. Synthetic vs. Real
+    mAP value than the detector trained with random atypical                          For application in UAV monitoring, we have created a
+textures. This is expected since the synthetic model and texture synthetic dataset of 52 500 images with 10 different UAV
+fit the test dataset almost perfectly. In the test dataset T1, models using the proposed procedural pipeline and texture
+however, the detectors trained with a shape-based represen- randomization technique. We named this dataset Synthetic
+tation outperform the baseline by a large margin, by 17 UAVs with Textures (S-UAV-T). Sample images are shown in
+percentage points in mAP for YOLO and 20 percentage points the bottom row of Fig. 5. For the following experiments, the
+for Faster R-CNN. The significant difference indicates that by YOLO detector is utilized since it is suitable for on-board UAV
+guiding detector towards shape-based representation, we have processing. Following the procedure described in subsection
+improved the performance of the aerial object detector, more V-A, the detector is trained on S-UAV-T synthetic dataset and
+specifically its generalisation ability and robustness. The T1 the results are presented in Table III. Although we expected
+dataset is very different in style from the synthetic datasets on to obtain better results with more models, the evaluation on
+which the detectors were trained. For this reason, the baseline test datasets with real images showed the opposite. Overall,
+detector with only one texture experiences a large texture- the detector trained on S-Eagle-T outperforms the one trained
+bias that degrades its generalisation ability, while the S-Eagle- on S-UAV-T, suggesting that a carefully selected model is
+T detector shows improved accuracy on previously unseen sufficient. Other factors that could account for this result are
+UAVs. To confirm that the detector trained on S-Eagle-T gives the higher prevalence of small objects in the S-UAV-T dataset
+more importance to the shape of the UAV, e.g., the frame, and overfitting to synthetic data.
+    propellers, and landing gear, we perform additional tests with                 Just as we addressed the gap between aerial and generic
+    YOLO detector. We eliminate texture cues while preserving             object detection in the previous section, we now apply the
+    the shape of the object from the image using a neural style           fine-tuning technique to close the gap between synthetic and
+    transfer algorithm [29]. While the S-Eagle-B detector struggles       real world. The detectors trained on the S-Eagle-T and S-UAV-
+    without texture cues, the qualitative results in Fig. 7 show that     T datasets are fine-tuned for 20 epochs on real images from
+    the S-Eagle-T detector handles texture variations well.               the R-UAV dataset with decreased learning rate of 0.00161. To
+               In the third evaluation, the S-Eagle-B and S-Eagle-T de-   allow a full comparison of the performance of the proposed ap-
+
+    BARISIC et al.: SIM2AIR - SYNTHETIC AERIAL DATASET FOR UAV MONITORING    7
+
+    TABLE III: Evaluation results of the YOLO detector trained on
+    synthetic data, trained on real data, and trained on synthetic data
+    and then fine-tuned on real data.
+
+     Train dataset  UAV-Eagle    T1      T2
+     S-UAV-T          73.80%   42.41%  68.83%
+     S-UAV-Tf         95.24%  93.86 %  71.54%
+     S-Eagle-Tf       95.90%   91.23%  76.44%
+     R-UAV            90.38%   91.31%  65.73%
+
+
+    proach, YOLO detector was also trained on the R-UAV dataset
+    using only real images. The detection results of the trained
+    detectors are shown in Table III. The fine-tuned datasets,
+    indexed by f , show comparable performance. The S-Eagle-Tf
+    detector performs better on datasets whose domain is custom-
+    made quadcopters, while S-UAV-Tf           detector performs better
+    on T1              dataset that contains more UAV models. Moreover,
+    the results show that both detectors trained on a balanced
+    synthetic datasets, built specifically to include diverse poses
+    of the object under different lighting and backdrop, and fine-
+    tuned on real data, perform better or equally well as the
+    detector trained purely on a collection of images obtained and
+    annotated through tedious work.
+              Apart from the fact that the combination of synthetic and
+    real  data is  better for    all three test  datasets, the  biggest
+    difference is seen in the T2      dataset, where S-Eagle-Tf    out-
+    performs the R-UAV detector by almost 11 percentage points.
+    We conclude that there are two reasons for this. First, as
+    seen in Fig. 6, the T2           dataset is most difficult in terms
+    of small object detection which is why our texture-invariant          Fig. 8: Detection results on images from the T
+    detector performs drastically better. Second, just like UAV-                                                    2 test dataset of the
+        detector trained on purely synthetic data with unrealistic textures
+Eagle, the T2 dataset contains only one type of custom UAV, (green). (a) Example of successful detection of distant object where
+which are not included in the R-UAV dataset and differ in the detector trained purely on real images fails. (b) Example images
+appearance from the commercial and popular UAVs that make of false positive detections caused by similarly shaped objects. (c)
+up the bulk of the R-UAV dataset. Therefore, the generalisa- Detection results of the S-Eagle-B (red) and S-Eagle-T (green)
+tion capability of detector trained on R-UAV is limited. We detectors on a bright overexposed image, a normally illuminated
+        image, and a dark underexposed image.
+strongly believe that these results confirm that introduction of
+texture-randomization through synthetic datasets places higher
+importance on the shape of the UAV, which in turn yields datasets. The quantitative results are presented in Table IV.
+    improved detection results.                                                On both datasets, the proposed method of texture-invariant
+    D. Discussion                                                         object detectors improves the detection under changing illu-
+                                                                          mination by 16 percentage points in mAP on T2 dataset and
+    TABLE IV: Robustness against challenging illumination conditions.     4 percentage points on UAV-Eagle dataset. The qualitative
+    Comparison of the baseline and the proposed method on modified        results can be seen in Fig. 8c. The synthetic texture-invariant
+    T2 and UAV-Eagle test datasets.                                       detector (green bounding box) detects the target object under
+                                                                          all conditions, in the bright overexposed image, in the normal
+     Test dataset    Method        S-Eagle-B         S-Eagle-T            illumination image, and in the underexposed dark image. The
+     UAV-Eagle       Original                    86.84    85.65           detector without our enhancement is only able to detect the
+                     Challenging Illumination    72.35    76.95           object in a normally illuminated image. Improvements are
+     T
+          2          Original                    64.76    68.47
+                     Challenging Illumination    46.02    62.28           also seen in the detection of distant objects, as can be seen
+                                                                          in Fig. 8a, where the S-Eagle-T detector successfully detects
+           In unstructured environments, lighting conditions are uncon-   the object, while the detector trained on R-UAV fails. The
+    trollable and unknown in advance. Due to the movement of              presented results show that the Sim2Air gap can be bridged
+    the target and the camera, varying illumination occurs during         with the proposed approach and that the accuracy of the
+    UAV monitoring. Our approach not only improves the overall            real data can even be surpassed. On the other hand, since
+    performance of aerial object detection, but also improves             the detector trained on S-Eagle-T is more attentive to shape,
+    the detection under varying illumination conditions. To prove         there are situations in which similarly shaped objects lead the
+    this claim, we perform additional tests. We programmatically          detector to false positive detection, as shown in Fig. 8b. This
+    simulate difficult illumination conditions on images from test        problem could be solved by including negative samples of
+
+    8    IEEE ROBOTICS AND AUTOMATION LETTERS. PREPRINT VERSION. ACCEPTED JANUARY 2022
+
+
+shape-like objects in the training dataset. In general, more [10] M. Vrba and M. Saska, “Marker-less micro aerial vehicle detection and
+                         attention will be paid in the future to reduce false positive        localization using convolutional neural networks,”     IEEE Robotics and
+    detections by using techniques such as flying distractors [4].                      [11]  Automation Letters, vol. 5, pp. 2459–2466, Apr. 2020.
+                                                                                              A. Barisic, M. Car, and S. Bogdan, “Vision-based system for a real-
+                                        VI. CONCLUSION                                        time detection and following of UAV,” in 2019 Workshop on Research,
+                                                                                              Education and Development of Unmanned Aerial Systems (RED UAS),
+                          In this paper, a texture-invariant object representation for        pp. 156–159, IEEE, Nov. 2019.
+aerial object detection is presented and evaluated on several [12] A. Yavariabdi, H. Kusetogullari, T. Celik, and H. Cicek, “FastUAV-NET:
+        A multi-UAV detection algorithm for embedded platforms,” Electronics,
+test datasets with real images. A procedural pipeline for [13] vol. 10, p. 724, Mar. 2021.
+                          generating synthetic datasets is developed, implementing the        P. M. Wyder, Y.-S. Chen, A. J. Lasrado, R. J. Pelles, R. Kwiatkowski,
+                                                                                              E. O. A. Comas, R. Kennedy, A. Mangla, Z. Huang, X. Hu, Z. Xiong,
+                         proposed technique of randomly assigning atypical textures to        T. Aharoni, T.-C. Chuang, and H. Lipson, “Autonomous drone hunter
+                        UAV models. The results of the evaluation of the synthetically        operating by deep learning and all-onboard computations in GPS-denied
+generated datasets confirm that shape plays a greater role in [14] environments,” PLOS ONE, vol. 14, p. e0225092, Nov. 2019.
+        Y. Chen, P. Aggarwal, J. Choi, and C.-C. J. Kuo, “A deep learning
+                     aerial object detection. This is due to the imaging conditions of        approach to drone monitoring,” in    2017 Asia-Pacific Signal and Infor-
+                          the aerial perspective in unstructured dynamic environments,        mation Processing Association Annual Summit and Conference (APSIPA
+where the texture of the object is difficult to discern. Quanti- [15] ASC), IEEE, Dec. 2017.
+        C. Aker and S. Kalkan, “Using deep networks for drone detection,”
+                        tative and qualitative results show that the proposed approach        in         2017 14th IEEE International Conference on Advanced Video and
+outperforms baseline and real-world data in situations with [16] Signal Based Surveillance (AVSS), IEEE, Aug. 2017.
+    difficult lighting and distant objects.                                                   M. Denninger, M. Sundermeyer, D. Winkelbauer, D. Olefir, T. Hodan,
+                                                                                              Y. Zidan, M. Elbadrawy, M. Knauer, H. Katam, and A. Lodhi, “Blender-
+                                                                                              Proc: reducing the reality gap with photorealistic rendering,” Robotics:
+                                        ACKNOWLEDGMENT                                  [17]  Science and Systems (RSS) Workshops, 2020.
+                           This work has been supported by European Commission Horizon        J. Peng, C. Zheng, T. Cui, Y. Cheng, and L. Si, “Using images rendered
+                       2020 Programme through project under G. A. number 810321: Twin-        by PBRT to train faster r-CNN for UAV detection,” in WSCG 2018 -
+ning coordination action for spreading excellence in Aerial Robotics [18] Short papers proceedings, pp. 13–18, Z´apadoˇcesk´a univerzita, 2018.
+        L. Liu, W. Ouyang, X. Wang, P. Fieguth, J. Chen, X. Liu, and
+                        - AeRoTwin. Work of Frano Petric was supported by the European        M. Pietik¨ainen, “Deep learning for generic object detection: A survey,”
+    Regional  Development           Fund    under the     grant      KK.01.1.1.01.0009        International Journal of Computer Vision, vol. 128, pp. 261–318, Oct.
+    (DATACROSS).                                                                        [19]  2019.
+                                                                                              A. Barisic, F. Petric, and S. Bogdan, “Brain over Brawn - Using a Stereo
+                                                  REFERENCES                                  Camera to Detect, Track and Intercept a Faster UAV by Reconstructing
+        Its Trajectory,” 2021.
+ [1] R. Hess, Blender Foundations: The Essential Guide to Learning Blender [20] Y. Adini, Y. Moses, and S. Ullman, “Face recognition: the problem of
+          2.6. Focal Press, 2010.                                                             compensating for changes in illumination direction,” IEEE Transactions
+     [2]           F. Nowruzi, P. Kapoor, D. Kolhatkar, F. A. Hassanat, R. Lagani`ere,        on Pattern Analysis and Machine Intelligence, vol. 19, pp. 721–732,
+                      and J. Rebut, “How much real data do we actually need: Analyzing        July 1997.
+     object detection performance using synthetic and real data,” ArXiv, [21] “CGTrader - 3D Models for VR / AR and CG projects.” https://www.
+          vol. abs/1907.07061, 2019.                                                          cgtrader.com/, 2021. Accessed: 2021-09-09.
+ [3] T. Linder, K. Y. Pfeiffer, N. Vaskevicius, R. Schirmer, and K. O. Arras, [22] F. Furrer, M. Burri, M. Achtelik, and R. Siegwart, “RotorS—A Modular
+                 “Accurate detection and 3d localization of humans using a novel YOLO-        Gazebo  MAV Simulator Framework,” in Studies       in      Computational
+                based RGB-d fusion approach and synthetic training data,” in 2020 IEEE        Intelligence, pp. 595–625, Springer International Publishing, 2016.
+     International Conference on Robotics and Automation (ICRA), IEEE, [23] “Polyhaven - The public 3D asset library.” https://polyhaven.com/, 2021.
+          May 2020.                                                                           Accessed: 2021-09-09.
+ [4] J. Tremblay, A. Prakash, D. Acuna, M. Brophy, V. Jampani, C. Anil, [24] J. Redmon, S. Divvala, R. Girshick, and A. Farhadi, “You only look
+                   T. To, E. Cameracci, S. Boochoon, and S. Birchfield, “Training deep        once: Unified, real-time object detection,” in 2016 IEEE Conference on
+          networks with synthetic             data: Bridging the reality gap by domain        Computer Vision and Pattern Recognition (CVPR), IEEE, June 2016.
+     randomization,” in 2018 IEEE/CVF Conference on Computer Vision and [25] A. Bochkovskiy, C.-Y. Wang, and H.-Y. M. Liao, “Yolov4: Optimal
+          Pattern Recognition Workshops (CVPRW), IEEE, June 2018.                             speed and accuracy of object detection,” 2020.
+ [5] J. Tobin, R. Fong, A. Ray, J. Schneider, W. Zaremba, and P. Abbeel, [26] S. Ren, K. He, R. Girshick, and J. Sun, “Faster r-CNN: Towards real-
+                 “Domain randomization for transferring deep neural networks from sim-        time object detection with region proposal networks,” IEEE Transactions
+                 ulation to the real world,” in 2017 IEEE/RSJ International Conference        on Pattern Analysis and Machine Intelligence, vol. 39, pp. 1137–1149,
+          on Intelligent Robots and Systems (IROS), IEEE, Sept. 2017.                         June 2017.
+ [6] R. Geirhos, P. Rubisch, C. Michaelis, M. Bethge, F. Wichmann, [27] Y. Wu, A. Kirillov, F. Massa, W.-Y. Lo, and R. Girshick, “Detectron2.”
+          and W.   Brendel,             “ImageNet-trained CNNs are biased towards tex-        https://github.com/facebookresearch/detectron2, 2019.
+     ture; increasing shape bias improves accuracy and robustness,” ArXiv, [28] T.-Y. Lin, M. Maire, S. Belongie, J. Hays, P. Perona, D. Ramanan,
+          vol. abs/1811.12231, 2019.                                                          P. Doll´ar, and C. L. Zitnick, “Microsoft COCO: Common objects in
+     [7]  E.  Santana  and  G.     Hotz, “Learning a     driving   simulator,”   CoRR,        context,” in          Computer Vision – ECCV 2014, pp. 740–755, Springer
+          vol. abs/1608.01230, 2016.                                                          International Publishing, 2014.
+ [8] S. I. Nikolenko, Synthetic Data for Deep Learning. Springer Interna- [29] K. Kwok, G. Webster, A. Athalye, and L. Engstrom, “Tensor-
+          tional Publishing, 2021.                                                            Fire - blazing-fast in-browser neural networks.” https://tenso.rs/demos/
+     [9]               B. Taha and A. Shoufan, “Machine learning-based drone detection        fast-neural-style/, 2021. Accessed: 2021-20-11.
+          and classification: State-of-the-art in research,”      IEEE Access, vol. 7,
+          pp. 138669–138682, 2019.

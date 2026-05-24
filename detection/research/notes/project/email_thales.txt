@@ -1,0 +1,65 @@
+To:  Timothée Gavin <timothee.gavin@thalesgroup.com>
+Cc:  Simon Lacroix <simon.lacroix@laas.fr>; Murat Bronz <murat.bronz@enac.fr>
+Subject:  Question on observation modality in your competitive RL interception work
+
+Dear Mr. Gavin, Dr. Lacroix, and Dr. Bronz,
+
+I have been reading your AMIAD 2025 paper, "Agile Interception of a
+Flying Target using Competitive Reinforcement Learning"
+(hal-05554100), and have a question I hope you might be willing to
+discuss.
+
+The competitive PPO formulation with co-evolved pursuer and evader at
+low-level control, the JAX simulator, and the indoor flight
+demonstration are all very compelling. The limitations section
+explicitly notes that perception was assumed perfect (mocap-based
+opponent state) and that "robust perception of the target in
+high-velocity flights and state estimation are required but were not
+addressed." That is precisely the gap I am trying to think through,
+and I would value your perspective on two points.
+
+The first is whether you have looked at the line of work coming out of
+Beihang and NWPU on monocular bearing-only interception -- in
+particular, Yang et al., "High-Speed Interception Multicopter Control
+by Image-based Visual Servoing" (arXiv:2404.08296, IEEE TCST 2025), and
+Yan et al., "Precise Interception Flight Targets by Image-based Visual
+Servoing of Multicopter" (arXiv:2409.17497, IEEE TIE 2025). They use
+an analytical IBVS+PNG controller with a delayed Kalman filter,
+running on the target's image-plane (u, v) coordinates plus IMU; their
+observability arguments suggest bearing alone carries sufficient
+information for interception, and they demonstrate real-world flights
+with reasonable success. Your work and theirs feel complementary --
+their controller side is much less expressive than yours, and your
+perception side is fully assumed away by mocap.
+
+The second is whether you have considered formulating the pursuer's
+opponent observation in the image plane -- e.g., bbox-style (cx, cy,
+w, h) plus history or a recurrent policy -- rather than as
+ground-truth 3D relative position and velocity. The appeal would be
+that the pursuer would not need a 3D state estimator at deployment;
+the perception system would only need to provide the same kind of 2D
+detection that Yang/Yan rely on, and the policy could be trained
+against bbox-noise distributions measured from a real CNN detector.
+Concretely, I have been wondering:
+
+1.  Did you consider 2D image-plane observations during early
+    formulation, and if so, why did you settle on 3D relative state?
+2.  Do you see obstacles (sample efficiency, partial observability,
+    representation capacity) that would make the 2D formulation
+    significantly harder to train than the 3D one in your JAX setup?
+3.  Are there ongoing or planned follow-ups in your group along the
+    perception-in-the-loop direction, ideally using a learned detector
+    rather than mocap?
+
+I am drafting a research proposal that combines a synthetic-data-
+trained drone detector (in the spirit of Sim2Air and SynDroneVision)
+with a competitive RL controller in your style, and I would prefer
+not to misrepresent the state of the art or duplicate work already in
+your pipeline. Any pointers would be very much appreciated, and I am
+happy to share what I learn.
+
+Thank you for your time, and congratulations on the very nice results.
+
+Best regards,
+John Peng
+Autonomous Interception Drone Hobbyist

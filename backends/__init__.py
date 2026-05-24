@@ -16,7 +16,17 @@ from .csim.bindings.types import (
     TargetState,
 )
 from .csim.generator import PregeneratedSimGenerator, SimGenerator, read_sim_instances, write_sim_instances
-from .rotorpy import RotorPyDroneBackend, RotorPyMultirotorPlant
+
+
+def __getattr__(name: str):
+    if name in {"RotorPyDroneBackend", "RotorPyMultirotorPlant"}:
+        from .rotorpy import RotorPyDroneBackend, RotorPyMultirotorPlant
+
+        return {
+            "RotorPyDroneBackend": RotorPyDroneBackend,
+            "RotorPyMultirotorPlant": RotorPyMultirotorPlant,
+        }[name]
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 __all__ = [
     "CameraConfig",

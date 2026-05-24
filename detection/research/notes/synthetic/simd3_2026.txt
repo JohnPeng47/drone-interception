@@ -1,0 +1,72 @@
+# SimD3 — Pandat et al. 2026
+
+CoSys-AirSim + Unreal Engine 5 dataset (178,639 images). Distinguishing contributions
+over Sim2Air / SynDroneVision: explicit payload modeling on drones, multiple bird species
+as both labeled distractors and unannotated VFX clutter, adverse weather (fog/snow/rain),
+and a 360° six-camera rig.
+
+```diagram
+┌─ PIPELINE (CoSys-AirSim + UE5) ────────────────────────────────────────────────┐
+│                                                                                 │
+│   DRONE MODELS (15)            BIRDS                  ENVIRONMENTS              │
+│   ───────────────              ───────                ───────────────           │
+│   - 8 with payloads:           - 8 species            - City Park               │
+│      bags, boxes, guns         - placed at varied     - City Creator            │
+│      (security-relevant)         range/altitude       - Downtown                │
+│   - 7 payload-free baseline    - flapping/gliding/    - Dynamic City            │
+│   - mix of quad/hexa/octo        banking animation    - Rural Australia         │
+│                                - Niagara VFX flocks   - Bridge                  │
+│                                  (unannotated)        - Wild West Town          │
+│                                                                                 │
+│   CAMERA RIG: 6× synced virtual cameras, 60° HFoV each, 360° azimuth coverage   │
+│                                                                                 │
+│   FLIGHT PATHS: predefined circular + spiral, varying radius/altitude/speed     │
+│                                                                                 │
+└─────────────────────────────────────────────────────────────────────────────────┘
+
+┌─ DATASET COMPOSITION ──────────────────────────────────────────────────────────┐
+│   Total: 178,639 images                                                         │
+│   Subsets:                                                                      │
+│     - Non-VFX:    drones + labeled birds  (clean discrimination supervision)    │
+│     - VFX:        drones only labeled, bird flock VFX as background motion      │
+│     - Adverse:    fog, snow, rain  (intensity sweep, mild → extreme)            │
+│   Resolution: 1920×1080                                                         │
+│                                                                                 │
+│   Annotation: AirSim segmentation API → connected components → tight bbox       │
+│   on visible extent of each instance. Pixel-accurate, automatic, occlusion-     │
+│   aware (only labels what is actually visible — unlike full-mesh-projection).   │
+└─────────────────────────────────────────────────────────────────────────────────┘
+
+┌─ KEY DESIGN POINTS WE ADOPT ───────────────────────────────────────────────────┐
+│   - Tight bbox on VISIBLE extent (not full-mesh hull). Same as Symeonidis;      │
+│     SimD3 does it via segmentation API rather than vertex visibility test, but  │
+│     the semantic is the same: avoid bbox label noise from occluded regions.     │
+│   - Sub-pixel-target convention: clamp to ≥1 px, emit target_size_px metadata.  │
+│     Lets a downstream curriculum stratify by range.                             │
+│   - Predefined circular/spiral flight paths: weak version of trajectory         │
+│     conditioning. Our pipeline goes further — paths come from a closed-loop     │
+│     interception sim with an active evader.                                     │
+└─────────────────────────────────────────────────────────────────────────────────┘
+
+┌─ KEY DESIGN POINTS WE DO *NOT* ADOPT (FOR PHASE 1) ────────────────────────────┐
+│   - Payload distractors: Phase 2 controller is robust to payload appearance     │
+│     variation by design (consumes bbox, not classification). Skip the cost.     │
+│   - Bird distractors / Niagara VFX: Phase 1 failure mode of interest is         │
+│     bbox jitter / drops on the target, not bird-vs-drone discrimination.        │
+│     Defer to Phase 1.5 if false-positive rate becomes the binding metric.       │
+│   - Adverse weather: deployment is fair-weather indoor/outdoor. Don't pay the   │
+│     rendering cost.                                                             │
+│   - Six-camera rig: pursuer has one forward-facing camera. Synthesize ONE       │
+│     camera at the pursuer pose, not six.                                        │
+└─────────────────────────────────────────────────────────────────────────────────┘
+
+┌─ COMPARISON TABLE (paper, Table I) ────────────────────────────────────────────┐
+│                            Images   Multi-Drone  Birds      Payload  Weather   │
+│   S-UAV-T (Sim2Air)        52,500   yes          no         no       no        │
+│   SynDroneVision           140,038  yes          no         no       no        │
+│   SimD3 (this paper)       178,639  yes          labeled    yes      yes       │
+│                                                                                 │
+│   None of these condition on a closed-loop pursuer trajectory. All use random   │
+│   waypoints, predefined orbits, or stationary surveillance cameras.             │
+└─────────────────────────────────────────────────────────────────────────────────┘
+```

@@ -32,8 +32,14 @@ DEFAULT_ROBUST_INTERCEPT_CONFIG: dict[str, Any] = {
     "sampling": {
         "strategy": "sobol",
         "seed": 1,
-        "n_samples": 1000,
+        "n_samples": 7200,
         "scramble": True,
+        "active_parameters": [
+            "camera_azimuth_deg",
+            "camera_elevation_deg",
+            "camera_u_fraction",
+            "camera_v_fraction",
+        ],
     },
     "scenario": {
         "target_origin_w": [0.0, 0.0, 3.0],
@@ -69,8 +75,8 @@ DEFAULT_ROBUST_INTERCEPT_CONFIG: dict[str, Any] = {
     },
     "parameters": {
         "range_m": {"min": 8.0, "max": 8.0, "distribution": "uniform"},
-        "los_azimuth_deg": {"min": 0.0, "max": 360.0, "distribution": "uniform"},
-        "los_elevation_deg": {"min": -90.0, "max": 90.0, "distribution": "uniform_sin"},
+        "camera_azimuth_deg": {"min": 0.0, "max": 360.0, "distribution": "uniform"},
+        "camera_elevation_deg": {"min": -90.0, "max": 90.0, "distribution": "uniform_sin"},
         "camera_u_fraction": {"min": -0.9, "max": 0.9, "distribution": "uniform"},
         "camera_v_fraction": {"min": -0.9, "max": 0.9, "distribution": "uniform"},
         "camera_roll_deg": {"min": 0.0, "max": 0.0, "distribution": "uniform"},
@@ -87,27 +93,9 @@ DEFAULT_ROBUST_INTERCEPT_CONFIG: dict[str, Any] = {
         "wind_direction_rad": {"min": 0.0, "max": 0.0, "distribution": "uniform"},
         "wind_vertical_mps": {"min": 0.0, "max": 0.0, "distribution": "uniform"},
     },
-    "strata": {
-        "geometry": {
-            "weight": 0.80,
-            "active_parameters": [
-                "los_azimuth_deg",
-                "los_elevation_deg",
-                "camera_u_fraction",
-                "camera_v_fraction",
-            ],
-        },
-        "kinematic": {
-            "weight": 0.20,
-            "active_parameters": [
-                "range_m",
-                "closing_speed_mps",
-            ],
-            "parameters": {
-                "range_m": {"min": 5.0, "max": 20.0, "distribution": "log_uniform"},
-                "closing_speed_mps": {"min": 0.5, "max": 8.0, "distribution": "uniform"},
-            },
-        },
+    "grid": {
+        "range_m": [5.0, 8.0, 20.0],
+        "closing_speed_mps": [0.5, 2.0, 8.0],
     },
 }
 
@@ -176,8 +164,11 @@ def generate_sample_records(config: dict[str, Any]) -> list[dict[str, Any]]:
 
 
 def evaluate_samples(config: dict[str, Any]) -> list[SampleEvaluation]:
+    return list(iter_sample_evaluations(config))
+
+
+def iter_sample_evaluations(config: dict[str, Any]):
     generator = RobustInterceptConfigGenerator(config)
-    evaluations: list[SampleEvaluation] = []
     for point in generator._sample_points:
         instance = _resolve_instance(generator.config, point)
         valid = True
@@ -188,15 +179,12 @@ def evaluate_samples(config: dict[str, Any]) -> list[SampleEvaluation]:
             valid = False
             validation_error = str(exc)
         record = _sample_record(generator.config, point, valid=valid, validation_error=validation_error)
-        evaluations.append(
-            SampleEvaluation(
-                instance=instance,
-                record=record,
-                valid=valid,
-                validation_error=validation_error,
-            )
+        yield SampleEvaluation(
+            instance=instance,
+            record=record,
+            valid=valid,
+            validation_error=validation_error,
         )
-    return evaluations
 
 
 def plot_sample_records(records_by_strategy: dict[str, list[dict[str, Any]]], out_dir: str | Path) -> list[Path]:
@@ -288,6 +276,10 @@ def _build_sample_points(config: dict[str, Any], parameters: tuple[str, ...]) ->
     seed_start = int(sampling.get("seed", 1))
     n_samples = int(sampling["n_samples"])
     strategy = str(sampling.get("strategy", "sobol")).lower()
+    grid = config.get("grid") or {}
+    if grid:
+        return _build_grid_sample_points(config, parameters, grid, n_samples, seed_start, strategy)
+
     strata = config.get("strata") or {"default": {"weight": 1.0, "parameters": {}}}
     quotas = _stratum_quotas(strata, n_samples)
     points: list[_SamplePoint] = []
@@ -330,12 +322,67 @@ def _build_sample_points(config: dict[str, Any], parameters: tuple[str, ...]) ->
     return points
 
 
+def _build_grid_sample_points(
+    config: dict[str, Any],
+    parameters: tuple[str, ...],
+    grid: dict[str, list[float]],
+    n_samples: int,
+    seed_start: int,
+    strategy: str,
+) -> list[_SamplePoint]:
+    sampling = config["sampling"]
+    active_parameters = tuple(sampling.get("active_parameters", parameters))
+    active_indexes = {name: index for index, name in enumerate(active_parameters)}
+    cells = _grid_cells(grid)
+    quotas = _stratum_quotas({name: {"weight": 1.0} for name, _values in cells}, n_samples)
+    specs = _merged_parameter_specs(config["parameters"], {})
+    points: list[_SamplePoint] = []
+    cursor = 0
+    for (cell_name, grid_values), (_quota_name, count) in zip(cells, quotas):
+        if count <= 0:
+            continue
+        cube = _unit_cube(strategy, count, len(active_parameters), seed_start + cursor, bool(sampling.get("scramble", True)))
+        for local_index, unit_values in enumerate(cube):
+            values = {
+                name: _transform_parameter(
+                    float(unit_values[active_indexes[name]]) if name in active_indexes else 0.5,
+                    specs[name],
+                )
+                for name in parameters
+            }
+            for name, value in grid_values.items():
+                values[name] = float(value)
+            points.append(
+                _SamplePoint(
+                    index=cursor + local_index,
+                    seed=seed_start + cursor + local_index,
+                    stratum=cell_name,
+                    values=values,
+                )
+            )
+        cursor += count
+    return points
+
+
 def _resolve_instance(config: dict[str, Any], point: _SamplePoint) -> SimInstance:
     values = point.values
     camera_cfg = config["camera"]
     scenario = config["scenario"]
 
-    los_w = _unit(_spherical_deg(values["los_azimuth_deg"], values["los_elevation_deg"]))
+    body_to_camera = np.asarray(camera_cfg.get("body_to_camera", np.eye(3)), dtype=float).reshape(3, 3)
+    target_dir_c = _camera_ray_from_fov_fraction(camera_cfg, values)
+    if "camera_azimuth_deg" in values and "camera_elevation_deg" in values:
+        camera_forward_w = _unit(_spherical_deg(values["camera_azimuth_deg"], values["camera_elevation_deg"]))
+        rotation_wc = _camera_rotation_from_forward(camera_forward_w)
+        los_w = _unit(rotation_wc @ target_dir_c)
+        rotation_wb = Rotation.from_matrix(rotation_wc @ body_to_camera)
+    else:
+        los_w = _unit(_spherical_deg(values["los_azimuth_deg"], values["los_elevation_deg"]))
+        target_dir_b = _unit(body_to_camera.T @ target_dir_c)
+        rotation_wb = Rotation.align_vectors([los_w], [target_dir_b])[0]
+        if abs(values["camera_roll_deg"]) > 1e-12:
+            rotation_wb = Rotation.from_rotvec(math.radians(values["camera_roll_deg"]) * los_w) * rotation_wb
+
     target_position_w = _array(scenario["target_origin_w"], length=3)
     pursuer_position_w = target_position_w - float(values["range_m"]) * los_w
 
@@ -345,19 +392,6 @@ def _resolve_instance(config: dict[str, Any], point: _SamplePoint) -> SimInstanc
     target_dir_w = _spherical_rad(values["target_azimuth_rad"], math.radians(values["target_elevation_deg"]))
     target_velocity_w = values["target_speed_mps"] * target_dir_w
     pursuer_velocity_w = target_velocity_w + relative_velocity_w
-
-    body_to_camera = np.asarray(camera_cfg.get("body_to_camera", np.eye(3)), dtype=float).reshape(3, 3)
-    h_limit = math.tan(math.radians(float(camera_cfg["hfov_deg"])) / 2.0)
-    v_limit = math.tan(math.radians(float(camera_cfg["vfov_deg"])) / 2.0)
-    target_dir_c = _unit(np.array([
-        1.0,
-        float(values["camera_u_fraction"]) * h_limit,
-        float(values["camera_v_fraction"]) * v_limit,
-    ]))
-    target_dir_b = _unit(body_to_camera.T @ target_dir_c)
-    rotation_wb = Rotation.align_vectors([los_w], [target_dir_b])[0]
-    if abs(values["camera_roll_deg"]) > 1e-12:
-        rotation_wb = Rotation.from_rotvec(math.radians(values["camera_roll_deg"]) * los_w) * rotation_wb
 
     wind_w = np.array([
         values["wind_horizontal_speed_mps"] * math.cos(values["wind_direction_rad"]),
@@ -399,6 +433,7 @@ def _sample_record(
     valid: bool | None = None,
     validation_error: str | None = None,
 ) -> dict[str, Any]:
+    derived_values = _derived_record_values(config, point.values)
     return {
         "scenario": "robust_intercept",
         "strategy": str(config["sampling"].get("strategy", "sobol")).lower(),
@@ -408,7 +443,66 @@ def _sample_record(
         **({} if valid is None else {"valid": bool(valid)}),
         **({} if validation_error is None else {"validation_error": validation_error}),
         **{name: float(value) for name, value in point.values.items()},
+        **derived_values,
     }
+
+
+def _grid_cells(grid: dict[str, list[float]]) -> list[tuple[str, dict[str, float]]]:
+    names = list(grid.keys())
+    cells: list[tuple[str, dict[str, float]]] = []
+
+    def visit(index: int, values: dict[str, float]) -> None:
+        if index == len(names):
+            label = "_".join(f"{name}_{_format_grid_value(values[name])}" for name in names)
+            cells.append((label, dict(values)))
+            return
+        name = names[index]
+        for value in grid[name]:
+            values[name] = float(value)
+            visit(index + 1, values)
+
+    visit(0, {})
+    return cells
+
+
+def _format_grid_value(value: float) -> str:
+    text = f"{float(value):g}"
+    return text.replace("-", "neg").replace(".", "p")
+
+
+def _derived_record_values(config: dict[str, Any], values: dict[str, float]) -> dict[str, float]:
+    if "camera_azimuth_deg" not in values or "camera_elevation_deg" not in values:
+        return {}
+    camera_cfg = config["camera"]
+    target_dir_c = _camera_ray_from_fov_fraction(camera_cfg, values)
+    camera_forward_w = _unit(_spherical_deg(values["camera_azimuth_deg"], values["camera_elevation_deg"]))
+    rotation_wc = _camera_rotation_from_forward(camera_forward_w)
+    los_w = _unit(rotation_wc @ target_dir_c)
+    los_azimuth_deg, los_elevation_deg = _azimuth_elevation_deg(los_w)
+    return {
+        "los_azimuth_deg": los_azimuth_deg,
+        "los_elevation_deg": los_elevation_deg,
+    }
+
+
+def _camera_ray_from_fov_fraction(camera: dict[str, Any], values: dict[str, float]) -> np.ndarray:
+    h_limit = math.tan(math.radians(float(camera["hfov_deg"])) / 2.0)
+    v_limit = math.tan(math.radians(float(camera["vfov_deg"])) / 2.0)
+    return _unit(np.array([
+        1.0,
+        float(values["camera_u_fraction"]) * h_limit,
+        float(values["camera_v_fraction"]) * v_limit,
+    ]))
+
+
+def _camera_rotation_from_forward(forward_w: np.ndarray) -> np.ndarray:
+    x_w = _unit(forward_w)
+    up_w = np.array([0.0, 0.0, 1.0], dtype=float)
+    if abs(float(np.dot(x_w, up_w))) > 0.98:
+        up_w = np.array([0.0, 1.0, 0.0], dtype=float)
+    y_w = _unit(np.cross(up_w, x_w))
+    z_w = _unit(np.cross(x_w, y_w))
+    return np.column_stack((x_w, y_w, z_w))
 
 
 def _sim_config(config: dict[str, Any]) -> SimConfig:
@@ -590,6 +684,15 @@ def _spherical_rad(azimuth_rad: float, elevation_rad: float) -> np.ndarray:
     ], dtype=float)
 
 
+def _azimuth_elevation_deg(direction: np.ndarray) -> tuple[float, float]:
+    unit = _unit(direction)
+    azimuth = math.degrees(math.atan2(float(unit[1]), float(unit[0])))
+    if azimuth < 0.0:
+        azimuth += 360.0
+    elevation = math.degrees(math.asin(np.clip(float(unit[2]), -1.0, 1.0)))
+    return azimuth, elevation
+
+
 def _orthonormal_perpendicular_basis(direction: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
     axis = np.array([0.0, 0.0, 1.0], dtype=float)
     if abs(float(np.dot(_unit(direction), axis))) > 0.95:
@@ -634,6 +737,8 @@ def _main() -> None:
     parser.add_argument("--n-samples", type=int, default=None)
     parser.add_argument("--strategies", default="sobol,latin,uniform")
     parser.add_argument("--write-default-config", type=Path, default=None)
+    parser.add_argument("--skip-records", action="store_true")
+    parser.add_argument("--skip-plots", action="store_true")
     args = parser.parse_args()
 
     if args.write_default_config is not None:
@@ -647,19 +752,47 @@ def _main() -> None:
     out_dir.mkdir(parents=True, exist_ok=True)
 
     records_by_strategy: dict[str, list[dict[str, Any]]] = {}
+    summary: dict[str, Any] = {"out_dir": str(out_dir), "strategies": {}}
     for strategy in [item.strip() for item in args.strategies.split(",") if item.strip()]:
         config = _deep_merge(base_config, {"sampling": {"strategy": strategy}})
-        evaluations = evaluate_samples(config)
-        instances = [evaluation.instance for evaluation in evaluations if evaluation.valid]
-        records = [evaluation.record for evaluation in evaluations]
-        records_by_strategy[strategy] = records
-        write_sim_instances(out_dir / f"{strategy}_samples.csimin", instances)
-        (out_dir / f"{strategy}_sample_records.json").write_text(
-            json.dumps(records, indent=2, sort_keys=True) + "\n",
-            encoding="utf-8",
-        )
-    written = plot_sample_records(records_by_strategy, out_dir)
-    print(json.dumps({"out_dir": str(out_dir), "pngs": [str(path) for path in written]}, indent=2))
+        records: list[dict[str, Any]] = []
+        total_count = 0
+        valid_count = 0
+        invalid_count = 0
+
+        def valid_instances():
+            nonlocal total_count, valid_count, invalid_count, records
+            for evaluation in iter_sample_evaluations(config):
+                total_count += 1
+                if evaluation.valid:
+                    valid_count += 1
+                    yield evaluation.instance
+                else:
+                    invalid_count += 1
+                if not args.skip_records or not args.skip_plots:
+                    records.append(evaluation.record)
+
+        write_sim_instances(out_dir / f"{strategy}_samples.csimin", valid_instances())
+        if not args.skip_records:
+            (out_dir / f"{strategy}_sample_records.json").write_text(
+                json.dumps(records, indent=2, sort_keys=True) + "\n",
+                encoding="utf-8",
+            )
+        if not args.skip_plots:
+            records_by_strategy[strategy] = records
+        summary["strategies"][strategy] = {
+            "total": total_count,
+            "valid": valid_count,
+            "invalid": invalid_count,
+            "samples": str(out_dir / f"{strategy}_samples.csimin"),
+        }
+        if not args.skip_records:
+            summary["strategies"][strategy]["records"] = str(out_dir / f"{strategy}_sample_records.json")
+
+    if not args.skip_plots:
+        written = plot_sample_records(records_by_strategy, out_dir)
+        summary["pngs"] = [str(path) for path in written]
+    print(json.dumps(summary, indent=2))
 
 
 if __name__ == "__main__":

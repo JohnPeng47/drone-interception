@@ -1,0 +1,70 @@
+# SynDroneVision — Lenhard et al. 2024 (WACV 2025)
+
+Large synthetic dataset (~131k img, 8 environments, 13 drone models) generated via
+Colosseum + Unreal Engine 5 + Lumen. Targets ground-based surveillance perspective,
+not UAV-to-UAV. Demonstrates that synthetic data can either replace or massively
+enrich real-world drone-detection training.
+
+```diagram
+┌─ PIPELINE (Colosseum + UE 5.0) ────────────────────────────────────────────────┐
+│                                                                                 │
+│   ENVIRONMENTS (8)        ILLUMINATION              CAMERA RIG                  │
+│   ───────────────         ───────────────           ───────────────             │
+│   - University Site       Lumen (dyn. global illum) - stationary virtual cams   │
+│   - Venetian City         Sun & Sky Actor           - 4-13 cams per env         │
+│   - Farming Grounds       Post Process Volume       - waypoints randomized      │
+│   - Rural Australia         (color/contrast/bloom)    within ≤30 m of cam       │
+│   - City Park             dawn → dusk → overcast    - drone flies in FoV        │
+│   - Factory Grounds                                                             │
+│   - Urban Downtown        DRONE MODELS (13)          → 72 image sequences       │
+│   - Modular Cityscape     - Quadcopter Pack                                     │
+│                           - Drone Pack                                          │
+│                           - Military Drone Pack                                 │
+│                           (DJI Phantom, Tello, ...)                             │
+│                                                                                 │
+└─────────────────────────────────────────────────────────────────────────────────┘
+
+┌─ DATASET COMPOSITION (Table 2, in-paper) ──────────────────────────────────────┐
+│   Total annotated:  131,307  (or 140,038 with blurred copies)                   │
+│   train             119,307                                                     │
+│   val                 8,000                                                     │
+│   test                4,000                                                     │
+│   Background-only:    ~7%   (no drone present — important for false-pos rate)   │
+│   Resolution:    2560×1489                                                      │
+│   Object area ratio:  0.001 → 1.0  (heavy small-object weight; avg ~0.32)       │
+└─────────────────────────────────────────────────────────────────────────────────┘
+
+┌─ POST-CAPTURE BLUR AUGMENTATION ───────────────────────────────────────────────┐
+│   Applied to a random ~10% of train/val (additive — keeps the originals)       │
+│   Kernel choice (random, per-image):                                            │
+│     - Average kernel  K(i,j) = 1/(MN)                                           │
+│     - Gaussian kernel K(i,j) = (1/2πσ²) · exp(-((i-m)² + (j-n)²)/2σ²)           │
+│   Square kernels with M = N ∈ {13, 15, 17, 19, 21}                              │
+│   Replication padding at boundaries.                                            │
+│                                                                                 │
+│   This is the recipe we adopt verbatim in pipeline Stage 5.                     │
+└─────────────────────────────────────────────────────────────────────────────────┘
+
+┌─ KEY RESULT: HYBRID > REAL ALONE ──────────────────────────────────────────────┐
+│   YOLOv9e on DUT Anti-UAV test set:                                             │
+│                                                                                 │
+│                         mAP@0.5  mAP@.5-.95  FNR     FDR                        │
+│   real only             0.915    0.643       0.149   0.042                      │
+│   real + SynDroneVision 0.955    0.723       0.095   0.009  ← +4pp / +8pp       │
+│                                                                                 │
+│   And on out-of-distribution UAV-Eagle, model trained ONLY on SynDroneVision    │
+│   gets within 0.01 mAP of the model trained on DUT Anti-UAV — pure synthetic    │
+│   generalizes.                                                                  │
+└─────────────────────────────────────────────────────────────────────────────────┘
+
+┌─ WHAT WE TAKE INTO THE PIPELINE ───────────────────────────────────────────────┐
+│   - HDRI/realistic-lighting design choice  (we replicate via Cycles+HDRI)       │
+│   - Post-capture stochastic-kernel blur, M ∈ {13..21}                           │
+│   - 7% background-only frames in the training mix                               │
+│   - Per-image randomization of blur (not global)                                │
+│ WHAT WE CHANGE                                                                  │
+│   - Camera position: stationary surveillance  →  on-board pursuer drone         │
+│   - Trajectory: drone-flies-in-FoV  →  trajectory generated by interception sim │
+│   - Engine: UE5/Lumen  →  Blender/Cycles (we have the Sim2Air pipeline)         │
+└─────────────────────────────────────────────────────────────────────────────────┘
+```

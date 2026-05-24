@@ -1,0 +1,106 @@
+# Symeonidis et al. 2021 — Realistic Data Generation Framework (humans, generalizable)
+
+Originally for human-centric perception (person detection / pose / face recognition).
+We borrow ONE technique: the projected-vertex automatic annotation method, which is
+generic to any 3D object — drones included.
+
+```diagram
+┌─ THE BBOX TECHNIQUE WE BORROW ─────────────────────────────────────────────────┐
+│                                                                                 │
+│   For each rendered frame:                                                      │
+│     1. For each vertex v_i of the placed 3D model                               │
+│     2. Project v_i through the camera intrinsics → image-plane (u_i, v_i)       │
+│     3. Test visibility of v_i: cast a ray from v_i toward the camera origin     │
+│        and check whether anything occludes it (use Z-buffer or BVH ray test)    │
+│     4. bbox = axis-aligned hull of {(u_i, v_i) : v_i is visible}                │
+│                                                                                 │
+│   KEY POINT: only project VISIBLE vertices. Naive bbox = hull of ALL projected  │
+│   vertices is too large when self-occlusion or scene-occlusion happens — the    │
+│   resulting label disagrees with what the network can actually see.             │
+│                                                                                 │
+│   The paper's Section 3.2 (line 320–325) notes that pose-estimation joint       │
+│   annotations and bounding boxes are computed by the same projection method.    │
+└─────────────────────────────────────────────────────────────────────────────────┘
+
+┌─ GEOMETRY (side view, camera elevated, looking down at drone) ─────────────────┐
+│                                                                                 │
+│      ◉  camera                                                                  │
+│       ╲                                                                         │
+│        ╲                                                                        │
+│         ╲ ─ ray ─ ─ ─ ─ ─ ─ ─ ─→  v_top●━━━━━━━━━━● v_top   ← top deck         │
+│          ╲                              ┃          ┃           (VISIBLE)        │
+│           ╲                             ┃ ████████ ┃                            │
+│            ╲                            ┃ █ HUB ██ ┃ ← opaque body              │
+│             ╲ ─ ray ─ ─ ─ ─ ─ ─→ ╳     ┃ ████████ ┃                            │
+│              ╲                    ╳    ┃          ┃                             │
+│               ╲              blocked   ┃          ┃                             │
+│                ╲                                                                │
+│                 ╲                v_skid ●━━━━━━━━━━● v_skid   ← landing skids   │
+│                                                                  (OCCLUDED)     │
+│                                                                                 │
+│   v_skid sits below v_top in 3D, but the body hub blocks the line-of-sight      │
+│   from the elevated camera. Naive (full-mesh) bbox extends down to v_skid;      │
+│   visible-vertex bbox stops at the silhouette.                                  │
+│                                                                                 │
+│   per vertex v_i:                                                               │
+│       cast ray v_i → camera_origin                                              │
+│       first hit is camera   → v_i visible                                       │
+│       first hit is mesh     → v_i occluded                                      │
+└─────────────────────────────────────────────────────────────────────────────────┘
+
+┌─ IMAGE-PLANE BBOX (same frame, two annotation strategies) ─────────────────────┐
+│                                                                                 │
+│   NAIVE — hull of ALL projected vertices                                        │
+│                                                                                 │
+│         ┌───────────────────────────┐                                           │
+│         │  ●v_top              ●v_top│  ← actual visible silhouette             │
+│         │  ███████████████████████  │                                           │
+│         │  ████████ HUB ██████████  │                                           │
+│         │  ███████████████████████  │                                           │
+│         │                            │  ← bbox extends INTO sky pixels          │
+│         │  ●v_skid           ●v_skid │     (skids project here, but the body    │
+│         └───────────────────────────┘      occludes them — not actually drawn)  │
+│                                                                                 │
+│   VISIBLE-VERTEX — hull of {v_top, v_top} only (Symeonidis recipe)              │
+│                                                                                 │
+│         ┌───────────────────────────┐                                           │
+│         │  ●v_top              ●v_top│                                          │
+│         │  ███████████████████████  │  ← bbox tight to silhouette               │
+│         │  ████████ HUB ██████████  │     no sky pixels labeled as drone        │
+│         │  ███████████████████████  │                                           │
+│         └───────────────────────────┘                                           │
+│                                                                                 │
+└─────────────────────────────────────────────────────────────────────────────────┘
+
+┌─ WHY IT MATTERS FOR DRONES SPECIFICALLY ───────────────────────────────────────┐
+│                                                                                 │
+│   At oblique viewing angles a quadcopter self-occludes:                         │
+│     - one arm hides another                                                     │
+│     - propeller hub hides the body underneath                                   │
+│     - landing gear extends below the visible silhouette                         │
+│                                                                                 │
+│   Naive bbox (full mesh hull) labels regions that have no drone pixels.         │
+│   The detector learns to predict "drone" for sky-only patches near the drone.   │
+│   Visible-vertex bbox eliminates this — the label tracks the silhouette.        │
+│                                                                                 │
+│   Equivalent in effect to SimD3's approach (segmentation-API connected          │
+│   components → bbox of visible region), just implemented via vertex visibility  │
+│   test instead of pixel-mask connected components. We use vertex-test in        │
+│   Blender because Cycles doesn't expose a per-instance segmentation buffer      │
+│   as cleanly as Unreal's Niagara does.                                          │
+└─────────────────────────────────────────────────────────────────────────────────┘
+
+┌─ ADDITIONAL METADATA WE EMIT (extension beyond Symeonidis) ────────────────────┐
+│                                                                                 │
+│   Per-frame:                                                                    │
+│     - bbox (visible-vertex hull)                                                │
+│     - target_size_px = max(bbox_w, bbox_h)        ← for curriculum stratifying  │
+│     - occlusion_fraction = 1 - |visible verts| / |total verts|                  │
+│     - range_m   (from 3D pose, not from bbox — exact)                           │
+│     - relative_attitude_quat                                                    │
+│                                                                                 │
+│   The Phase 2 RL controller consumes (bbox, target_size_px, occlusion_frac)     │
+│   plus the IMU. The metadata exists at training time and disappears at          │
+│   deployment.                                                                   │
+└─────────────────────────────────────────────────────────────────────────────────┘
+```

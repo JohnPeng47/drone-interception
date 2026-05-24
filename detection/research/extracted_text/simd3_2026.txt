@@ -1,0 +1,726 @@
+arXiv:2601.14742v1 [cs.CV] 21 Jan 2026
+
+
+
+
+
+
+
+
+
+
+    SimD3:Simulated Drone Detection Dataset
+
+                   SimD3: A Synthetic drone Dataset with Payload
+                 and Bird Distractor Modeling for Robust Detection
+
+Ami Pandat1, Kanyala Muvva2, Punna Rajasekhar2, Gopika Vinod1,2, and Rohit Shukla1,2
+                   1Homi Bhabha National Institute, Mumbai, India
+                   2Bhabha Atomic Research Centre, Mumbai, India
+
+
+    Abstract—Reliable drone detection is challenging due to limited        In practice, collecting large-scale real-world datasets for
+annotated real-world data, large appearance variability, and the drone detection is challenging. Data acquisition is often time-
+presence of visually similar distractors such as birds. To address consuming and expensive, and it may be constrained by
+these challenges, this paper introduces SimD3, a large-scale high-
+fidelity synthetic dataset designed for robust drone detection in factors such as weather conditions, restricted airspace, safety
+complex aerial environments. Unlike existing synthetic drone regulations, and limited access to controlled flight scenarios
+datasets, SimD3 explicitly models drones with heterogeneous [4]. These challenges have motivated the increasing use of
+payloads, incorporates multiple bird species as realistic dis- synthetic data as it allows scalable and cost-effective dataset
+tractors, and leverages diverse Unreal Engine 5 environments generation [5]. Recent advances in game engine-based sim-
+with controlled weather, lighting, and flight trajectories captured
+using a 360◦ six-camera rig. Using SimD3, we conduct an ulation have further improved the realism of synthetic data,
+extensive experimental evaluation within the YOLOv5 detection enabling the creation of complex environments suitable for
+framework, including an attention-enhanced variant termed vision-based learning tasks [6]. Such platforms allow precise
+Yolov5m+C3b, where standard bottleneck-based C3 blocks are control over scene parameters, including lighting, weather, and
+replaced with C3b modules. Models are evaluated on synthetic time of day, which are difficult to systematically capture in
+data, combined synthetic and real data, and multiple unseen
+real-world benchmarks to assess robustness and generalization. real-world settings.
+    Experimental results show that SimD3 provides effective super-        Despite these advantages, models trained solely on synthetic
+    vision for small-object drone detection and that Yolov5m+C3b         data often experience performance degradation when applied
+    consistently outperforms the baseline across in-domain and cross-    to real-world scenarios. This issue arises from the inherent
+    dataset evaluations. These findings highlight the utility of SimD3   gap between simulated environments and actual operational
+    for training and benchmarking robust drone detection models
+    under diverse and challenging conditions.                            conditions, particularly in cluttered or visually ambiguous
+    Keywords—Aerial Surveillance, Attention Mechanisms, Drone            scenes. A common strategy to alleviate this problem is the
+    Detection, Small Object Detection, Synthetic Dataset, Unmanned       use of hybrid datasets that combine synthetic and real data,
+    Aerial Vehicles, YOLOv5                                              where even a limited amount of real-world data can improve
+                      DATA AVAILABILITY                                  robustness [3]. However, dependence on real data reduces
+                                                                         scalability and limits applicability in scenarios where data
+        The dataset will be made publicly available upon acceptance      collection is costly, restricted, or unsafe.
+    of the paper.                                                        More   importantly,  existing synthetic     datasets for drone
+                      ETHICS STATEMENT                                   detection remain limited in their ability to capture key sources
+        of visual ambiguity encountered in practice. In particular,
+  This study did not involve human participants, animal many datasets do not explicitly model challenging distractors
+    subjects, or sensitive data requiring ethics approval.               such as birds, nor do they adequately       represent dynamic
+                     I. INTRODUCTION                                     environmental factors such as varying weather and lighting
+                                                                         conditions. These omissions limit the effectiveness of synthetic
+            Unmanned aerial vehicles (drones), commonly referred to      data for training robust drone detection models in realistic
+    as drones, have seen rapid adoption across a wide range of           deployment scenarios.
+    applications, including agriculture, logistics, surveillance, and        To address these limitations, we introduce SimD3, a fully
+recreational use. Alongside this growth, concerns related to synthetic dataset designed specifically for vision-based drone
+security, privacy, and safety have increased, particularly due detection. SimD3 incorporates diverse environments, drone
+to unauthorized or malicious drone activity [1]. As a result, models, camera viewpoints, and lighting conditions, while
+reliable drone detection has become an important research explicitly including multiple bird models as distractor objects.
+problem. Among various sensing modalities, vision-based ap- In addition, the dataset models drones with attached payloads,
+proaches using cameras combined with deep learning (DL) such as bags, boxes, and other carried objects, which are criti-
+techniques provide an effective and cost-efficient solution for cal for distinguishing benign drones from potentially malicious
+drone detection [2]. However, the success of such models ones in security sensitive scenarios. In contrast to existing
+strongly depends on the availability of large and diverse synthetic datasets such as SynDroneVision [7] and Sim2Air
+    annotated datasets [3].                                              [1], SimD3 also simulates challenging weather conditions,
+
+
+
+
+
+                                                                                                                     1 / 11
+
+                                                                                             SimD3:Simulated Drone Detection Dataset
+
+    including fog, rain, and snow, as well as complex drone–bird        newer versions under small-object and long-range conditions
+    interactions commonly encountered in real-world airspace.           [17]. For instance, TOE-YOLO [18], based on YOLOv11,
+        This paper provides a detailed description of the SimD3         achieves high precision on UAV imagery with a lightweight
+    dataset, including its generation pipeline and design choices.      design optimized for tiny target detection, outperforming sev-
+    We further evaluate its effectiveness through extensive exper-      eral baseline detectors in multi-scale scenarios. Additionally,
+    iments using state-of-the-art drone detection models, both in       CheapConv [19] integrates optimized convolutional operators
+    isolation and in combination with real-world data. The results      into a YOLOv8 framework to enhance dense object segmen-
+    demonstrate that SimD3 improves detection robustness and            tation and detection under resource constraints. These ap-
+    generalization, particularly in out-of-distribution and challeng-   proaches share common models Yolo but differ in version and
+    ing real-world scenarios.                                           architectureal imporvement based on applications. Motivated
+                       II. RELATED WORK                                 by these observations, we adopt YOLOv5 as the baseline
+                                                                        detection framework in this work and focus on improving
+     This section summarizes related work on vision-based drone         feature representation for challenging aerial scenarios through
+    detection and the datasets used for training and evaluation. We     architectural refinement and dataset design.
+    review representative detection methods and then discuss key
+    real and synthetic datasets relevant to camera-based surveil-       B. Real and Synthetic Drone Datasets
+    lance.                                                                      A variety of real-world RGB and RGB–thermal datasets
+    A. Vision-Based Drone Detection                                     have been proposed for drone detection and tracking. The
+        USC Drone Detection and Tracking dataset contains visible-
+  Early vision-based drone monitoring systems relied on light videos captured on a university campus with diverse
+hand-crafted features and traditional tracking pipelines, which viewpoints and illumination conditions and has served as a
+were often ineffective in complex backgrounds and for small, benchmark for early CNN-based methods [8]. The Drone
+fast-moving targets. With the adoption of deep learning, convo- Dataset by Aksoy et al. provides over 4,000 high-resolution
+lutional neural networks (CNNs) and modern object detectors images of amateur drones for single-class detection [20].
+have become the dominant approach for vision-based drone MAV-VID offers tens of thousands of frames captured from
+detection. Chen et al. [8] proposed one of the earliest CNN- multiple platforms, supporting research on multi-view detec-
+based drone monitoring systems using visible-light imagery, tion and tracking [21]. Det-Fly focuses on drone-to-drone
+combining detection and tracking to handle small drones in scenarios, providing more than 13,000 images recorded from
+cluttered scenes, and introduced the widely used USC Drone a flying platform, and is primarily used for air-to-air sensing
+dataset . Subsequent work extended these ideas by integrating research [22]. UAV-Eagle and UAVData provide smaller but
+visible and thermal modalities to improve robustness under challenging datasets emphasizing illumination changes, clutter,
+    low illumination and adverse conditions [9], [10].                  and model diversity [23], [24].
+       More recent approaches build upon general-purpose object         Beyond  RGB-only datasets,     several multi-modal    bench-
+detection architectures such as Faster R-CNN, SSD, and marks have been introduced. The Halmstad multi-sensor
+particularly the YOLO family. Isaac-Medina et al. [11] pro- dataset includes synchronized RGB, infrared, audio, and radar
+vided a comprehensive benchmark of deep detectors across data collected at airports, supporting multi-sensor fusion re-
+multiple drone datasets, highlighting both performance gains search [25]. DUT-AntiUAV provides 10,000 annotated RGB
+and significant sensitivity to domain shifts. To better ad- images and additional videos for detection and tracking in
+dress challenges specific to drone detection, several drone- complex outdoor environments [26], while related benchmarks
+tailored architectures have been proposed, focusing on small- extend this to RGB–thermal pairs [27]. VisioDECT empha-
+object representation, scale variation, and background clut- sizes scenario-based multi-drone detection with over 20,000
+ter. Representative examples include high-resolution feature RGB images captured under different weather and time-of-
+enhancement and background-difference strategies, such as day conditions [28]. The Malicious Drones dataset addresses
+SAG-YOLOv5s [12], as well as lightweight models optimized payload-aware classification but is limited in scale, containing
+for real-time aerial surveillance, including EDGS-YOLOv8 fewer than 1,000 images [29]. The Drone-vs-Bird Detection
+[13]. Recent surveys consistently identify small target size, Challenge dataset includes large-scale video data with both
+extreme viewpoints, and changing illumination as persistent drones and birds present; however, only drones are annotated,
+challenges, and emphasize the strong dependence of detection leaving birds as unlabeled distractors rather than structured
+performance on dataset diversity and coverage [10], [14], [15]. negative examples [30].
+        Recent comparative analyses also suggest that newer de-         To alleviate the cost and operational constraints associated
+    tector versions do not necessarily provide consistent gains         with collecting real-world drone imagery, synthetic data has
+    for all drone detection settings, particularly when the target      increasingly been explored for UAV detection. Barisic et al.
+    occupies only a small number of pixels. In our earlier study        [1] introduced S-UAV-T, a synthetic drone-to-drone dataset
+    evaluating multiple YOLO variants (v5-v12) for small-drone          generated in Blender with strong texture randomization, and
+    detection, YOLOv5 [16] was found to offer a strong accuracy         demonstrated that models trained on synthetic data can transfer
+    efficiency trade-off and to remain highly competitive relative to   to real videos when combined with limited real-world fine-
+
+
+
+
+
+                                                                                                       2 / 11
+
+                                                                                               SimD3:Simulated Drone Detection Dataset
+
+tuning. Lenhard et al. [7] proposed SynDroneVision, a large-       A. Drone and Payload Modeling
+scale synthetic dataset targeting     ground-based surveillance       To construct a diverse set of aerial targets, we created a total
+viewpoints using Unreal Engine environments, and showed                     of 15 distinct drone models using a combination of Blender
+that synthetic pretraining can significantly improve robustness              [38] and Meshy AI [39]. The models span common drone cat-
+when followed by fine-tuning on real data . Complementary                egories, including quadcopters, hexacopters, and octocopters,
+approaches further aim to reduce the simulation-to-reality gap            and are designed to reflect both commercial and custom-built
+through domain randomization, image-to-image translation, or           drones encountered in real-world scenarios. Figure 1 highlights
+weather-based augmentation strategies [31]–[33].                   a few drone models used in SimD3 dataset.
+     Despite these advances, existing synthetic datasets remain                Among these models, 8 drones are equipped with explicit
+limited in their ability to capture realistic aerial clutter and        payloads, while the remaining 7 represent payload-free drones:
+target ambiguity. In particular, S-UAV-T and related datasets
+focus primarily on drone-to-drone monitoring scenarios and          •  Payload equipped   drones (8 models):     These          drones
+do not model non-drone aerial objects such as birds [34].                    carry visually distinctive payloads, including box shaped
+While SynDroneVision extends synthetic data generation to                        parcels, bag like objects, and weapon shaped payloads
+surveillance-style viewpoints and provides large-scale anno-                (e.g., gun). The presence of payloads significantly alters
+tated imagery, it similarly focuses exclusively on drone targets               the silhouette and visual appearance of the drones, in-
+without explicit modeling of common aerial distractors [7].               creasing detection difficulty and better reflecting security
+Although some multi-modal benchmarks include birds and                     sensitive scenarios involving potentially malicious drones.
+other aerial objects, they are often not designed as image-only     •            Non payload drones (7 models): These models represent
+detection datasets or lack explicit negative-class annotations,                  conventional drones equipped only with onboard camera
+limiting their suitability for studying drone–bird discrimination             sensors and serve as baseline drone instances within the
+in vision-based settings [25], [27].                                   dataset.
+Overall,     existing real-world    datasets provide valuable               Additional variability is introduced through randomization
+benchmarks but are often limited in scale, scene diversity, or            of materials, color schemes, and minor geometric attributes.
+annotation scope, particularly for small-object and long-range          During data generation, payload type, orientation, and attach-
+drone detection. At the same time, current synthetic datasets              ment configuration are randomized across scenes to maximize
+primarily focus on drone-only targets or air-to-air scenarios      intra-class diversity and to prevent overfitting to specific visual
+and rarely model realistic sources of aerial ambiguity such as     patterns.
+birds, payload-equipped UAVs, or adverse weather conditions
+in a unified framework. These limitations highlight the need       B. Bird Models as Realistic Distractors
+for a more comprehensive synthetic dataset. In the following              In addition to drones, SimD3 incorporates 8 distinct 3D bird
+section, we describe the data generation pipeline adopted in         models that act as realistic aerial distractors. Birds are placed
+this work to address these gaps.                                   at different distances, altitudes, and motion trajectories relative
+    III. DATA GENERATION PROCESS                                       to drones to simulate realistic airspace activity and introduce
+                                                                   hard negative examples.
+    This section describes the simulation framework, 3D assets,                To further enhance realism, we employ Niagara-based vi-
+and scenario design used to construct the SimD3 dataset.                 sual effects [40] to simulate bird flocks in selected scenes.
+The primary objective is to generate visually diverse and                   These flocking behaviors introduce complex motion patterns
+realistic scenes that capture a wide range of drone appear-                  and occlusions commonly observed in natural environments.
+ances, flight behaviors, and environmental conditions, while               These bird assets vary in size, wing geometry, and texture,
+explicitly incorporating challenging distractors such as birds            and are animated using physically plausible flight behaviors
+and payload-carrying drones. SimD3 is generated using the                   such as flapping, gliding, and banking turns. Importantly,
+CoSys AirSim plugin [35] integrated with Unreal Engine 5                   while individual bird models are explicitly annotated, bird
+[36], which enables high-fidelity rendering and control over          flocks generated via Niagara effects [40] are intentionally left
+camera sensors, object motion, and environmental parameters.             unannotated. As a result, the dataset contains both annotated
+       To improve scene diversity and generalization, we lever-            bird instances and unannotated bird-like background motion,
+age multiple environments sourced from the Unreal Engine            allowing users to treat birds either as explicit object classes or
+Marketplace [37]. These environments represent a variety of        as background clutter, depending on the target application.
+real-world backgrounds, including hilly terrain, mountainous        The inclusion of bird objects serves two key purposes:
+regions, urban areas with dense buildings and skyscrapers,          1) It   reflects real-world surveillance conditions,         where
+water bodies such as lakes and coastal regions, and forest-                   drones are frequently confused with birds, especially at
+like  landscapes. Drone  flights    are simulated  across these         long ranges or under low visibility.
+heterogeneous scenes to ensure that the dataset captures a                   2) It encourages the development of more robust detection
+wide range of background textures, depth cues, and structural                    models by requiring discrimination between drones and
+complexity.                                                             visually similar non-drone aerial objects.
+
+
+
+
+
+                                                                        3 / 11
+
+                                                                           SimD3:Simulated Drone Detection Dataset
+
+                                           Table I: Comparison of representative real and synthetic datasets for vision-based drone detection using RGB imagery.
+
+    Dataset                    Total Images  Video  Multi-Drone  Birds Payload Max. Resolution
+    Drone Dataset [20]                4,012    No        No        No      No     3840×2160
+    UAV-Eagle [23]                     510⋆   Yes        No        No      No     1920×1080
+    DUT Anti-UAV [26]                10,000  (Yes)      Yes        No      No     5616×3744
+    VisioDECT [28]                  20,924⋆   Yes       Yes        No      No      852×480
+    UAVData [24]                    13,803⋆   Yes       Yes        No      No      1280×720
+    USC Drone Det. & Track. [8]     27,000⋆   Yes        No        No      No     1920×1080
+    MAV-VID [21]                     40,232   Yes       Yes        No      No         –
+    Det-Fly [22]                    13,271⋆  (Yes)       No        No      No     3840×2160
+    Malicious Drones [29]               776    No       Yes        No      Yes     224×224
+    Drone-vs-Bird Ch. [30]           85,904   Yes       Yes    Unlabeled   No     3840×2160
+    S-UAV-T [34] (synthetic)        52,500⋆    No       Yes        No      No      608×608
+    SynDroneVision [7] (synthetic)  140,038   Yes       Yes        No      No     2560×1489
+    SimD3 (ours, synthetic)         178,639    No       Yes     Labeled†   Yes    1920×1080
+⋆ no predefined train/validation/test split Yes: explicitly supported (Yes): limited or partial support † VFX subset contains unannotated bird-like
+        clutter, while Non-VFX and Weather subsets include labeled birds
+
+
+  To the best of our knowledge, no publicly available synthetic and speed, resulting in image samples that span a wide range
+dataset for vision-based drone detection explicitly includes of apparent target sizes, from small distant drones to close-up
+both labeled bird objects and unlabeled bird-like distractors views.
+within the same framework. This design choice represents To further enhance realism and domain diversity, envi-
+a core contribution of the SimD3 dataset and significantly ronmental conditions are systematically randomized. These
+enhances its applicability for realistic and safety critical drone variations include changes in time of day, sun position and
+detection research. intensity, cloud coverage, and adverse weather effects such as
+C. Virtual Environments, Weather Conditions, and Camera fog, rain, and low-visibility conditions. Such variations are es-
+Configuration sential for evaluating detection performance under challenging
+  Data generation in SimD3 is conducted across multiple vir- illumination and weather scenarios commonly encountered in
+tual environments created using Unreal Engine 5 and sourced real-world deployments.
+from the Unreal Engine Marketplace. These environments are The combination of diverse virtual environments, systematic
+selected to represent a broad range of real-world surveillance weather variation, structured flight trajectories, and synchro-
+contexts and include assets such as City Park [41], City Cre- nized multi-camera sensing results in a dense and diverse
+ator [42], Downtown [43], Dynamic City [44], Rural Australia collection of training samples. This design supports the de-
+[45], Bridge [46], and Wild West Town [47]. Collectively, these velopment and evaluation of detection models that are robust
+scenes cover diverse background structures, including dense to scale variation, viewpoint changes, background complexity,
+urban areas with skyscrapers, suburban and park-like regions, and adverse environmental conditions.
+rural and forested landscapes, water bodies, and complex D. Adverse Weather Conditions
+terrain. A few exmples of these scenes is shown in Figure Most publicly available vision-based drone datasets are
+2 dominated by clear-weather imagery with stable illumination
+  Within each environment, drone motion and camera place- and high visibility. In contrast, real-world surveillance systems
+ment are varied to capture a wide range of viewpoints and tar- must operate reliably under adverse conditions such as fog,
+get appearances. A 360◦ multi-camera configuration consists snow, rain, and low-light environments, where reduced con-
+of a set of six synchronized virtual cameras cam0, cam1, cam2, trast, atmospheric scattering, and visual artifacts significantly
+cam3, cam4, cam5 each with identical intrinsic parameters degrade image quality. Prior studies have shown that drone
+and a horizontal field-of-view of 60◦ mounted on a rigid rig. detection performance can drop sharply under such conditions
+The cameras are uniformly distributed in azimuth, providing when models are trained primarily on clear-weather data [48],
+full 360◦ panoramic coverage of the surrounding environment. [49]. These findings highlight the importance of incorporating
+Figure 3 shows for 360◦ view captured using 6 cameras of adverse weather scenarios directly into dataset design rather
+each scene. than treating them as post hoc augmentation.
+  This setup captures drones and bird objects entering and To address this challenge, SimD3 includes a dedicated
+exiting the field of view from multiple directions and naturally adverse-weather component generated using the weather sim-
+produces challenging cases involving partial observations, ulation API provided by Microsoft AirSim (CoSys version)
+strong perspective changes, and rapid motion across adjacent integrated with Unreal Engine 5. AirSim enables physically
+views. Drones traverse the environments along predefined consistent weather rendering through parameterized controls
+circular and spiral flight paths with varying radius, altitude, that allow continuous adjustment of weather intensity. In
+
+
+
+
+
+                                                                           4 / 11
+
+    SimD3:Simulated Drone Detection Dataset
+
+
+
+
+
+
+
+
+
+
+    Model 1    Model 2    Model 3    Model 4    Model 5
+
+
+
+
+
+
+
+
+
+    Model 6    Model 7    Model 8    Model 9    Model 10
+
+
+
+
+
+
+
+
+
+        Model 11 Model 12 Model 13 Model 14 Model 15
+Figure 1: 3D models of drones and birds used for dataset generation. Models 1 to 9 feature drones equipped with different
+payloads, including bags, boxes, and guns. Model 11 includes an agricultural payload with a spraying kit attached, simulating
+real-world scenarios. These models, along with various bird species used as distractors, provide a comprehensive set of testing
+scenarios for drone detection.
+
+particular, the API exposes scalar intensity parameters for ground-truth labels regardless of visibility. Each adverse-
+atmospheric effects such as fog and snow, making it possible weather image contains at least one drone instance, with
+to systematically vary weather severity from mild to extreme or without payload, and may include zero or more bird
+conditions within the same scene. objects acting as structured distractors. This design supports
+  Using this capability, we generate weather specific subsets both robustness evaluation and all-weather training, allowing
+of SimD3 focusing on fog and snow conditions, which are researchers to analyze performance degradation, conduct ab-
+among the most challenging for vision-based drone detection lation studies across weather severity, and develop models
+due to visibility loss and texture suppression. For each vir- specifically tailored to handle weather-induced visual degra-
+tual environment described in previous subsection, weather dation.
+intensity levels are varied to produce a spectrum of condi-
+tions, ranging from light haze or snowfall to dense fog and E. Annotation Pipeline
+heavy snow (Figure 4 and Figure 5). These weather effects
+are applied consistently across environments and combined All annotations in SimD3 are automatically derived using
+with the same drone configurations, payload variations, bird the segmentation API provided by AirSim. For each rendered
+distractors, flight trajectories, and multi-camera setup used in frame, pixel-level semantic segmentation maps are generated,
+clear-weather scenes. As a result, identical scene layouts and with unique labels assigned to each object category.
+object arrangements are observed under different atmospheric Instance-level annotations are obtained by extracting con-
+conditions, enabling controlled comparisons across weather nected components from the semantic segmentation maps,
+states. with each connected region treated as an individual object
+  All weather effects are rendered directly within the simula- instance.
+tion engine, ensuring pixel-accurate annotations and consistent The dataset includes two primary object classes:
+
+
+
+
+
+    5 / 11
+
+    SimD3:Simulated Drone Detection Dataset
+
+
+
+
+
+
+
+
+
+
+                    Figure 2: Virtual Unreal Environments integrated from Unreal Engine Marketplace
+
+  • drone: all UAV models, including both payload- evaluation under varying levels of visual ambiguity and back-
+          equipped and payload-free variants                           ground complexity.
+       •  bird: bird models used as aerial distractors                 In the       Non-VFX subset, both drone and bird instances are
+          Bounding boxes are tightly fitted to the visible extent of   explicitly annotated. This subset forms the primary source of
+      each object, ensuring accurate localization even for small and   supervised data for learning drone vs. bird discrimination and
+    partially occluded targets.                                        includes a balanced distribution across drone only, bird only,
+  All annotations are exported in the standard YOLOv5 [16] and combined drone-bird scenes. In contrast, the VFX subset
+format, where each object is represented by its class label focuses exclusively on drone annotation. In this setting, bird-
+and normalized bounding box coordinates. This choice ensures like motion is generated using Unreal Engine Niagara visual
+immediate compatibility with widely used object detection effects, where birds appear as dynamic background clutter
+frameworks and allows the dataset to be readily adopted for but are intentionally not annotated. This design allows the
+training and evaluation without additional preprocessing. In dataset to support scenarios in which birds are treated as
+    YOLO format, each object instance is encoded as                    part of the background rather than explicit object classes,
+                          y = (c, xc, yc, w, h),                 (1)   closely reflecting real-world surveillance conditions    where
+                                                                       such distinctions are not always available.
+    where  c   is the class index and  (xc, yc)     denotes the nor-         Table III presents the scene-wise distribution of images
+malized bounding-box center coordinates. The width w and across Unreal Engine Marketplace environments. Urban and
+height h are also normalized by the image dimensions, i.e., semi-urban scenes such as Downtown, CityPark, and Dynam-
+    xc   =y xᵐⁱⁿ+xᵐᵃˣ ,     y   = y   +y , w     x     −       , and
+                2yW  c
+    h =    max −     , with     W min2H max     =   maxW xmin          icCity contribute a substantial portion of the dataset, providing
+               H min               and    H denoting image width and   complex structural backgrounds with buildings, roads, and
+    height, respectively.                                              clutter. Additional environments, including Bridge and   Rural
+    F. Dataset Statistics                                              Australia, introduce terrain-dominated and open-area contexts,
+        ensuring that the dataset is not biased toward a single scene
+  SimD3 comprises a total of 178,639 annotated images type and supports robust generalization across heterogeneous
+spanning three subsets: Non-VFX, VFX, and adverse-weather environments.
+    conditions, as summarized in Table II. The dataset is structured          The adverse-weather subset is detailed in Table IV. Fog
+           to include frames containing only drones, only birds, and   and snow conditions constitute the majority of this subset,
+         scenes where drones and birds co-occur, enabling systematic   with additional sequences generated under mixed or auxiliary
+
+
+
+
+
+                                                                       6 / 11
+
+    SimD3:Simulated Drone Detection Dataset
+
+
+    cam0  cam1  cam2  cam3  cam4  cam5
+
+
+    CityCreator [42]
+
+
+    CityPark [41]
+
+
+    Bridge [46]
+
+
+    WildWestTown [47]
+
+
+    DownTown [43]
+
+
+    DynamicCity [44]
+
+
+       RuralAustralia [45]
+Figure 3: Qualitative multi-camera visualization across diverse simulated environments. The sensing setup comprises six
+synchronized cameras (cam0–cam5), each with a horizontal field of view of 60°, uniformly arranged in a circular configuration
+to provide full 360° panoramic coverage of the scene. Columns correspond to camera viewpoints ordered from cam0 to cam5
+in a clockwise manner. Each row represents a distinct environment: Row 1-Bridge, Row 2-CityCreator, Row 3-CityPark,
+Row 4-WWT, Row 5-DownTown, Row 6-DynamicCity, and Row 7-RuralAustralia. The scenes contain dynamic aerial entities,
+including birds and unmanned aerial vehicles (drones), whose appearance, scale, and visibility vary across camera viewpoints
+and environments.
+
+        Clean 2% 4% 6% 8% 10% 12%
+
+
+     Fog
+Figure 4: Qualitative visualization of observations under varying environmental conditions. Each column corresponds to
+increasing severity levels of the environmental condition, ranging from clean observations to progressively stronger corruptions
+(2%–12%). The first row illustrates the Fog environment, where visibility degradation increases monotonically from left to
+right. The scenes contain dynamic aerial objects, including birds and unmanned aerial vehicles (drones).
+
+weather configurations to preserve sequence consistency. Each these statistics highlight SimD3’s emphasis on scale vari-
+weather condition includes images with drones only, birds ability, scene diversity, and challenging detection conditions
+only, and combined drone–bird scenarios, enabling controlled relevant to real-world UAV monitoring.
+analysis of detection performance under degraded visibility
+and atmospheric effects. IV. EXPERIMENTS AND RESULTS
+  All images in SimD3 are rendered at a fixed resolution of
+1920 × 1080 pixels. The dataset explicitly targets small-object After generating the SimD3 dataset, we conducted extensive
+detection scenarios: the minimum visible extent of annotated experiments for Drone detection. Following our prior study
+objects is approximately 5 pixels, while the largest objects [17], YOLOv5 was adopted as the baseline architecture which
+occupy at most 20% of the image area. This range reflects is suitable for Drone detection application. The SimD3 dataset
+realistic long-range surveillance conditions, where UAVs often is trained on medium variant of Yolov5 known as Yolov5m.
+appear as small, low-contrast targets, while still including To further improve the performance on simulated dataset a
+closer views to support multi-scale feature learning. Overall, modified variant termed Yolov5m+C3b proposed.
+
+
+
+
+
+    7 / 11
+
+  SimD3:Simulated Drone Detection Dataset
+
+
+  Clean  5%  15%  25%  35%  45%  55%
+
+
+
+   Snow
+             Figure 5: Qualitative visualization of observations under varying environmental conditions. Each column corresponds to
+   increasing severity levels of the environmental condition, ranging from clean observations to progressively stronger corruptions
+        (5%–55%). The first row illustrates the Snow environment, where visibility degradation increases monotonically from left to
+  right. The scenes contain dynamic aerial objects, including birds and unmanned aerial vehicles (drones).
+
+  Table II: SimD3 subset statistics in terms of image-level                Table IV: Weather subset breakdown by condition. “Other”
+  composition. “Drone” and “Bird” denote frames containing               corresponds to the remaining weather configuration not ex-
+  only that category, while “Both” denotes frames containing           plicitly tagged as fog/snow in the sequence naming (included
+  drones and birds simultaneously. In VFX, birds are rendered       to preserve exact totals).
+  using Niagara effects and are treated as background (not
+  annotated).                                                          Condition         Drone   Bird   Both    Total
+                                                                       Fog               3,163  1,926   5,121  10,210
+        Subset         Drone    Bird     Both     Total                Snow              3,047    865   2,830   6,742
+        Non-VFX       32,366  48,097   32,436   112,899                Other               904    148   1,650   2,702
+        VFX           46,086      0         0    46,086                Total             7,114  2,939   9,601  19,654
+        Weather        7,114   2,939    9,601    19,654
+        Total         85,566  51,036   42,037   178,639
+                                                                     •   Improve multi-scale feature aggregation, which is critical
+  Table III:     Scene-wise distribution of  images across Non-        for detecting small and distant targets,
+  VFX and VFX subsets. Scenes are sourced from the Unreal            •      Reduce redundant feature representations while preserv-
+  Marketplace. “–” indicates the scene is not used in that subset.     ing contextual information across detection layers.
+        Scene                Non-VFX Images  VFX Images               Figure 7 illustrates the internal structure of the C3b block,
+        WWT                           5,353       3,331                  highlighting how attention-enhanced convolutional pathways
+        CityPark                     21,361       3,364             replace traditional bottleneck operations.
+        DynamicCity                  13,221       4,870             B. Training Setup
+        CityCreator                   4,918      12,741                         Both Yolov5m and Yolov5m+C3b models were trained on
+        Downtown                     35,556       8,531                the SimD3 dataset under identical experimental conditions to
+        Bridge                       32,490           –                    ensure a fair comparison. Training was performed for 170
+        RuralAustralia                    –      13,249                     epochs with an early stopping patience of 10 epochs FOR
+        Total                       112,899      46,086                  1920*1080 image resolution. All hyperparameters, including
+                                                                    learning rate, batch size, and input resolution, were      kept
+                                                                    consistent across experiments.
+       Detection performance is evaluated using standard object         The dataset was split into 46,622 training images and 6,461
+  detection metrics, including Precision, Recall, mean Average      validation images. This split provides sufficient diversity for
+  Precision at an IoU threshold of 0.5 (mAP@0.5), and mean           training while maintaining a representative validation set for
+  Average Precision averaged over IoU thresholds from 0.5 to              unbiased performance evaluation. All images contain anno-
+  0.95 (mAP@0.5:0.95).                                                    tated drone instances captured under varying backgrounds,
+  A. Yolov5m+C3b Architecture                                            scales, and viewpoints, making the dataset well suited for
+                                                                    small-object detection studies.
+    Figure 6 presents the Yolov5 architecture . In the proposed             Table V shows that Yolov5m+C3b consistently outperforms
+  Yolov5m+C3b model, all standard C3 modules of Yolov5                  the baseline Yolov5m across all evaluation metrics. In par-
+  architecture are replaced with C3b blocks 7. Unlike conven-                ticular, improvements of 1.43% in mAP@0.5 and 4.12% in
+  tional C3 blocks that rely on bottleneck layers for feature              mAP@0.5:0.95 indicate enhanced localization accuracy and
+  transformation, the C3b module removes these bottlenecks          robustness in complex backgrounds.
+  and incorporates attention driven feature refinement using                 Although the proposed model introduces a higher number
+  Convolutional Block Attention Module (CBAM) [50] . This              of layers and parameters, the computational overhead remains
+  design enables the network to:                                        modest, with an increase of only 2.9 GFLOPs. This trade-off
+• Emphasize informative spatial and channel-wise features is acceptable given the observed gains, especially for small
+   relevant to drone detection,                                     and distant drone targets.
+
+
+
+
+
+                                                                                                        8 / 11
+
+    SimD3:Simulated Drone Detection Dataset
+
+
+
+
+
+
+
+
+
+
+                                                    Figure 6: Yolov5 architecture
+
+                 Table V: Performance comparison of Yolov5m and Yolov5m+C3b on the SimD3 dataset
+
+                 Model         Dataset  Precision   Recall  mAP@0.5  mAP@0.5:0.95    Layers Params (M)  GFLOPs
+                 Yolov5m       SimD3      0.9627    0.9306   0.9611     0.8362        378     35.25      48.9
+                 Yolov5m+C3b   SimD3      0.9820    0.9557   0.9754     0.8774        707     46.00      51.8
+
+                                                                   C. Cross-Dataset   Generalization to Unseen         Real-World
+                                                                   Benchmarks
+                                                                     To further assess out-of-distribution performance, both mod-
+                                                                   els were evaluated on two unseen real-world datasets, Vi-
+                                                                   sioDect and LRDD, without any fine-tuning. Table VII reports
+                                                                   the results.
+                     Figure 7: C3b Block                                Although cross-dataset generalization remains challenging
+                                                                   due to significant domain differences, Yolov5m+C3b consis-
+                                                                   tently outperforms the baseline across all unseen benchmarks,
+                                                                   indicating improved transferability of learned features.
+     To assess real-world generalization, the SimD3 dataset was    D. Qualitative Analysis
+    augmented with the DUT-AntiUAV benchmark, forming a
+    combined       SimD3+DUT-AntiUAV training set. This experi-    Qualitative results further support the quantitative findings.
+    ment aims to reduce the synthetic-to-real domain gap and       Compared to Yolov5m, the proposed Yolov5m+C3b model
+    evaluate the transferability of learned representations.       produces more stable detections and tighter bounding boxes,
+           Both models were trained on the combined dataset and    particularly for small drones in cluttered backgrounds and low-
+    evaluated under two settings: (i) testing on the combined      contrast scenarios. The attention enhanced architecture helps
+    dataset and (ii) cross-dataset evaluation on the DUT-AntiUAV   suppress background noise and focus on salient drone features.
+    test set.                                                             Failure cases remain for both models when drones occupy
+                                                                   extremely small pixel regions . These observations highlight
+     Table VI summarizes the results.                              the inherent challenges of drone detection and motivate future
+  The results indicate that incorporating real-world data work on domain adaptation and robustness enhancement.
+improves robustness for both models. Across all evalua- E. Drone Detection under Adverse Weather
+    tion settings, Yolov5m+C3b consistently achieves higher per-   In addition   to  clear-weather scenarios, we are     actively
+    formance, particularly in cross-dataset evaluation on DUT-     investigating drone detection performance under adverse envi-
+    AntiUAV, suggesting improved generalization.                   ronmental conditions. To this end, SimD3 includes a dedicated
+
+
+
+
+
+                                                                                      9 / 11
+
+                                                                     SimD3:Simulated Drone Detection Dataset
+
+     Table VI: Performance comparison on synthetic + real (SimD3 + DUT-AntiUAV) datasets
+
+    Model         Training Dataset     Test Dataset  Precision   Recall  mAP@0.5   mAP@0.5:0.95
+    Yolov5m      SimD3+DUT-AntiUAV     DUT-AntiUAV     0.7361    0.5765   0.6453    0.3863
+    Yolov5m+C3b  SimD3+DUT-AntiUAV     DUT-AntiUAV     0.9009    0.7322   0.8230    0.4989
+    Yolov5m      SimD3+DUT-AntiUAV  SimD3+DUT-AntiUAV  0.9041    0.8112   0.8846    0.7107
+    Yolov5m+C3b  SimD3+DUT-AntiUAV  SimD3+DUT-AntiUAV  0.9672    0.9098   0.9475    0.8133
+
+         Table VII: Cross-dataset evaluation on unseen real-world benchmarks
+
+     Model         Training Dataset Test Dataset Precision   Recall  mAP@0.5  mAP@0.5:0.95
+     Yolov5m      SimD3+DUT-AntiUAV     VisioDect  0.3706    0.3759   0.1919       0.0476
+     Yolov5m+C3b  SimD3+DUT-AntiUAV     VisioDect  0.4242    0.3677   0.2183       0.0543
+     Yolov5m      SimD3+DUT-AntiUAV        LRDD    0.4062    0.2509   0.2321       0.1073
+     Yolov5m+C3b  SimD3+DUT-AntiUAV        LRDD    0.5538    0.3658   0.3787       0.1586
+
+
+        Weather subset featuring challenging visual degradations such  [2]  W. Zhang et al., “Drone detection with optical sensors: A review of cur-
+           as fog and snow, which significantly reduce visibility and       rent approaches,” IEEE Transactions on Systems, Man, and Cybernetics,
+    contrast.                                                          [3]  vol. 50, no. 4, pp. 1749–1762, 2020.
+           Preliminary experiments indicate that these conditions in-       M. Li et al., “Leveraging synthetic data for uav detection: A comparative
+                                                                            study,” International Journal of Robotics and Automation, vol. 38, no. 1,
+           troduce notable performance degradation compared to clear-       pp. 41–58, 2023.
+    weather     scenes, primarily due to reduced edge       sharpness  [4]  S. Chien et al., “Deep learning for uav detection: A survey of applica-
+          and increased background ambiguity. This highlights the im-  [5]  tions and challenges,” IEEE Access, vol. 7, pp. 12 006–12 021, 2019.
+           portance of weather-aware training data and robust feature       A. Dey et al., “Synthetic data in autonomous systems: The case of drone
+                                                                            detection,”        Proceedings of the International Conference on Computer
+    representations for reliable aerial surveillance.                       Vision, 2020.
+               Overall, the results demonstrate that SimD3 provides a  [6]  M. Cattani      et al., “Sim2air: A synthetic data generation approach for
+    strong  foundation     for small drone detection,    while   also       drone detection,” Journal of Artificial Intelligence in Aerospace Systems,
+                                                                            2022.
+            enabling systematic study of robustness under challenging  [7]  T. R. Lenhard, A. Weinmann, S. J¨ager, and T. Koch, “Syndronevision: A
+    weather conditions such as fog and snow.                                synthetic dataset for image-based drone detection,” in Proc. IEEE/CVF
+                                                                            Winter Conf. on Applications of Computer Vision (WACV), 2025.
+                                V. CONCLUSION                          [8]  Y. Chen, P. Aggarwal, J. Choi, and C.-C. J. Kuo, “A deep learning
+                                                                            approach to drone monitoring,” in Proc. Asia-Pacific Signal and Infor-
+       This paper introduced       SimD3, a large-scale high-fidelity       mation Processing Association Annual Summit and Conference (APSIPA
+    synthetic dataset   designed   to support    robust  drone detec-  [9]  ASC), 2017, pp. 686–691.
+                                                                            Y. Wang, Y. Chen, J. Choi, and C.-C. J. Kuo, “Towards visible and
+          tion in complex aerial environments. By explicitly modeling       thermal drone monitoring with convolutional neural networks,” in Syn-
+           drones with heterogeneous payloads, incorporating multiple       thesis Lectures on Image, Video, and Multimedia Processing, 2019, now
+bird species as realistic distractors, and utilizing diverse Unreal [10] Publishers.
+        M. Elsayed, M. Reda, A. S. Mashaly, and A. S. Amein, “Review on real-
+         Engine 5 environments with controlled weather, lighting, and       time drone detection based on visual band electro-optical (eo) sensor,”
+     flight trajectories, SimD3 addresses key limitations of existing       in      Proc. Int. Conf. on Intelligent Computing and Information Systems,
+synthetic drone datasets. Comprehensive experiments using [11] 2021, pp. 57–65.
+                 the YOLOv5 framework demonstrate that SimD3 provides       B. K. S. Isaac-Medina, M. Poyser, D. Organisciak, C. G. Willcocks,
+                                                                            T. Breckon, and H. P. H. Shum, “Unmanned aerial vehicle visual
+          strong supervision for small-object drone detection and im-       detection and tracking using deep neural networks: A performance
+          proves model robustness when combined with real-world data.       benchmark,” in Proc. IEEE/CVF Int. Conf. on Computer Vision Work-
+Furthermore, the proposed attention-enhanced Yolov5m+C3b [12] shops (ICCVW), 2021, pp. 1223–1232.
+        Y. Lv, Z. Ai, M. Chen, X. Gong, Y. Wang, and Z. Lu, “High-resolution
+       architecture consistently outperforms the baseline across syn-       drone detection based on background difference and sag-YOLOv5s,”
+thetic, mixed-domain, and cross-dataset evaluations, indicating [13] Sensors, vol. 22, no. 15, p. 5815, 2022.
+           improved feature discrimination and generalization. Future       M. Huang,    W. Mi, and Y.  Wang,   “Edgs-YOLOv8: An              improved
+                                                                            YOLOv8 lightweight UAV detection model,” Drones, vol. 8, no. 7, p.
+          work will extend SimD3 to additional drone categories, more       374, 2024.
+extreme environmental conditions, and investigate domain [14] G. Tang, J. Ni, Y. Zhao, Y. Gu, and W. Cao, “A survey of object detection
+         adaptation strategies and multi-modal sensing to further en-       for UAVs based on deep learning,” Remote Sensing, vol. 16, no. 1, p.
+    hance real-world deployment performance.                          [15]  149, 2024.
+                                                                            Y. Dong et al., “Securing the skies: A comprehensive survey on anti-
+                                                                            UAV methods and benchmarking,” CVPR Workshops, 2025, to appear.
+         REFERENCES                                                   [16]  G. Jocher,   “Yolov5 by ultralytics,” 2020. [Online].           Available:
+        https://github.com/ultralytics/yolov5
+ [1] I. Barisic et al., “S-uav-t: A synthetic dataset for uav-to-uav detection,” [17] A. Pandat, P. Rajasekhar, G. Vinod, and R. Shukla, “Yolovn-cbi: A
+    Proceedings of the IEEE Conference on Computer Vision and Pattern       lightweight and efficient architecture for real-time detection of small
+    Recognition Workshops, 2021.                                            uavs,” 2025. [Online]. Available: https://arxiv.org/abs/2512.18046
+
+
+
+
+
+
+                                                                                   10 / 11
+
+    SimD3:Simulated Drone Detection Dataset
+
+
+[18] H. Yan, X. Kong, T. Shimada et al., “Toe-yolo: Accurate and efficient [43] ——, “Downtown environment,” https://www.fab.com/listings/0faf8b5d-
+          detection  of   tiny   objects     in uav imagery,”                   Journal    of   Real-Time         7a5f-4fee-a297-7a8efaba8896, 2024, unreal Engine Marketplace asset.
+          Image        Processing, vol.    1,  pp.  1–18,     2025.                 [Online].  Available:   [44]  ——,               “Dynamic         city                environment,”
+          https://link.springer.com/article/10.1007/s11554-025-01770-3                                            https://www.fab.com/listings/cfea5a68-2931-40a5-a578-82261247e664,
+    [19]  B. Zou, W. Li, and Z. Chen, “Cheapconv: Efficient parcel segmentation                                   2024, unreal Engine Marketplace asset.
+          and detection for real-time logistics automation,” Journal of Real-Time                           [45]  ——,               “Rural      australia                environment,”
+          Image        Processing, vol.    1,  pp.  1–18,     2025.                 [Online].  Available:         https://www.fab.com/listings/1c1467ce-a2f5-4be1-8988-9069f90a8571,
+          https://link.springer.com/article/10.1007/s11554-025-01779-8                                            2024, unreal Engine Marketplace asset.
+    [20]  M. C¸ . Aksoy, A. S. Orak, H. M.          Ozkan, and B. Selimo˘¨                    glu, “Drone   [46]  ——, “Bridge     environment,” https://www.fab.com/listings/a472df9d-
+          dataset: Amateur unmanned air vehicle detection,” in                             Mendeley Data,         9179-4743-8d41-335f9ef55546, 2024, unreal Engine Marketplace asset.
+          V4, 2019, dataset.                                                                                [47]  ——,            “Wild        west     town              environment,”
+    [21]  A. Rodriguez-Ramos, J. Rodriguez-Vazquez, C. Sampedro, and P. Cam-                                      https://www.fab.com/listings/25d8d2df-3c68-4642-adc9-53169e12ad12,
+          poy, “Adaptive inattentional framework for video object detection with                                  2024, unreal Engine Marketplace asset.
+     reward-conditional training,” IEEE Access, vol. 8, pp. 124 451–124 466, [48] A. Munir, A. J. Siddiqui, S. Anwar, A. El-Maleh, A. H. Khan,
+          2020, introduces the MAV-VID dataset.                                                                   and A. Rehman, “Impact of adverse weather and image distortions
+    [22]  J. Wu     et     al.,  “Det-fly:   A  uav-to-uav     drone                 detection  dataset,”         on vision-based UAV detection: A performance evaluation of deep
+          https://github.com/Jake-WU/Det-Fly, 2021, gitHub repository.                                            learning models,” Drones, vol. 8, no. 11, 2024. [Online]. Available:
+    [23]  A. Barisic et al., “UAV-eagle: Annotated dataset of quadrotor eagle in                                  https://www.mdpi.com/2504-446X/8/11/638
+     real scenes,” https://github.com/larics/UAV-Eagle, 2019, gitHub reposi- [49] N. U. A. Tahir, Z. Zhang, M. Asim, J. Chen, and M. ELAffendi, “Object
+          tory.                                                                                                   detection in autonomous vehicles under adverse weather: A review
+    [24]  Y. Zeng                                 et al., “UAVData: A dataset for unmanned aerial vehicle         of  traditional and deep  learning approaches,” Algorithms, vol. 17,
+          detection,” Soft Computing, vol. 25, 2021.                                                              no. 3, p. 103, 2024. [Online]. Available: https://www.mdpi.com/1999-
+    [25]  F. Svanstr¨om, F. Alonso-Fernandez, and C. Englund, “A dataset for                                      4893/17/3/103
+     multi-sensor drone detection,” Data in Brief, vol. 39, p. 107521, 2021. [50] S. Woo, J. Park, J.-Y. Lee, and I. S. Kweon, “Cbam: Convolutional
+    [26]  J. Zhao, J. Zhang, D. Li, and D. Wang, “Vision-based anti-UAV detection                                 block attention module,” in Proceedings of the European conference on
+          and tracking,” IEEE Transactions on Intelligent Transportation Systems,                                 computer vision (ECCV), 2018, pp. 3–19.
+          2022, introduces the DUT Anti-UAV dataset.
+    [27]  N. Jiang, K. Wang, X. Peng et al., “Anti-UAV: A large-scale benchmark
+          for vision-based UAV tracking,”                                IEEE Transactions on Multimedia,
+          vol. 25, pp. 486–500, 2023.
+    [28]  S. O. Ajakwe, V. U. Ihekoronye, G. Mohtasin, R. Akter, A. Aouto, D. S.
+          Kim, and J. M. Lee, “Visiodect dataset: An aerial dataset for scenario-
+          based multi-drone detection and identification,” IEEE Dataport, 2022,
+          dataset.
+    [29]  S. Jamil, M. S. Abbas, and A. M. Roy, “Distinguishing malicious drones
+          using vision transformer,” AI, vol. 3, no. 2, pp. 260–273, 2022.
+    [30]  A. Coluccia, A. Fascista, L. Sommer, A. Schumann, A. Dimou, and
+          D. Zarpalas, “The drone-vs-bird detection grand challenge at ICASSP
+          2023: A review of methods and results,” IEEE Open Journal of Signal
+          Processing, vol. 5, pp. 766–779, 2024.
+    [31]  D. Marez, S. Borden, and L. Nans, “UAV detection with a dataset aug-
+          mented by domain randomization,” in Proc. SPIE Geospatial Informatics
+          X, vol. 11398, 2020, p. 1139807.
+    [32]  T. R. Dieter, A. Weinmann, and E. Brucherseifer, “Generating synthetic
+          data for deep learning-based drone detection,” AIP Conference Proceed-
+          ings, vol. 2939, no. 1, p. 030007, 2023.
+    [33]  T. R. Dieter, A. Weinmann, S. J¨ager, and E. Brucherseifer, “Quantifying
+          the simulation–reality gap for deep learning-based drone detection,”
+          Electronics, vol. 12, no. 10, p. 2334, 2023.
+    [34]  A. Barisic, F. Petric, and S. Bogdan, “Sim2air – synthetic aerial dataset
+          for UAV monitoring,”                              IEEE Robotics and Automation Letters, vol. 7,
+          no. 2, pp. 3757–3764, 2022.
+    [35]  W. Jansen, E. Verreycken, A. Schenck, J.-E. Blanquart, C. Verhulst,
+          N. Huebel, and J. Steckel, “Cosys-airsim: A real-time simulation frame-
+          work expanded for complex industrial applications,” in                              2023 Annual
+          Modeling and Simulation Conference (ANNSIM), 2023, pp. 37–48.
+    [36]  Epic     Games, “Unreal engine,”      https://www.unrealengine.com,                       2024,
+          game engine, version 5.x, accessed 2025-11-16.
+    [37]  ——,                      “Unreal                              engine              marketplace,”
+          https://www.unrealengine.com/marketplace, 2024, asset marketplace for
+          Unreal Engine, accessed 2025-11-16.
+    [38]  Blender Online Community, Blender – a 3D Modelling and Rendering
+          Package,  Blender     Foundation,                         Amsterdam,  The  Netherlands,   2018.
+          [Online]. Available: https://www.blender.org
+    [39]  Meshy     Inc., “Meshy          ai:   Ai-powered                      3d   model    generator,”
+          https://www.meshy.ai, 2024, accessed 2025-11-16.
+    [40]  Epic    Games   Marketplace        Contributors,     “Niagara              effects  for  unreal
+          engine,”                                  https://dev.epicgames.com/documentation/en-us/unreal-
+          engine/overview-of-niagara-effects-for-unreal-engine,                         2024,      unreal
+          Engine Marketplace asset.
+    [41]  ——, “City park environment,” https://www.fab.com/listings/11cc2abb-
+          126c-4452-9fe4-6f2381d96544, 2024, unreal Engine Marketplace asset.
+    [42]  ——, “City creator environment,” https://www.fab.com/listings/2594de2d-
+          531b-43f6-8b84-c3fbb7c360e7, 2024, unreal Engine Marketplace asset.
+
+
+
+
+
+
+                                                                                                                                              11 / 11

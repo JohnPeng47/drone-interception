@@ -1,0 +1,75 @@
+# Drone Detection from Pure Synthetic Data — Wisniewski et al. 2024
+
+Trains Faster-RCNN on a *purely* synthetic Blender dataset and shows it transfers to
+real flight footage almost as well as a real-data-trained model. Compares Structured
+Domain Randomization (SDR) — realistic backgrounds + structured randomization — against
+pure Domain Randomization (DR) with random unrealistic backgrounds.
+
+```diagram
+┌─ PIPELINE (Blender Cycles, SDR) ───────────────────────────────────────────────┐
+│                                                                                 │
+│   ASSETS                  RANDOMIZATION                  CAMERA                 │
+│   ───────                 ───────────                    ───────                │
+│   5 DJI models:           Each engagement:               - position randomized  │
+│   - Phantom               - HDRI sampled (sky, lighting) - focal length rand.   │
+│   - Inspire               - swarm path generated         - look-at constraint   │
+│   - 2× Mavic              - 300 frames per HDRI/path       (point at drones)    │
+│   - FPV                                                  - focus at infinity    │
+│                                                            (mimic security cam) │
+│                                                                                 │
+│   5 dataset variants:                                                           │
+│   1. Drones-Only         (SDR baseline, realistic HDRI background)              │
+│   2. Drones + Birds      (synthetic Drone-vs-Bird analog)                       │
+│   3. Drones + Generic Distractors  (cubes/cones/random shapes)                  │
+│   4. Drones + Realistic Distractors                                             │
+│   5. Random Backgrounds  (DR baseline — unrealistic textures)                   │
+│                                                                                 │
+└─────────────────────────────────────────────────────────────────────────────────┘
+
+┌─ KEY RESULT: PURE SYNTHETIC ≈ REAL ────────────────────────────────────────────┐
+│   Faster-RCNN on MAV-Vid (real test set):                                       │
+│                                                                                 │
+│                                  AP@0.5                                         │
+│   trained on MAV-Vid (real)      97.8%                                          │
+│   trained on SDR synthetic only  97.0%   ← within 0.8pp of real-trained         │
+│                                                                                 │
+│   This is the existence proof for Phase 1: a model trained on zero real images  │
+│   can match a model trained on the target's real distribution.                  │
+└─────────────────────────────────────────────────────────────────────────────────┘
+
+┌─ KEY FINDING: SDR > DR ────────────────────────────────────────────────────────┐
+│   Pure DR (random unrealistic backgrounds) underperforms SDR (realistic         │
+│   backgrounds + structured randomization of pose/light/camera).                 │
+│                                                                                 │
+│   Contradicts the early DR literature (Tobin/Tremblay) which argued for         │
+│   maximal unrealism. Aligns with Alghonaim & Johns: realistic + targeted        │
+│   randomization > unrealistic for sim-to-real.                                  │
+│                                                                                 │
+│   We adopt the SDR paradigm in the pipeline (Stage 3).                          │
+│   But: keep Sim2Air's atypical-texture pool — that's about the DRONE texture,   │
+│   not the background. The two findings are compatible: realistic background +   │
+│   randomized drone surface materials → forces shape-based learning under        │
+│   realistic context.                                                            │
+└─────────────────────────────────────────────────────────────────────────────────┘
+
+┌─ AUGMENTATION ABLATIONS ───────────────────────────────────────────────────────┐
+│   Tested:                                                                       │
+│     - JPEG compression  (helped — matches real-video artifact)                  │
+│     - Gaussian noise    (helped — matches CMOS sensor noise)                    │
+│     - Random crop / flip (standard, neutral)                                    │
+│   Tested distractors:                                                           │
+│     - Generic distractors:    helped FPR slightly                               │
+│     - Realistic distractors:  helped more (closer to deployment FP)             │
+└─────────────────────────────────────────────────────────────────────────────────┘
+
+┌─ WHAT WE TAKE INTO THE PIPELINE ───────────────────────────────────────────────┐
+│   - SDR over DR: realistic backgrounds, structured randomization                │
+│   - JPEG compression + Gaussian noise as augmentations (Stage 5)                │
+│   - "Look-at" camera constraint (always points roughly at drone) — natural fit  │
+│     for our pursuer geometry, the IBVS controller does the same                 │
+│   - Open-source dataset/code at github.com/mazqtpopx/cranfield-synthetic-...    │
+│ WHAT WE CHANGE                                                                  │
+│   - Swarm-flies-arbitrary-path  →  trajectory from interception sim             │
+│   - Camera position random  →  camera tied to pursuer drone pose                │
+└─────────────────────────────────────────────────────────────────────────────────┘
+```
