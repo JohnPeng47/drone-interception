@@ -10,6 +10,7 @@ extern "C" {
 typedef enum LiftoffRenderBackendKind {
     LIFTOFF_RENDER_BACKEND_NONE = 0,
     LIFTOFF_RENDER_BACKEND_UNITY = 1,
+    LIFTOFF_RENDER_BACKEND_SOFTWARE = 2,
 } LiftoffRenderBackendKind;
 
 typedef enum LiftoffRenderPlatformKind {
@@ -23,7 +24,7 @@ typedef struct LiftoffRenderConfig {
     LiftoffRenderPlatformKind platform;
     uint32_t timeout_ms;
     uint32_t flags;
-    char endpoint[256];
+    char scene_id[256];
 } LiftoffRenderConfig;
 
 typedef struct LiftoffRenderVec3 {

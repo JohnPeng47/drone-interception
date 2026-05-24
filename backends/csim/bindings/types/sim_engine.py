@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from typing import Any
+
 from .camera_sim import CameraConfig
 from .sim_types import PUFFER_ACTION_SUBSTEPS, PUFFER_DT, PursuerInitialState, PursuerParams
 from .target_sim import TargetConfig, TargetInitialState
@@ -8,12 +10,7 @@ from .target_sim import TargetConfig, TargetInitialState
 
 @dataclass(frozen=True)
 class NoiseConfig:
-    """Sensor/perception noise owned by a typed sim configuration.
-
-    The C sim currently owns camera geometry/projection and detection gating.
-    These fields describe measurement noise/delay/dropout for callers that add
-    noisy sensor/perception layers around those geometric observations.
-    """
+    """Sensor/perception noise owned by a typed sim configuration."""
 
     processing_delay_s: float = 0.0
     pixel_noise_std_px: tuple[float, float] = (0.0, 0.0)
@@ -39,6 +36,17 @@ class SimOptions:
 
 
 @dataclass(frozen=True)
+class RenderConfig:
+    enabled: bool = False
+    camera_id: str | None = None
+    backend: str = "software"
+    platform: str = "auto"
+    scene_id: str = "liftoff_fpv_0"
+    timeout_ms: int = 16
+    fail_on_error: bool = False
+
+
+@dataclass(frozen=True)
 class SimConfig:
     pursuer: PursuerParams
     options: SimOptions = field(default_factory=SimOptions)
@@ -46,9 +54,7 @@ class SimConfig:
     max_thrust_n: float = 0.0
     max_rate_rps: float = 0.0
     noise: NoiseConfig = field(default_factory=NoiseConfig)
-    render_frames: bool = False
-    render_camera_id: str | None = None
-    render_endpoint: str = "tcp://127.0.0.1:47391"
+    render: RenderConfig = field(default_factory=RenderConfig)
 
 
 @dataclass(frozen=True)
@@ -58,6 +64,8 @@ class SimInstance:
     targets: tuple[TargetConfig, ...]
     cameras: tuple[CameraConfig, ...] = ()
     config: SimConfig | None = None
+    raw_config: dict[str, Any] = field(default_factory=dict)
+    metadata: dict[str, Any] = field(default_factory=dict)
 
     @property
     def target_initial(self) -> TargetInitialState:

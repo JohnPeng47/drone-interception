@@ -1,5 +1,5 @@
 from .camera_sim import CameraConfig, CameraIntrinsics
-from .sim_engine import NoiseConfig, SimConfig, SimInstance, SimOptions
+from .sim_engine import NoiseConfig, RenderConfig, SimConfig, SimInstance, SimOptions
 from .sim_types import (
     DEFAULT_MAX_OMEGA_RPS,
     DEFAULT_MAX_VEL_MPS,
@@ -28,6 +28,7 @@ __all__ = [
     "PUFFER_DT",
     "PursuerInitialState",
     "PursuerParams",
+    "RenderConfig",
     "SimConfig",
     "SimInstance",
     "SimOptions",

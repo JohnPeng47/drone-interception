@@ -14,12 +14,12 @@ from .types import (
     DEFAULT_MAX_VEL_MPS,
     PursuerInitialState,
     PursuerParams,
+    RenderConfig,
     SimConfig,
     SimInstance,
     SimOptions,
     TargetConfig,
 )
-from ...rendering import LiftoffRenderEngine, RenderFrameRequest
 
 
 class _CQuat(C.Structure):
@@ -249,7 +249,9 @@ class PufferDroneBackend:
         self._lib = _load_lib()
         self._sim = _CPursuerSim()
 
-    def reset(self, initial_state: PursuerInitialState) -> dict[str, np.ndarray]:
+    def reset(self, initial_state: PursuerInitialState | dict[str, np.ndarray]) -> dict[str, np.ndarray]:
+        if isinstance(initial_state, dict):
+            initial_state = initial_state_from_rotorpy(initial_state)
         rotor_speeds = initial_state.rotor_speeds
         if rotor_speeds is None:
             rotor_speeds = np.full(4, self._hover_rpm(), dtype=float)
@@ -407,41 +409,35 @@ class PufferDroneBackend:
 class PufferSimEngineBackend(PufferDroneBackend):
     """Python adapter for the C SimEngine pursuer plus target world."""
 
-    def __init__(
-        self,
-        params: PursuerParams | SimConfig,
-        options: SimOptions | None = None,
-        render_engine: Any | None = None,
-    ):
+    def __init__(self, params: PursuerParams | SimConfig, options: SimOptions | None = None):
         self.config = params if isinstance(params, SimConfig) else None
         self.params = params.pursuer if isinstance(params, SimConfig) else params
         self.options = options or (params.options if isinstance(params, SimConfig) else SimOptions())
+        self.render_config = params.render if isinstance(params, SimConfig) else RenderConfig()
         self.mass_kg = self.params.mass_kg
         self.dt = self.options.backend_dt * self.options.action_substeps
         self._lib = _load_lib()
         self._engine = _CSimEngine()
         self._target_specs: tuple[dict[str, Any], ...] = ()
         self._camera_specs: tuple[dict[str, Any], ...] = ()
-        self._provided_render_engine = render_engine
-        self._render_frames = bool(self.config.render_frames) if self.config is not None else False
-        self._render_camera_id = self.config.render_camera_id if self.config is not None else None
-        self._render_engine = None
-        self._configure_render_engine(self.config)
+        self._renderer: Any | None = None
+        self._renderer_key: tuple[Any, ...] | None = None
+        self._render_sequence_id = 0
 
     def reset(
         self,
-        initial_state: PursuerInitialState | SimInstance,
-        targets: tuple[TargetConfig, ...] = (),
-        cameras: tuple[CameraConfig, ...] = (),
+        initial_state: PursuerInitialState | SimInstance | dict[str, np.ndarray],
+        targets: list[Any] | tuple[Any, ...] = (),
+        cameras: list[Any] | tuple[Any, ...] = (),
         intercept_radius_m: float | None = None,
     ) -> dict[str, Any]:
-        active_config = self.config
         if isinstance(initial_state, SimInstance):
             instance = initial_state
             initial_state = instance.pursuer_initial
             targets = instance.targets
             cameras = instance.cameras
-            active_config = instance.config or self.config
+            if instance.config is not None:
+                self.render_config = instance.config.render
             if intercept_radius_m is None:
                 intercept_radius_m = (
                     instance.config.intercept_radius_m
@@ -454,7 +450,8 @@ class PufferSimEngineBackend(PufferDroneBackend):
                 )
         if intercept_radius_m is None:
             intercept_radius_m = self.config.intercept_radius_m if self.config is not None else 0.0
-        self._configure_render_engine(active_config)
+        if isinstance(initial_state, dict):
+            initial_state = initial_state_from_rotorpy(initial_state)
         rotor_speeds = initial_state.rotor_speeds
         if rotor_speeds is None:
             rotor_speeds = np.full(4, self._hover_rpm(), dtype=float)
@@ -476,10 +473,11 @@ class PufferSimEngineBackend(PufferDroneBackend):
             C.byref(self._engine),
             C.c_float(float(intercept_radius_m)),
         )
-        self._target_specs = tuple(_target_spec_from_config(target, i) for i, target in enumerate(targets))
+        self._target_specs = tuple(_target_spec_from_python(target, i) for i, target in enumerate(targets))
         self._set_engine_targets(self._target_specs)
-        self._camera_specs = tuple(_camera_spec_from_config(camera, i) for i, camera in enumerate(cameras))
+        self._camera_specs = tuple(_camera_spec_from_python(camera, i) for i, camera in enumerate(cameras))
         self._set_engine_cameras(self._camera_specs)
+        self._configure_renderer(self.render_config)
         camera_outputs = self._collect_camera_outputs()
         return self._snapshot_from_engine(wind, camera_outputs=camera_outputs)
 
@@ -572,72 +570,73 @@ class PufferSimEngineBackend(PufferDroneBackend):
             _camera_output_from_c(outputs[i], self._target_specs, self._camera_specs)
             for i in range(int(count))
         )
-        if not self._render_frames:
-            return camera_outputs
-        if self._render_engine is None:
-            raise RuntimeError("SimConfig.render_frames is enabled but no Liftoff render engine is configured")
+        return self._render_camera_outputs(camera_outputs)
 
-        vehicle_state = _state_from_c(self._lib.sim_engine_get_pursuer_state(C.byref(self._engine)))
-        target_states = tuple(
-            _target_snapshot_from_c(
-                self._lib.sim_engine_get_target_state(C.byref(self._engine), C.c_int(i)),
-                self._target_specs[i] if i < len(self._target_specs) else {},
-                self._engine.targets[i],
-            )
-            for i in range(int(self._lib.sim_engine_get_num_targets(C.byref(self._engine))))
-        )
-        camera_states = _camera_states_from_engine(self._engine, self._camera_specs)
-        return tuple(
-            self._attach_liftoff_frame(output, vehicle_state, target_states, camera_states)
-            for output in camera_outputs
-        )
+    def _configure_renderer(self, config: RenderConfig) -> None:
+        key = _render_config_key(config)
+        if not config.enabled:
+            self._close_renderer()
+            self._renderer_key = key
+            return
+        if self._renderer is not None and self._renderer_key == key:
+            return
+        self._close_renderer()
+        from rendering.python import NativeRenderEngine
 
-    def _configure_render_engine(self, config: SimConfig | None) -> None:
-        self._render_frames = bool(config.render_frames) if config is not None else False
-        self._render_camera_id = config.render_camera_id if config is not None else None
-        if not self._render_frames:
-            self._render_engine = None
-        elif self._provided_render_engine is not None:
-            self._render_engine = self._provided_render_engine
-        else:
-            assert config is not None
-            self._render_engine = LiftoffRenderEngine(config.render_endpoint)
+        self._renderer = NativeRenderEngine(config)
+        self._renderer_key = key
 
-    def _attach_liftoff_frame(
+    def _close_renderer(self) -> None:
+        if self._renderer is not None:
+            self._renderer.close()
+            self._renderer = None
+
+    def _render_camera_outputs(
         self,
-        output: dict[str, Any],
-        vehicle_state: dict[str, np.ndarray],
-        target_states: tuple[dict[str, Any], ...],
-        camera_states: tuple[dict[str, Any], ...],
-    ) -> dict[str, Any]:
-        selected_id = self._render_camera_id
-        if selected_id is None:
-            selected_id = str(camera_states[0].get("id", camera_states[0].get("c_id", 0))) if camera_states else "0"
-        if str(output["camera_id"]) != str(selected_id):
-            return output
-
-        camera_state = _camera_state_by_id(camera_states, str(selected_id))
-        if camera_state is None:
-            raise ValueError(f"Render camera {selected_id!r} is not configured")
-        assert self._render_engine is not None
-        frame = self._render_engine.render_frame(
-            RenderFrameRequest(
-                t=float(output["t_capture"]),
-                camera_id=str(selected_id),
-                vehicle_state=vehicle_state,
-                target_states=target_states,
-                camera_state=camera_state,
+        camera_outputs: tuple[dict[str, Any], ...],
+    ) -> tuple[dict[str, Any], ...]:
+        # Stage A renderer hook: keep C sim geometry authoritative while the
+        # production C-level renderer integration is still being built.
+        if self._renderer is None or not self.render_config.enabled:
+            return camera_outputs
+        rendered = []
+        for output in camera_outputs:
+            if not self._render_output_selected(output):
+                rendered.append(output)
+                continue
+            self._render_sequence_id += 1
+            result = self._renderer.render_frame(
+                drone=_render_drone_state_from_engine(self._engine),
+                camera=_camera_render_state(self._engine, output),
+                targets=_render_targets_from_engine(self._engine, self._target_specs),
+                sequence_id=self._render_sequence_id,
             )
-        )
-        rendered = dict(output)
-        rendered.update({
-            "has_frame": True,
-            "frame_width_px": frame.width_px,
-            "frame_height_px": frame.height_px,
-            "frame_channels": frame.channels,
-            "frame_rgb": frame.rgb,
-        })
-        return rendered
+            if self.render_config.fail_on_error and result.status not in (0, 1):
+                from rendering.python import RenderError
+
+                raise RenderError(result.status, f"render failed: {result.status_name}")
+            rendered_output = dict(output)
+            rendered_output.update({
+                "render_status": result.status,
+                "render_status_name": result.status_name,
+                "has_frame": result.has_frame,
+                "frame_width_px": result.width_px or output["frame_width_px"],
+                "frame_height_px": result.height_px or output["frame_height_px"],
+                "frame_channels": result.channels or output["frame_channels"],
+                "frame_stride_bytes": result.stride_bytes,
+                "frame_rgb": result.pixels,
+            })
+            rendered.append(rendered_output)
+        return tuple(rendered)
+
+    def _render_output_selected(self, output: dict[str, Any]) -> bool:
+        camera_id = self.render_config.camera_id
+        if camera_id is None:
+            return True
+        return str(camera_id) in {
+            str(output.get("camera_id")),
+            str(output.get("c_camera_id")),
+        }
 
     def _snapshot_from_engine(
         self,
@@ -807,30 +806,78 @@ def _state_from_c(state: _CState) -> dict[str, np.ndarray]:
     }
 
 
-def _target_spec_from_config(target: TargetConfig, index: int = 0) -> dict[str, Any]:
+def _target_spec_from_python(target: Any, index: int = 0) -> dict[str, Any]:
     behavior_kind = TARGET_BEHAVIOR_WAYPOINTS
+    waypoints = None
+    duration = 0.0
+    loop = 0
     controller_kind = TARGET_CONTROLLER_LINEAR
-    pos = target.initial.position_w
-    vel = target.initial.velocity_w
-    waypoints = target.behavior.waypoints
+    kp = 0.0
+    kv = 0.0
+    max_accel = 0.0
+    if isinstance(target, dict):
+        pos = target.get("position_w", target.get("initial_position_w", target.get("pos")))
+        vel = target.get("velocity_w", target.get("vel"))
+        target_id = target.get("id", target.get("target_id", str(index)))
+        kind = target.get("kind", "target")
+        radius = target.get("radius_m", target.get("radius", 0.0))
+    elif isinstance(target, TargetConfig):
+        pos = target.initial.position_w
+        vel = target.initial.velocity_w
+        target_id = target.id
+        kind = target.kind
+        radius = target.radius_m
+        waypoints = target.behavior.waypoints
+        duration = target.behavior.duration_s
+        loop = int(target.behavior.loop)
+        kp = target.controller.kp
+        kv = target.controller.kv
+        max_accel = target.controller.max_accel_mps2
+    else:
+        initial = getattr(target, "initial", None)
+        pos = (
+            getattr(initial, "position_w", None)
+            if initial is not None
+            else getattr(target, "initial_position_w", getattr(target, "position_w", None))
+        )
+        vel = (
+            getattr(initial, "velocity_w", None)
+            if initial is not None
+            else getattr(target, "velocity_w", None)
+        )
+        target_id = getattr(target, "target_id", getattr(target, "id", str(index)))
+        kind = getattr(target, "kind", "target")
+        radius = getattr(target, "radius_m", getattr(target, "radius", 0.0))
+        behavior = getattr(target, "behavior", None)
+        controller = getattr(target, "controller", None)
+        if behavior is not None:
+            waypoints = getattr(behavior, "waypoints", None)
+            duration = getattr(behavior, "duration_s", getattr(behavior, "duration", duration))
+            loop = int(bool(getattr(behavior, "loop", loop)))
+        if controller is not None:
+            kp = getattr(controller, "kp", kp)
+            kv = getattr(controller, "kv", kv)
+            max_accel = getattr(controller, "max_accel_mps2", getattr(controller, "max_accel", max_accel))
+    if pos is None or vel is None:
+        raise ValueError(f"Target {index} must provide position and velocity")
     waypoints = () if waypoints is None else tuple(waypoints)
     if not waypoints:
         waypoints = (np.asarray(pos, dtype=float).reshape(3).copy(),)
     return {
         "c_id": int(index),
-        "id": str(target.id),
-        "kind": str(target.kind),
-        "radius_m": float(target.radius_m),
+        "id": str(target_id),
+        "kind": str(kind),
+        "radius_m": float(radius),
         "position_w": np.asarray(pos, dtype=float).reshape(3).copy(),
         "velocity_w": np.asarray(vel, dtype=float).reshape(3).copy(),
         "behavior_kind": behavior_kind,
         "waypoints": tuple(np.asarray(wp, dtype=float).reshape(3).copy() for wp in waypoints),
-        "duration": float(target.behavior.duration_s),
-        "loop": int(target.behavior.loop),
+        "duration": float(duration),
+        "loop": int(loop),
         "controller_kind": controller_kind,
-        "kp": float(target.controller.kp),
-        "kv": float(target.controller.kv),
-        "max_accel": float(target.controller.max_accel_mps2),
+        "kp": float(kp),
+        "kv": float(kv),
+        "max_accel": float(max_accel),
     }
 
 
@@ -907,24 +954,50 @@ def _target_snapshot_from_c(
     }
 
 
-def _camera_spec_from_config(camera: CameraConfig, index: int = 0) -> dict[str, Any]:
-    intr = camera.intrinsics
+def _camera_spec_from_python(camera: Any, index: int = 0) -> dict[str, Any]:
+    intr = getattr(camera, "intrinsics", None)
+    if intr is None:
+        intr = camera["intrinsics"]
+        width_px = intr["width_px"]
+        height_px = intr["height_px"]
+        fx_px = intr["fx_px"]
+        fy_px = intr["fy_px"]
+        cx_px = intr.get("cx_px", width_px / 2.0)
+        cy_px = intr.get("cy_px", height_px / 2.0)
+        hfov_rad = intr["hfov_rad"]
+        vfov_rad = intr["vfov_rad"]
+        position_b = camera.get("position_b", [0.0, 0.0, 0.0])
+        body_to_camera = camera.get("body_to_camera", np.eye(3))
+        capture_rate_hz = camera["capture_rate_hz"]
+        camera_id = camera.get("id", str(index))
+    else:
+        width_px = intr.width_px
+        height_px = intr.height_px
+        fx_px = intr.fx_px
+        fy_px = intr.fy_px
+        cx_px = intr.cx_px
+        cy_px = intr.cy_px
+        hfov_rad = intr.hfov_rad
+        vfov_rad = intr.vfov_rad
+        position_b = camera.position_b
+        body_to_camera = camera.body_to_camera
+        capture_rate_hz = camera.capture_rate_hz
+        camera_id = camera.id
 
     return {
         "c_id": int(index),
-        "id": str(camera.id),
-        "parent_id": str(camera.parent_id),
-        "position_b": np.asarray(camera.position_b, dtype=float).reshape(3).copy(),
-        "body_to_camera": np.asarray(camera.body_to_camera, dtype=float).reshape(3, 3).copy(),
-        "width_px": int(intr.width_px),
-        "height_px": int(intr.height_px),
-        "fx_px": float(intr.fx_px),
-        "fy_px": float(intr.fy_px),
-        "cx_px": float(intr.cx_px),
-        "cy_px": float(intr.cy_px),
-        "hfov_rad": float(intr.hfov_rad),
-        "vfov_rad": float(intr.vfov_rad),
-        "capture_rate_hz": float(camera.capture_rate_hz),
+        "id": str(camera_id),
+        "position_b": np.asarray(position_b, dtype=float).reshape(3).copy(),
+        "body_to_camera": np.asarray(body_to_camera, dtype=float).reshape(3, 3).copy(),
+        "width_px": int(width_px),
+        "height_px": int(height_px),
+        "fx_px": float(fx_px),
+        "fy_px": float(fy_px),
+        "cx_px": float(cx_px),
+        "cy_px": float(cy_px),
+        "hfov_rad": float(hfov_rad),
+        "vfov_rad": float(vfov_rad),
+        "capture_rate_hz": float(capture_rate_hz),
         "next_capture_t": 0.0,
     }
 
@@ -950,6 +1023,8 @@ def _camera_specs_from_snapshot(
             "capture_rate_hz": float(snap["capture_rate_hz"]),
             "next_capture_t": float(snap["next_capture_t"]),
         })
+        if "id" in snap:
+            base["id"] = str(snap["id"])
         specs.append(base)
     return tuple(specs)
 
@@ -1006,18 +1081,6 @@ def _camera_states_from_engine(
     return tuple(states)
 
 
-def _camera_state_by_id(
-    camera_states: tuple[dict[str, Any], ...],
-    camera_id: str,
-) -> dict[str, Any] | None:
-    for camera in camera_states:
-        if str(camera.get("id", camera.get("c_id", 0))) == camera_id:
-            return camera
-        if str(camera.get("c_id", 0)) == camera_id:
-            return camera
-    return None
-
-
 def _camera_output_from_c(
     output: _CCameraOutput,
     target_specs: tuple[dict[str, Any], ...],
@@ -1028,12 +1091,15 @@ def _camera_output_from_c(
     target_id = None
     if 0 <= target_index < len(target_specs):
         target_id = str(target_specs[target_index].get("id", target_index))
-    camera_index = int(obs.camera_id)
-    camera_id = str(camera_index)
-    if 0 <= camera_index < len(camera_specs):
-        camera_id = str(camera_specs[camera_index].get("id", camera_id))
+    c_camera_id = int(obs.camera_id)
+    camera_id = str(c_camera_id)
+    for spec in camera_specs:
+        if int(spec.get("c_id", -1)) == c_camera_id:
+            camera_id = str(spec.get("id", camera_id))
+            break
     return {
         "camera_id": camera_id,
+        "c_camera_id": c_camera_id,
         "target_id": target_id,
         "target_index": target_index,
         "captured": bool(obs.captured),
@@ -1048,8 +1114,67 @@ def _camera_output_from_c(
         "frame_width_px": int(output.frame_width_px),
         "frame_height_px": int(output.frame_height_px),
         "frame_channels": int(output.frame_channels),
+        "frame_stride_bytes": 0,
         "frame_rgb": None,
+        "render_status": None,
+        "render_status_name": None,
     }
+
+
+def _render_config_key(config: RenderConfig) -> tuple[Any, ...]:
+    return (
+        bool(config.enabled),
+        config.camera_id,
+        config.backend,
+        config.platform,
+        config.scene_id,
+        int(config.timeout_ms),
+        bool(config.fail_on_error),
+    )
+
+
+def _render_drone_state_from_engine(engine: _CSimEngine) -> dict[str, Any]:
+    state = _state_from_c(engine.pursuer.state)
+    state["t"] = float(engine.t)
+    return state
+
+
+def _camera_render_state(engine: _CSimEngine, output: dict[str, Any]) -> dict[str, Any]:
+    camera_index = int(output["c_camera_id"])
+    camera = engine.cameras[camera_index]
+    return {
+        "c_id": int(camera.id),
+        "position_b": np.array([camera.position_b.x, camera.position_b.y, camera.position_b.z], dtype=float),
+        "body_to_camera": np.array(
+            [[camera.body_to_camera.m[r][c] for c in range(3)] for r in range(3)],
+            dtype=float,
+        ),
+        "width_px": int(camera.intrinsics.width_px),
+        "height_px": int(camera.intrinsics.height_px),
+        "fx_px": float(camera.intrinsics.fx_px),
+        "fy_px": float(camera.intrinsics.fy_px),
+        "cx_px": float(camera.intrinsics.cx_px),
+        "cy_px": float(camera.intrinsics.cy_px),
+        "hfov_rad": float(camera.intrinsics.hfov_rad),
+        "vfov_rad": float(camera.intrinsics.vfov_rad),
+    }
+
+
+def _render_targets_from_engine(
+    engine: _CSimEngine,
+    target_specs: tuple[dict[str, Any], ...],
+) -> tuple[dict[str, Any], ...]:
+    targets = []
+    for i in range(int(engine.num_targets)):
+        state = engine.targets[i].state
+        spec = target_specs[i] if i < len(target_specs) else {}
+        targets.append({
+            "c_id": int(engine.targets[i].id),
+            "position_w": np.array([state.pos.x, state.pos.y, state.pos.z], dtype=float),
+            "velocity_w": np.array([state.vel.x, state.vel.y, state.vel.z], dtype=float),
+            "radius_m": float(spec.get("radius_m", engine.targets[i].radius)),
+        })
+    return tuple(targets)
 
 
 def _metrics_from_c(metrics: _CInterceptMetrics) -> dict[str, float | int | bool | None]:
