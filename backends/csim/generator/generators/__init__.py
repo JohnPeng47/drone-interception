@@ -1,4 +1,7 @@
-__all__ = ["RobustInterceptConfigGenerator"]
+__all__ = [
+    "RobustInterceptConfigGenerator",
+    "RobustInterceptUniformDistanceConfigGenerator",
+]
 
 
 def __getattr__(name: str):
@@ -6,4 +9,8 @@ def __getattr__(name: str):
         from .robust_intercept import RobustInterceptConfigGenerator
 
         return RobustInterceptConfigGenerator
+    if name == "RobustInterceptUniformDistanceConfigGenerator":
+        from .robust_intercept_uniform_distance import RobustInterceptUniformDistanceConfigGenerator
+
+        return RobustInterceptUniformDistanceConfigGenerator
     raise AttributeError(name)

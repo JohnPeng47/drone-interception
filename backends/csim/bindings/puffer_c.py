@@ -502,6 +502,7 @@ class PufferSimEngineBackend(PufferDroneBackend):
             _params_to_c(self.params),
             _state_to_c(vehicle_state),
         )
+        self._engine.t = C.c_float(float(snapshot.get("t", 0.0)))
         self._lib.sim_engine_set_intercept_radius(
             C.byref(self._engine),
             C.c_float(float(snapshot.get("intercept_radius_m", 0.0))),
@@ -558,6 +559,10 @@ class PufferSimEngineBackend(PufferDroneBackend):
         )
         if count != len(c_cameras):
             raise ValueError(f"SimEngine accepted {count} cameras out of {len(c_cameras)}")
+        for index, spec in enumerate(specs):
+            self._engine.cameras[index].next_capture_t = C.c_float(
+                float(spec.get("next_capture_t", 0.0))
+            )
 
     def _collect_camera_outputs(self) -> tuple[dict[str, Any], ...]:
         outputs = (_CCameraOutput * SIM_MAX_CAMERA_OUTPUTS)()
@@ -652,6 +657,7 @@ class PufferSimEngineBackend(PufferDroneBackend):
             spec = self._target_specs[i] if i < len(self._target_specs) else {}
             targets.append(_target_snapshot_from_c(state, spec, self._engine.targets[i]))
         return {
+            "t": float(self._engine.t),
             "vehicle_state": vehicle,
             "target_states": tuple(targets),
             "intercept_radius_m": float(self._engine.intercept_radius_m),

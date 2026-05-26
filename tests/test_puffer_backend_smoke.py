@@ -173,6 +173,48 @@ def test_sim_engine_emits_camera_outputs():
     np.testing.assert_allclose(output["uv_px"], np.array([320.0, 240.0]), atol=1e-5)
 
 
+def test_sim_engine_preserves_time_and_camera_schedule_across_snapshots():
+    params = _params()
+    backend = PufferSimEngineBackend(params)
+    snapshot = backend.reset(
+        PursuerInitialState(
+            position_w=np.zeros(3),
+            velocity_w=np.zeros(3),
+            quat_xyzw=np.array([0.0, 0.0, 0.0, 1.0]),
+            body_rates_b=np.zeros(3),
+        ),
+        targets=(
+            {
+                "id": "target",
+                "position_w": np.array([2.0, 0.0, 0.0]),
+                "velocity_w": np.zeros(3),
+                "radius_m": 0.2,
+            },
+        ),
+        cameras=(_camera("front"),),
+    )
+
+    assert snapshot["t"] == 0.0
+    assert len(snapshot["camera_outputs"]) == 1
+    np.testing.assert_allclose(snapshot["camera_outputs"][0]["t_capture"], 0.0, atol=1e-7)
+    np.testing.assert_allclose(snapshot["camera_states"][0]["next_capture_t"], 1.0 / 30.0, atol=1e-6)
+
+    command = {
+        "thrust_n": params.mass_kg * params.gravity_mps2,
+        "body_rates_b": np.zeros(3),
+    }
+    outputs_by_step = []
+    for step in range(1, 11):
+        snapshot = backend.step_ctbr(snapshot, command, 0.005)
+        outputs_by_step.append((step, snapshot["t"], tuple(snapshot["camera_outputs"])))
+
+    assert [step for step, _t, outputs in outputs_by_step if outputs] == [7]
+    np.testing.assert_allclose(outputs_by_step[6][1], 0.035, atol=1e-7)
+    np.testing.assert_allclose(outputs_by_step[6][2][0]["t_capture"], 0.035, atol=1e-7)
+    np.testing.assert_allclose(snapshot["t"], 0.05, atol=1e-7)
+    np.testing.assert_allclose(snapshot["camera_states"][0]["next_capture_t"], 2.0 / 30.0, atol=1e-6)
+
+
 def test_sim_engine_render_config_requests_only_selected_camera():
     params = _params()
     backend = PufferSimEngineBackend(
