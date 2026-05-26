@@ -131,6 +131,7 @@ class PufferSimEngineSystem(LeafSystem):
 
 def _copy_snapshot(snapshot: dict[str, Any]) -> dict[str, Any]:
     return {
+        "t": float(snapshot.get("t", 0.0)),
         "vehicle_state": _copy_state(snapshot["vehicle_state"]),
         "target_states": tuple(_copy_target_state(target) for target in snapshot["target_states"]),
         "intercept_radius_m": float(snapshot.get("intercept_radius_m", 0.0)),
