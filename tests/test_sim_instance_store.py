@@ -16,7 +16,7 @@ from backends import (
     TargetBehaviorConfig,
     TargetConfig,
     TargetControllerConfig,
-    TargetState,
+    TargetInitialState,
     read_sim_instances,
     write_sim_instances,
 )
@@ -34,10 +34,11 @@ def test_sim_instance_binary_round_trip(tmp_path):
     assert restored.seed == 7
     np.testing.assert_allclose(restored.pursuer_initial.position_w, instance.pursuer_initial.position_w)
     np.testing.assert_allclose(restored.pursuer_initial.quat_xyzw, instance.pursuer_initial.quat_xyzw)
-    np.testing.assert_allclose(restored.targets[0].initial.position_w, instance.targets[0].initial.position_w)
-    np.testing.assert_allclose(restored.targets[0].behavior.waypoints[0], instance.targets[0].behavior.waypoints[0])
-    np.testing.assert_allclose(restored.cameras[0].body_to_camera, np.eye(3))
+    np.testing.assert_allclose(restored.target_initials[0].position_w, instance.target_initials[0].position_w)
     assert restored.config is not None
+    assert instance.config is not None
+    np.testing.assert_allclose(restored.config.targets[0].behavior.waypoints[0], instance.config.targets[0].behavior.waypoints[0])
+    np.testing.assert_allclose(restored.config.cameras[0].body_to_camera, np.eye(3))
     assert restored.config.options.action_substeps == 5
     assert restored.config.options.duration_s == 2.5
     assert restored.config.options.validation_dt == np.float32(0.04)
@@ -82,10 +83,6 @@ def _instance(seed: int) -> SimInstance:
         id="red_balloon",
         kind="target",
         radius_m=0.2,
-        initial=TargetState(
-            position_w=np.array([1.0, 2.0, 3.0]),
-            velocity_w=np.array([0.1, 0.2, 0.3]),
-        ),
         behavior=TargetBehaviorConfig(
             waypoints=(np.array([1.0, 2.0, 3.0]),),
             duration_s=1.5,
@@ -123,6 +120,8 @@ def _instance(seed: int) -> SimInstance:
             rotor_directions=np.array([1.0, -1.0, 1.0, -1.0]),
         ),
         options=SimOptions(action_substeps=5, duration_s=2.5, validation_dt=0.04),
+        targets=(target,),
+        cameras=(camera,),
         intercept_radius_m=0.5,
         max_thrust_n=1.2,
         max_rate_rps=3.4,
@@ -158,8 +157,12 @@ def _instance(seed: int) -> SimInstance:
             rotor_speeds=np.full(4, 100.0),
             wind_w=np.zeros(3),
         ),
-        targets=(target,),
-        cameras=(camera,),
+        target_initials=(
+            TargetInitialState(
+                position_w=np.array([1.0, 2.0, 3.0]),
+                velocity_w=np.array([0.1, 0.2, 0.3]),
+            ),
+        ),
         config=config,
         raw_config={"experiment": {"name": "round_trip"}, "vector": np.array([1.0, 2.0, 3.0])},
         metadata={"source": "test", "seed": np.int64(seed)},

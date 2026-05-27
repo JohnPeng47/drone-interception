@@ -155,8 +155,9 @@ def _analyze_seed(generator: RobustInterceptUniformDistanceConfigGenerator, seed
 
 
 def _minimal_config(instance) -> TrialConfig:
-    target = instance.targets[0]
-    camera = instance.cameras[0]
+    target = instance.config.targets[0]
+    target_initial = instance.target_initials[0]
+    camera = instance.config.cameras[0]
     return TrialConfig(
         dt=float(instance.config.options.backend_dt),
         duration_s=float(instance.config.options.duration_s),
@@ -173,8 +174,8 @@ def _minimal_config(instance) -> TrialConfig:
         ),
         target=TargetConfig(
             radius_m=float(target.radius_m),
-            initial_position_w=tuple(float(x) for x in target.initial.position_w),
-            base_velocity_w=tuple(float(x) for x in target.initial.velocity_w),
+            initial_position_w=tuple(float(x) for x in target_initial.position_w),
+            base_velocity_w=tuple(float(x) for x in target_initial.velocity_w),
             weave_amplitude_m=(0.0, 0.0),
             weave_frequency_hz=(0.0, 0.0),
         ),

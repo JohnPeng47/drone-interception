@@ -19,11 +19,11 @@ def validate_kinematic_intercept(instance: SimInstance) -> None:
     """
     if instance.config is None:
         raise ValueError("kinematic intercept validation requires SimInstance.config")
-    if not instance.targets:
+    if not instance.target_initials:
         raise ValueError("kinematic intercept validation requires at least one target")
 
     initial = instance.pursuer_initial
-    target = instance.targets[0]
+    target = instance.target_initials[0]
     config = instance.config
     options = config.options
 
@@ -48,8 +48,8 @@ def validate_kinematic_intercept(instance: SimInstance) -> None:
     if horizon_s <= 0.0:
         raise ValueError(f"invalid validation horizon: {horizon_s}")
 
-    target_p0 = np.asarray(target.initial.position_w, dtype=float)
-    target_v = np.asarray(target.initial.velocity_w, dtype=float)
+    target_p0 = np.asarray(target.position_w, dtype=float)
+    target_v = np.asarray(target.velocity_w, dtype=float)
     best_required_thrust = float("inf")
     best_t = None
     for t in np.arange(dt, horizon_s + 0.5 * dt, dt):

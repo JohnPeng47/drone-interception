@@ -433,21 +433,14 @@ class PufferSimEngineBackend(PufferDroneBackend):
     ) -> dict[str, Any]:
         if isinstance(initial_state, SimInstance):
             instance = initial_state
+            if instance.config is None:
+                raise ValueError("SimInstance reset requires SimInstance.config")
             initial_state = instance.pursuer_initial
-            targets = instance.targets
-            cameras = instance.cameras
-            if instance.config is not None:
-                self.render_config = instance.config.render
+            targets = _target_specs_from_instance(instance)
+            cameras = instance.config.cameras
+            self.render_config = instance.config.render
             if intercept_radius_m is None:
-                intercept_radius_m = (
-                    instance.config.intercept_radius_m
-                    if instance.config is not None
-                    else (
-                        self.config.intercept_radius_m
-                        if self.config is not None
-                        else 0.0
-                    )
-                )
+                intercept_radius_m = instance.config.intercept_radius_m
         if intercept_radius_m is None:
             intercept_radius_m = self.config.intercept_radius_m if self.config is not None else 0.0
         if isinstance(initial_state, dict):
@@ -473,7 +466,11 @@ class PufferSimEngineBackend(PufferDroneBackend):
             C.byref(self._engine),
             C.c_float(float(intercept_radius_m)),
         )
-        self._target_specs = tuple(_target_spec_from_python(target, i) for i, target in enumerate(targets))
+        self._target_specs = (
+            tuple(targets)
+            if targets and isinstance(targets[0], dict) and "c_id" in targets[0]
+            else tuple(_target_spec_from_python(target, i) for i, target in enumerate(targets))
+        )
         self._set_engine_targets(self._target_specs)
         self._camera_specs = tuple(_camera_spec_from_python(camera, i) for i, camera in enumerate(cameras))
         self._set_engine_cameras(self._camera_specs)
@@ -828,17 +825,7 @@ def _target_spec_from_python(target: Any, index: int = 0) -> dict[str, Any]:
         kind = target.get("kind", "target")
         radius = target.get("radius_m", target.get("radius", 0.0))
     elif isinstance(target, TargetConfig):
-        pos = target.initial.position_w
-        vel = target.initial.velocity_w
-        target_id = target.id
-        kind = target.kind
-        radius = target.radius_m
-        waypoints = target.behavior.waypoints
-        duration = target.behavior.duration_s
-        loop = int(target.behavior.loop)
-        kp = target.controller.kp
-        kv = target.controller.kv
-        max_accel = target.controller.max_accel_mps2
+        raise ValueError("TargetConfig requires a matching TargetInitialState")
     else:
         initial = getattr(target, "initial", None)
         pos = (
@@ -884,6 +871,48 @@ def _target_spec_from_python(target: Any, index: int = 0) -> dict[str, Any]:
         "kp": float(kp),
         "kv": float(kv),
         "max_accel": float(max_accel),
+    }
+
+
+def _target_specs_from_instance(instance: SimInstance) -> tuple[dict[str, Any], ...]:
+    if instance.config is None:
+        raise ValueError("SimInstance targets require SimInstance.config")
+    targets = instance.config.targets
+    initials = instance.target_initials
+    if not targets:
+        raise ValueError("SimInstance.config.targets must contain at least one target")
+    if len(targets) != len(initials):
+        raise ValueError(
+            "SimInstance target count mismatch: "
+            f"{len(targets)} config targets vs {len(initials)} initial states"
+        )
+    return tuple(
+        _target_spec_from_config(target, initial, i)
+        for i, (target, initial) in enumerate(zip(targets, initials))
+    )
+
+
+def _target_spec_from_config(target: TargetConfig, initial: Any, index: int) -> dict[str, Any]:
+    pos = np.asarray(initial.position_w, dtype=float).reshape(3)
+    vel = np.asarray(initial.velocity_w, dtype=float).reshape(3)
+    waypoints = target.behavior.waypoints
+    if not waypoints:
+        waypoints = (pos.copy(),)
+    return {
+        "c_id": int(index),
+        "id": str(target.id),
+        "kind": str(target.kind),
+        "radius_m": float(target.radius_m),
+        "position_w": pos.copy(),
+        "velocity_w": vel.copy(),
+        "behavior_kind": TARGET_BEHAVIOR_WAYPOINTS,
+        "waypoints": tuple(np.asarray(wp, dtype=float).reshape(3).copy() for wp in waypoints),
+        "duration": float(target.behavior.duration_s),
+        "loop": int(target.behavior.loop),
+        "controller_kind": TARGET_CONTROLLER_LINEAR,
+        "kp": float(target.controller.kp),
+        "kv": float(target.controller.kv),
+        "max_accel": float(target.controller.max_accel_mps2),
     }
 
 

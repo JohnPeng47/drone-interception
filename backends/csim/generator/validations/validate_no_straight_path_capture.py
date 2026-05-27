@@ -11,7 +11,7 @@ def validate_no_straight_path_capture(instance: SimInstance) -> None:
     """Reject scenarios already captured by current straight-line motion."""
     if instance.config is None:
         raise ValueError("straight-path capture validation requires SimInstance.config")
-    if not instance.targets:
+    if not instance.target_initials:
         raise ValueError("straight-path capture validation requires at least one target")
 
     radius_m = float(instance.config.intercept_radius_m)
@@ -23,9 +23,9 @@ def validate_no_straight_path_capture(instance: SimInstance) -> None:
 
     pursuer_position = np.asarray(instance.pursuer_initial.position_w, dtype=float)
     pursuer_velocity = np.asarray(instance.pursuer_initial.velocity_w, dtype=float)
-    for target_index, target in enumerate(instance.targets):
-        relative_position = pursuer_position - np.asarray(target.initial.position_w, dtype=float)
-        relative_velocity = pursuer_velocity - np.asarray(target.initial.velocity_w, dtype=float)
+    for target_index, target in enumerate(instance.target_initials):
+        relative_position = pursuer_position - np.asarray(target.position_w, dtype=float)
+        relative_velocity = pursuer_velocity - np.asarray(target.velocity_w, dtype=float)
         capture_time = _straight_path_capture_time(
             relative_position=relative_position,
             relative_velocity=relative_velocity,

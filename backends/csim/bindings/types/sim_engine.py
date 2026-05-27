@@ -50,6 +50,8 @@ class RenderConfig:
 class SimConfig:
     pursuer: PursuerParams
     options: SimOptions = field(default_factory=SimOptions)
+    targets: tuple[TargetConfig, ...] = ()
+    cameras: tuple[CameraConfig, ...] = ()
     intercept_radius_m: float = 0.0
     max_thrust_n: float = 0.0
     max_rate_rps: float = 0.0
@@ -61,19 +63,13 @@ class SimConfig:
 class SimInstance:
     seed: int
     pursuer_initial: PursuerInitialState
-    targets: tuple[TargetConfig, ...]
-    cameras: tuple[CameraConfig, ...] = ()
+    target_initials: tuple[TargetInitialState, ...]
     config: SimConfig | None = None
     raw_config: dict[str, Any] = field(default_factory=dict)
     metadata: dict[str, Any] = field(default_factory=dict)
 
     @property
     def target_initial(self) -> TargetInitialState:
-        if not self.targets:
-            raise AttributeError("SimInstance has no targets")
-        target = self.targets[0]
-        return TargetInitialState(
-            position_w=target.initial.position_w,
-            velocity_w=target.initial.velocity_w,
-            radius_m=target.radius_m,
-        )
+        if not self.target_initials:
+            raise AttributeError("SimInstance has no target_initials")
+        return self.target_initials[0]

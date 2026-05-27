@@ -148,7 +148,7 @@ def _load_instance_samples(path: Path) -> list[dict[str, Any]]:
             "valid": True,
             "validation_error": None,
             "pursuer_position_w": np.asarray(instance.pursuer_initial.position_w, dtype=float),
-            "target_position_w": np.asarray(instance.targets[0].initial.position_w, dtype=float),
+            "target_position_w": np.asarray(instance.target_initials[0].position_w, dtype=float),
         }
         for instance in instances
     ]

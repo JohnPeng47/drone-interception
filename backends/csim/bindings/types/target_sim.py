@@ -15,7 +15,6 @@ class TargetState:
 class TargetInitialState:
     position_w: np.ndarray
     velocity_w: np.ndarray
-    radius_m: float
 
 
 @dataclass(frozen=True)
@@ -39,24 +38,5 @@ class TargetConfig:
     id: str
     kind: str
     radius_m: float
-    initial: TargetState
     behavior: TargetBehaviorConfig = field(default_factory=TargetBehaviorConfig)
     controller: TargetControllerConfig = field(default_factory=TargetControllerConfig)
-
-    @classmethod
-    def from_initial(
-        cls,
-        initial: TargetInitialState,
-        *,
-        id: str = "target",
-        kind: str = "target",
-    ) -> "TargetConfig":
-        return cls(
-            id=id,
-            kind=kind,
-            radius_m=float(initial.radius_m),
-            initial=TargetState(
-                position_w=initial.position_w,
-                velocity_w=initial.velocity_w,
-            ),
-        )

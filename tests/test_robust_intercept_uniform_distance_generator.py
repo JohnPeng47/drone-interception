@@ -28,6 +28,6 @@ def test_uniform_distance_generator_default_distribution() -> None:
 
     for point in points[::137]:
         instance = generator._sample_once(seed=point.seed)
-        target_position = instance.targets[0].initial.position_w
+        target_position = instance.target_initials[0].position_w
         pursuer_position = instance.pursuer_initial.position_w
         assert np.linalg.norm(target_position - pursuer_position) == pytest.approx(point.values["range_m"])

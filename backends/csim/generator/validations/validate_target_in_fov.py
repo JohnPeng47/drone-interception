@@ -12,18 +12,20 @@ def validate_target_in_fov(instance: SimInstance) -> None:
     Camera convention matches the C sim / control sim:
     camera x is optical depth, uv_norm = [y_c / x_c, z_c / x_c].
     """
-    if not instance.targets:
+    if instance.config is None:
+        raise ValueError("target FOV validation requires SimInstance.config")
+    if not instance.target_initials:
         raise ValueError("target FOV validation requires at least one target")
-    if not instance.cameras:
+    if not instance.config.cameras:
         raise ValueError("target FOV validation requires at least one camera")
 
     initial = instance.pursuer_initial
-    target = instance.targets[0]
-    camera = instance.cameras[0]
+    target = instance.target_initials[0]
+    camera = instance.config.cameras[0]
 
     rotation_wb = Rotation.from_quat(np.asarray(initial.quat_xyzw, dtype=float)).as_matrix()
     p_wc = np.asarray(initial.position_w, dtype=float) + rotation_wb @ np.asarray(camera.position_b, dtype=float)
-    p_target_b = rotation_wb.T @ (np.asarray(target.initial.position_w, dtype=float) - p_wc)
+    p_target_b = rotation_wb.T @ (np.asarray(target.position_w, dtype=float) - p_wc)
     p_target_c = np.asarray(camera.body_to_camera, dtype=float).reshape(3, 3) @ p_target_b
 
     forward = float(p_target_c[0])

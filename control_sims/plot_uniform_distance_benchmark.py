@@ -84,8 +84,8 @@ def _join_generator_geometry(rows: list[dict[str, Any]]) -> dict[str, np.ndarray
         seed = int(row["seed"])
         point = generator._by_seed[seed]
         instance = generator._sample_once(seed=seed)
-        target = instance.targets[0]
-        rel = np.asarray(instance.pursuer_initial.position_w, dtype=float) - np.asarray(target.initial.position_w, dtype=float)
+        target_initial = instance.target_initials[0]
+        rel = np.asarray(instance.pursuer_initial.position_w, dtype=float) - np.asarray(target_initial.position_w, dtype=float)
         los = -rel / max(float(np.linalg.norm(rel)), 1e-12)
         los_az, los_el = _az_el_deg(los)
 

@@ -1,10 +1,28 @@
 from __future__ import annotations
 
+import importlib
+import re
 from abc import ABC, abstractmethod
 from pathlib import Path
 from typing import Any
 
-from backends.csim.bindings.types import SimInstance, TargetInitialState
+from backends.csim.bindings.types import SimConfig, SimInstance
+
+
+_CONFIG_NAME_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+
+
+def get_config(config_name: str) -> SimConfig:
+    """Resolve a named config from backends.csim.configs."""
+    module_name = str(config_name).replace("-", "_")
+    if not _CONFIG_NAME_RE.fullmatch(module_name):
+        raise ValueError(f"Invalid SimConfig name {config_name!r}")
+
+    module = importlib.import_module(f"backends.csim.configs.{module_name}")
+    config = getattr(module, "SIM_CONFIG", None)
+    if not isinstance(config, SimConfig):
+        raise TypeError(f"backends.csim.configs.{module_name}.SIM_CONFIG must be a SimConfig")
+    return config
 
 
 class SimGenerator(ABC):
@@ -18,6 +36,10 @@ class SimGenerator(ABC):
     """
 
     max_sample_attempts: int = 1024
+
+    @staticmethod
+    def get_config(config_name: str) -> SimConfig:
+        return get_config(config_name)
 
     def sample(self, *, seed: int, **kwargs: Any) -> SimInstance:
         first_error: ValueError | None = None

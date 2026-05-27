@@ -131,7 +131,6 @@ class TargetBehaviorConfig:
 class TargetConfig:
     id: int
     radius_m: float
-    initial: TargetInitialState
     behavior: TargetBehaviorConfig
     controller: TargetControllerConfig
 ```
@@ -156,8 +155,7 @@ builder is constant velocity with no controller.
 class SimInstance:
     seed: int
     pursuer_initial: PursuerInitialState
-    targets: tuple[TargetConfig, ...]
-    cameras: tuple[CameraConfig, ...] = ()
+    target_initials: tuple[TargetInitialState, ...]
     config: SimConfig | None = None
 ```
 
@@ -168,13 +166,15 @@ class SimInstance:
 class SimConfig:
     pursuer: PursuerParams
     options: SimOptions = field(default_factory=SimOptions)
+    targets: tuple[TargetConfig, ...] = ()
+    cameras: tuple[CameraConfig, ...] = ()
     intercept_radius_m: float = 0.0
 ```
 
 So:
 
-- `SimConfig` owns run-level pursuer params, runtime options, and intercept settings.
-- `SimInstance` owns initial state, target configs, and camera configs for one episode/scenario.
+- `SimConfig` owns baseline pursuer params, runtime options, target/camera definitions, and intercept settings.
+- `SimInstance` owns sampled per-scenario initial state: pursuer initial state and target initial states.
 
 ## Control Sim Integration
 
@@ -212,7 +212,7 @@ rl/generated/intercept_manifest.json
 `intercept_scenarios.bin` contains many fixed `SimInstance` records:
 
 - `PursuerInitialState` mapped to C `State`
-- one or more `TargetConfig` records mapped to C `TargetSim` init data
+- one or more `TargetInitialState` records paired with baseline `SimConfig.targets`
 - seed/sample id where useful
 
 The C/Puffer env should load the binary table once in `my_init`, keep it in
@@ -286,7 +286,7 @@ typedef struct {
 ```
 
 Records store the resolved simulation fields only: seed, `PursuerInitialState`,
-targets, cameras, and optional `SimConfig`. Numeric values are written as
+target initial states, and optional `SimConfig` containing baseline targets and cameras. Numeric values are written as
 little-endian `float32`/integer fields, and IDs/kinds are length-prefixed UTF-8
 strings.
 
@@ -298,7 +298,7 @@ to load them.
 
 1. Fill `backends/csim/bindings/types/` with the renamed Python dataclasses.
 2. Update `backends/csim/bindings/puffer_c.py` and call sites to use the new
-   names, keeping compatibility aliases temporarily if needed.
+   names.
 3. Add Python conversion helpers:
    - `PursuerParams -> PursuerParams`
    - `PursuerInitialState -> State`

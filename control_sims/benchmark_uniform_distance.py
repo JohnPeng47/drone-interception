@@ -234,8 +234,9 @@ def _run_one(sim_name: str, instance) -> dict[str, Any]:
 
 
 def _run_minimal(instance) -> dict[str, Any]:
-    target = instance.targets[0]
-    camera = instance.cameras[0]
+    target = instance.config.targets[0]
+    target_initial = instance.target_initials[0]
+    camera = instance.config.cameras[0]
     vehicle = MinimalVehicleConfig(
         mass_kg=float(instance.config.pursuer.mass_kg),
         max_thrust_n=float(instance.config.max_thrust_n),
@@ -246,8 +247,8 @@ def _run_minimal(instance) -> dict[str, Any]:
     )
     target_cfg = MinimalTargetConfig(
         radius_m=float(target.radius_m),
-        initial_position_w=tuple(float(x) for x in target.initial.position_w),
-        base_velocity_w=tuple(float(x) for x in target.initial.velocity_w),
+        initial_position_w=tuple(float(x) for x in target_initial.position_w),
+        base_velocity_w=tuple(float(x) for x in target_initial.velocity_w),
         weave_amplitude_m=(0.0, 0.0),
         weave_frequency_hz=(0.0, 0.0),
     )
@@ -319,8 +320,9 @@ def _run_paper(instance) -> dict[str, Any]:
 
 
 def _paper_raw_config(instance) -> dict[str, Any]:
-    target = instance.targets[0]
-    camera = instance.cameras[0]
+    target = instance.config.targets[0]
+    target_initial = instance.target_initials[0]
+    camera = instance.config.cameras[0]
     intr = camera.intrinsics
     return {
         "experiment": {"name": "robust_uniform_distance_beihang_paper"},
@@ -342,8 +344,8 @@ def _paper_raw_config(instance) -> dict[str, Any]:
             "id": target.id,
             "kind": target.kind,
             "initial_state": {
-                "position_w": _list(target.initial.position_w),
-                "velocity_w": _list(target.initial.velocity_w),
+                "position_w": _list(target_initial.position_w),
+                "velocity_w": _list(target_initial.velocity_w),
             },
             "radius_m": float(target.radius_m),
         },
@@ -387,9 +389,9 @@ def _scenario_fields(point) -> dict[str, Any]:
 
 
 def _scenario_fields_from_instance(instance) -> dict[str, Any]:
-    target = instance.targets[0]
-    rel_pos = np.asarray(target.initial.position_w, dtype=float) - np.asarray(instance.pursuer_initial.position_w, dtype=float)
-    rel_vel = np.asarray(instance.pursuer_initial.velocity_w, dtype=float) - np.asarray(target.initial.velocity_w, dtype=float)
+    target_initial = instance.target_initials[0]
+    rel_pos = np.asarray(target_initial.position_w, dtype=float) - np.asarray(instance.pursuer_initial.position_w, dtype=float)
+    rel_vel = np.asarray(instance.pursuer_initial.velocity_w, dtype=float) - np.asarray(target_initial.velocity_w, dtype=float)
     range_m = float(np.linalg.norm(rel_pos))
     los_w = rel_pos / max(range_m, 1e-12)
     metadata = getattr(instance, "metadata", {}) or {}

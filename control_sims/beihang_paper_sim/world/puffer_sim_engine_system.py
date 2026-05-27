@@ -13,9 +13,11 @@ from backends import (
     CameraConfig,
     CameraIntrinsics,
     PufferSimEngineBackend,
+    SimConfig,
+    SimInstance,
     SimOptions,
     TargetConfig,
-    TargetState,
+    TargetInitialState,
 )
 from backends.csim.bindings import (
     initial_state_from_rotorpy,
@@ -47,13 +49,22 @@ class PufferSimEngineSystem(LeafSystem):
         self._target_config = _target_config(target)
         self._camera_config = _camera_config(camera_rig)
         self._params = vehicle_params_from_quad_params(quad_params)
-        self._backend = PufferSimEngineBackend(self._params, options=options)
         self._intercept_radius_m = float(intercept_radius_m)
-        self._initial_snapshot = self._backend.reset(
-            initial_state_from_rotorpy(initial_state),
+        self._config = SimConfig(
+            pursuer=self._params,
+            options=options or SimOptions(),
             targets=(self._target_config,),
             cameras=(self._camera_config,),
             intercept_radius_m=self._intercept_radius_m,
+        )
+        self._backend = PufferSimEngineBackend(self._config)
+        self._initial_snapshot = self._backend.reset(
+            SimInstance(
+                seed=0,
+                pursuer_initial=initial_state_from_rotorpy(initial_state),
+                target_initials=(_target_initial(target),),
+                config=self._config,
+            )
         )
 
         self._state_index = self.DeclareAbstractState(
@@ -146,10 +157,13 @@ def _target_config(target: KinematicTarget) -> TargetConfig:
         id=str(target.target_id),
         kind=str(target.kind),
         radius_m=float(target.radius_m),
-        initial=TargetState(
-            position_w=np.asarray(target.initial_position_w, dtype=float).reshape(3).copy(),
-            velocity_w=np.asarray(target.velocity_w, dtype=float).reshape(3).copy(),
-        ),
+    )
+
+
+def _target_initial(target: KinematicTarget) -> TargetInitialState:
+    return TargetInitialState(
+        position_w=np.asarray(target.initial_position_w, dtype=float).reshape(3).copy(),
+        velocity_w=np.asarray(target.velocity_w, dtype=float).reshape(3).copy(),
     )
 
 

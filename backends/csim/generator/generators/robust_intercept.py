@@ -13,18 +13,11 @@ from scipy.spatial.transform import Rotation
 from scipy.stats import qmc
 
 from backends.csim.bindings.types import (
-    CameraConfig,
-    CameraIntrinsics,
-    NoiseConfig,
     PursuerInitialState,
-    PursuerParams,
-    SimConfig,
     SimInstance,
-    SimOptions,
-    TargetConfig,
-    TargetState,
+    TargetInitialState,
 )
-from backends.csim.generator.generator import SimGenerator
+from backends.csim.generator.generator import SimGenerator, get_config
 from backends.csim.generator.instance_store import write_sim_instances
 
 
@@ -409,16 +402,10 @@ def _resolve_instance(config: dict[str, Any], point: _SamplePoint) -> SimInstanc
             body_rates_b=body_rates_b,
             wind_w=wind_w,
         ),
-        targets=(
-            TargetConfig(
-                id="target",
-                kind="target",
-                radius_m=float(scenario["target_radius_m"]),
-                initial=TargetState(position_w=target_position_w, velocity_w=target_velocity_w),
-            ),
+        target_initials=(
+            TargetInitialState(position_w=target_position_w, velocity_w=target_velocity_w),
         ),
-        cameras=(_camera_config(camera_cfg),),
-        config=_sim_config(config),
+        config=get_config("base"),
     )
 
 
@@ -545,53 +532,6 @@ def _camera_rotation_from_forward(forward_w: np.ndarray) -> np.ndarray:
     return np.column_stack((x_w, y_w, z_w))
 
 
-def _sim_config(config: dict[str, Any]) -> SimConfig:
-    sim = config["sim"]
-    controller = config["controller"]
-    perception = config.get("perception", {})
-    metrics = config["scenario"]
-    return SimConfig(
-        pursuer=_default_x500_params(),
-        options=SimOptions(
-            backend_dt=float(sim.get("dt", 0.005)),
-            action_substeps=1,
-            duration_s=float(sim.get("duration_s", 0.0)),
-            validation_dt=None if sim.get("validation_dt") is None else float(sim["validation_dt"]),
-        ),
-        intercept_radius_m=float(metrics["intercept_radius_m"]),
-        max_thrust_n=float(controller.get("max_thrust_n", 0.0)),
-        max_rate_rps=float(controller.get("max_rate_rps", 0.0)),
-        noise=NoiseConfig(
-            processing_delay_s=float(perception.get("processing_delay_s", 0.0)),
-            pixel_noise_std_px=tuple(float(x) for x in perception.get("pixel_noise_std_px", (0.0, 0.0))),
-            dropout_probability=float(perception.get("dropout_probability", 0.0)),
-            rng_seed=int(perception.get("rng_seed", 0)),
-        ),
-    )
-
-
-def _default_x500_params() -> PursuerParams:
-    arm = 0.174
-    rotor_positions = np.array([
-        [arm, arm, 0.0],
-        [-arm, arm, 0.0],
-        [-arm, -arm, 0.0],
-        [arm, -arm, 0.0],
-    ])
-    return PursuerParams(
-        mass_kg=2.064,
-        ixx=0.0217,
-        iyy=0.0217,
-        izz=0.0400,
-        arm_len_m=arm,
-        k_thrust=8.54858e-6,
-        k_yaw=0.016,
-        max_rpm=21702.0,
-        rotor_positions_b=rotor_positions,
-        rotor_directions=np.array([1.0, -1.0, 1.0, -1.0]),
-    )
-
-
 def _unit_cube(strategy: str, count: int, dim: int, seed: int, scramble: bool) -> np.ndarray:
     if strategy == "uniform":
         return np.random.default_rng(seed).random((count, dim))
@@ -643,32 +583,6 @@ def _edge_fov_bearing(u_radius: float, u_angle: float, r_min: float, r_max: floa
     radius = r_min + float(u_radius) * (r_max - r_min)
     angle = 2.0 * math.pi * float(u_angle)
     return radius * math.cos(angle), radius * math.sin(angle)
-
-
-def _camera_config(camera: dict[str, Any]) -> CameraConfig:
-    hfov = math.radians(float(camera["hfov_deg"]))
-    vfov = math.radians(float(camera["vfov_deg"]))
-    width = int(camera["width_px"])
-    height = int(camera["height_px"])
-    fx = float(camera.get("fx_px", width / (2.0 * math.tan(hfov / 2.0))))
-    fy = float(camera.get("fy_px", height / (2.0 * math.tan(vfov / 2.0))))
-    return CameraConfig(
-        id=str(camera.get("id", "front")),
-        parent_id=str(camera.get("parent_id", "interceptor")),
-        position_b=_array(camera.get("position_b", [0.0, 0.0, 0.0]), length=3),
-        body_to_camera=np.asarray(camera.get("body_to_camera", np.eye(3)), dtype=float).reshape(3, 3),
-        intrinsics=CameraIntrinsics(
-            width_px=width,
-            height_px=height,
-            fx_px=fx,
-            fy_px=fy,
-            cx_px=float(camera.get("cx_px", width / 2.0)),
-            cy_px=float(camera.get("cy_px", height / 2.0)),
-            hfov_rad=hfov,
-            vfov_rad=vfov,
-        ),
-        capture_rate_hz=float(camera["capture_rate_hz"]),
-    )
 
 
 def _scatter(ax: Any, rows: list[dict[str, Any]], x_key: str, y_key: str, x_label: str, y_label: str, title: str) -> None:

@@ -135,7 +135,7 @@ def analyze_instance(
     capture_radius_m: float | None,
     unbounded: bool,
 ) -> ScenarioCapture:
-    if not instance.targets:
+    if not instance.target_initials:
         raise ValueError(f"SimInstance seed={instance.seed} has no targets")
 
     duration = _duration_s(instance, duration_s, unbounded)
@@ -149,12 +149,12 @@ def analyze_instance(
             target_index=index,
             pursuer_position=pursuer_position,
             pursuer_velocity=pursuer_velocity,
-            target_position=np.asarray(target.initial.position_w, dtype=float),
-            target_velocity=np.asarray(target.initial.velocity_w, dtype=float),
+            target_position=np.asarray(target.position_w, dtype=float),
+            target_velocity=np.asarray(target.velocity_w, dtype=float),
             duration_s=duration,
             capture_radius_m=radius,
         )
-        for index, target in enumerate(instance.targets)
+        for index, target in enumerate(instance.target_initials)
     ]
     captured = [result for result in target_results if result.captured]
     if captured:
@@ -246,7 +246,9 @@ def _capture_radius_m(instance: SimInstance, override: float | None) -> float:
         return _positive_float(override, "capture radius")
     if instance.config is not None and instance.config.intercept_radius_m > 0.0:
         return float(instance.config.intercept_radius_m)
-    return _positive_float(instance.targets[0].radius_m, "capture radius")
+    if instance.config is None or not instance.config.targets:
+        raise ValueError(f"SimInstance seed={instance.seed} has no target config; pass --capture-radius-m")
+    return _positive_float(instance.config.targets[0].radius_m, "capture radius")
 
 
 def _positive_float(value: float, label: str) -> float:

@@ -19,12 +19,12 @@ from backends.csim.bindings.types import (
     TargetBehaviorConfig,
     TargetConfig,
     TargetControllerConfig,
-    TargetState,
+    TargetInitialState,
 )
 
 
 SIM_INSTANCE_MAGIC = b"CSIMINST"
-SIM_INSTANCE_FORMAT_VERSION = 5
+SIM_INSTANCE_FORMAT_VERSION = 7
 SIM_INSTANCE_WRITE_BLOCK_BYTES = 8 * 1024 * 1024
 _HEADER = struct.Struct("<8sIIQ")
 _U8 = struct.Struct("<B")
@@ -313,8 +313,6 @@ def _write_target(buf: bytearray, target: TargetConfig) -> None:
     _write_string(buf, target.id)
     _write_string(buf, target.kind)
     _write_f32(buf, target.radius_m)
-    _write_f32_array(buf, target.initial.position_w, (3,))
-    _write_f32_array(buf, target.initial.velocity_w, (3,))
     _write_string(buf, target.behavior.kind)
     _write_u16(buf, len(target.behavior.waypoints))
     for waypoint in target.behavior.waypoints:
@@ -331,10 +329,6 @@ def _read_target(cursor: _Cursor) -> TargetConfig:
     target_id = _read_string(cursor)
     kind = _read_string(cursor)
     radius_m = _read_f32(cursor)
-    initial = TargetState(
-        position_w=_read_f32_array(cursor, (3,)),
-        velocity_w=_read_f32_array(cursor, (3,)),
-    )
     behavior_kind = _read_string(cursor)
     waypoints = tuple(_read_f32_array(cursor, (3,)) for _ in range(_read_u16(cursor)))
     behavior = TargetBehaviorConfig(
@@ -353,9 +347,20 @@ def _read_target(cursor: _Cursor) -> TargetConfig:
         id=target_id,
         kind=kind,
         radius_m=radius_m,
-        initial=initial,
         behavior=behavior,
         controller=controller,
+    )
+
+
+def _write_target_initial(buf: bytearray, initial: TargetInitialState) -> None:
+    _write_f32_array(buf, initial.position_w, (3,))
+    _write_f32_array(buf, initial.velocity_w, (3,))
+
+
+def _read_target_initial(cursor: _Cursor) -> TargetInitialState:
+    return TargetInitialState(
+        position_w=_read_f32_array(cursor, (3,)),
+        velocity_w=_read_f32_array(cursor, (3,)),
     )
 
 
@@ -450,6 +455,12 @@ def _write_sim_config(buf: bytearray, config: SimConfig | None) -> None:
     _write_string(buf, config.options.command_mode)
     _write_f32(buf, config.options.ctbr_rate_gain)
     _write_u8(buf, int(config.options.randomize_params))
+    _write_u16(buf, len(config.targets))
+    for target in config.targets:
+        _write_target(buf, target)
+    _write_u16(buf, len(config.cameras))
+    for camera in config.cameras:
+        _write_camera(buf, camera)
     _write_f32(buf, config.intercept_radius_m)
     _write_f32(buf, config.max_thrust_n)
     _write_f32(buf, config.max_rate_rps)
@@ -468,6 +479,8 @@ def _read_sim_config(cursor: _Cursor) -> SimConfig | None:
     command_mode = _read_string(cursor)
     ctbr_rate_gain = _read_f32(cursor)
     randomize_params = bool(_read_u8(cursor))
+    targets = tuple(_read_target(cursor) for _ in range(_read_u16(cursor)))
+    cameras = tuple(_read_camera(cursor) for _ in range(_read_u16(cursor)))
     intercept_radius_m = _read_f32(cursor)
     max_thrust_n = _read_f32(cursor)
     max_rate_rps = _read_f32(cursor)
@@ -483,6 +496,8 @@ def _read_sim_config(cursor: _Cursor) -> SimConfig | None:
             ctbr_rate_gain=ctbr_rate_gain,
             randomize_params=randomize_params,
         ),
+        targets=targets,
+        cameras=cameras,
         intercept_radius_m=intercept_radius_m,
         max_thrust_n=max_thrust_n,
         max_rate_rps=max_rate_rps,
@@ -516,25 +531,20 @@ def _read_render_config(cursor: _Cursor) -> RenderConfig:
 def _write_sim_instance(buf: bytearray, instance: SimInstance) -> None:
     _write_i64(buf, instance.seed)
     _write_pursuer_initial(buf, instance.pursuer_initial)
-    _write_u16(buf, len(instance.targets))
-    for target in instance.targets:
-        _write_target(buf, target)
-    _write_u16(buf, len(instance.cameras))
-    for camera in instance.cameras:
-        _write_camera(buf, camera)
+    _write_u16(buf, len(instance.target_initials))
+    for initial in instance.target_initials:
+        _write_target_initial(buf, initial)
     _write_sim_config(buf, instance.config)
 
 
 def _read_sim_instance(cursor: _Cursor) -> SimInstance:
     seed = _read_i64(cursor)
     pursuer_initial = _read_pursuer_initial(cursor)
-    targets = tuple(_read_target(cursor) for _ in range(_read_u16(cursor)))
-    cameras = tuple(_read_camera(cursor) for _ in range(_read_u16(cursor)))
+    target_initials = tuple(_read_target_initial(cursor) for _ in range(_read_u16(cursor)))
     config = _read_sim_config(cursor)
     return SimInstance(
         seed=seed,
         pursuer_initial=pursuer_initial,
-        targets=targets,
-        cameras=cameras,
+        target_initials=target_initials,
         config=config,
     )
