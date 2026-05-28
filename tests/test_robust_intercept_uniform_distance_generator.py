@@ -5,7 +5,7 @@ from collections import Counter
 import numpy as np
 import pytest
 
-from backends.csim.generator.generators.robust_intercept_uniform_distance import (
+from scripts.generators.robust_intercept_uniform_distance import (
     RobustInterceptUniformDistanceConfigGenerator,
 )
 

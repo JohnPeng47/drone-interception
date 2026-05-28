@@ -15,7 +15,7 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
 
-from backends.csim.generator.generators.robust_intercept_uniform_distance import (
+from scripts.generators.robust_intercept_uniform_distance import (
     RobustInterceptUniformDistanceConfigGenerator,
 )
 

@@ -13,7 +13,7 @@ must not include Windows or Linux system headers directly.
 - Windows path and process-discovery details for Unity
 - timeout conversion to Win32 wait APIs
 
-No Windows types should appear in `rendering/include` or `backends/csim`.
+No Windows types should appear in `backends/csim/rendering/include` or `backends/csim`.
 
 ## Linux
 

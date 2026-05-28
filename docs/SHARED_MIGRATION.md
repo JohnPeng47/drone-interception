@@ -8,7 +8,7 @@ The active Beihang control-sim code now owns the small local surface it uses:
 - camera/perception helpers live in `control_sims/beihang_paper_sim/sensing/`
 - target and scene construction live in `control_sims/beihang_paper_sim/world/`
 - the shared generator contract lives in `backends/csim/generator/generator.py`
-- reusable scenario generators live in `backends/csim/generator/generators/`
+- reusable scenario generators live in `scripts/generators/`
 
 Useful verification commands:
 

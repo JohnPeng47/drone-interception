@@ -9,11 +9,17 @@ from backends import (
     SimConfig,
     PursuerInitialState,
     PursuerParams,
+    BatchPufferSimEngineBackend,
     PufferDroneBackend,
     PufferSimEngineBackend,
+    SimInstance,
+    SimOptions,
+    TargetConfig,
+    TargetInitialState,
 )
-from rendering.python import LIFTOFF_RENDER_BACKEND_UNAVAILABLE, RenderError
-from rendering.python import LIFTOFF_RENDER_OK
+from control_sims.sim_runner import BatchSimEngineRunner, BatchSimEngineRunnerConfig
+from backends.csim.rendering.python import LIFTOFF_RENDER_BACKEND_UNAVAILABLE, RenderError
+from backends.csim.rendering.python import LIFTOFF_RENDER_OK
 
 
 def test_backend_hover_smoke():
@@ -215,12 +221,131 @@ def test_sim_engine_preserves_time_and_camera_schedule_across_snapshots():
     np.testing.assert_allclose(snapshot["camera_states"][0]["next_capture_t"], 2.0 / 30.0, atol=1e-6)
 
 
+def test_batch_sim_engine_matches_scalar_step():
+    params = _params()
+    target = TargetConfig(
+        id="target",
+        kind="target",
+        radius_m=0.2,
+    )
+    config = SimConfig(pursuer=params, targets=(target,), intercept_radius_m=0.1)
+    initial = PursuerInitialState(
+        position_w=np.zeros(3),
+        velocity_w=np.zeros(3),
+        quat_xyzw=np.array([0.0, 0.0, 0.0, 1.0]),
+        body_rates_b=np.zeros(3),
+    )
+    target_initial = TargetInitialState(
+        position_w=np.array([2.0, 0.0, 0.0]),
+        velocity_w=np.zeros(3),
+    )
+    instance = SimInstance(seed=1, pursuer_initial=initial, target_initials=(target_initial,), config=config)
+    scalar = PufferSimEngineBackend(config)
+    scalar_snapshot = scalar.reset(instance)
+    command = {
+        "thrust_n": params.mass_kg * params.gravity_mps2,
+        "body_rates_b": np.zeros(3),
+    }
+    scalar_snapshot = scalar.step_ctbr(scalar_snapshot, command)
+
+    batch = BatchPufferSimEngineBackend(1)
+    batch.reset_many(np.array([0]), (instance,))
+    batch_snapshot = batch.step_ctbr_many(np.array([[0.0, 0.0, 0.0, 0.0]], dtype=np.float32))
+
+    np.testing.assert_allclose(batch_snapshot["pursuer"][0, 0:3], scalar_snapshot["vehicle_state"]["x"], atol=1e-5)
+    np.testing.assert_allclose(batch_snapshot["pursuer"][0, 3:6], scalar_snapshot["vehicle_state"]["v"], atol=1e-5)
+    np.testing.assert_allclose(batch_snapshot["metrics"][0, 0], scalar_snapshot["metrics"]["distance_m"], atol=1e-5)
+
+
+def test_batch_sim_engine_accepts_physical_ctbr_commands():
+    params = _params()
+    target = TargetConfig(id="target", kind="target", radius_m=0.2)
+    config = SimConfig(pursuer=params, targets=(target,), intercept_radius_m=0.1)
+    initial = PursuerInitialState(
+        position_w=np.zeros(3),
+        velocity_w=np.zeros(3),
+        quat_xyzw=np.array([0.0, 0.0, 0.0, 1.0]),
+        body_rates_b=np.zeros(3),
+    )
+    target_initial = TargetInitialState(
+        position_w=np.array([2.0, 0.0, 0.0]),
+        velocity_w=np.zeros(3),
+    )
+    instance = SimInstance(seed=1, pursuer_initial=initial, target_initials=(target_initial,), config=config)
+
+    scalar = PufferSimEngineBackend(config)
+    scalar_snapshot = scalar.reset(instance)
+    command = {
+        "thrust_n": params.mass_kg * params.gravity_mps2,
+        "body_rates_b": np.zeros(3),
+    }
+    scalar_snapshot = scalar.step_ctbr(scalar_snapshot, command)
+
+    batch = BatchPufferSimEngineBackend(1)
+    batch.reset_many(np.array([0]), (instance,))
+    batch_snapshot = batch.step_ctbr_commands_many(
+        np.array([params.mass_kg * params.gravity_mps2], dtype=np.float32),
+        np.zeros((1, 3), dtype=np.float32),
+    )
+
+    np.testing.assert_allclose(batch_snapshot["pursuer"][0, 0:3], scalar_snapshot["vehicle_state"]["x"], atol=1e-5)
+    np.testing.assert_allclose(batch_snapshot["pursuer"][0, 3:6], scalar_snapshot["vehicle_state"]["v"], atol=1e-5)
+    np.testing.assert_allclose(batch_snapshot["metrics"][0, 0], scalar_snapshot["metrics"]["distance_m"], atol=1e-5)
+
+
+def test_batch_sim_engine_runner_refills_completed_slots():
+    params = _params()
+    target = TargetConfig(id="target", kind="target", radius_m=0.2)
+    config = SimConfig(
+        pursuer=params,
+        options=SimOptions(duration_s=1.0),
+        targets=(target,),
+        intercept_radius_m=0.1,
+    )
+    initial = PursuerInitialState(
+        position_w=np.zeros(3),
+        velocity_w=np.zeros(3),
+        quat_xyzw=np.array([0.0, 0.0, 0.0, 1.0]),
+        body_rates_b=np.zeros(3),
+    )
+    target_initial = TargetInitialState(
+        position_w=np.array([2.0, 0.0, 0.0]),
+        velocity_w=np.zeros(3),
+    )
+    instances = tuple(
+        SimInstance(seed=seed, pursuer_initial=initial, target_initials=(target_initial,), config=config)
+        for seed in range(3)
+    )
+
+    runner = BatchSimEngineRunner(BatchSimEngineRunnerConfig(max_envs=2, max_episode_steps=1))
+    state = runner.reset(instances)
+    assert state.active.tolist() == [True, True]
+    assert state.workload_indices.tolist() == [0, 1]
+
+    step = runner.step({
+        "thrust_n": np.full(2, params.mass_kg * params.gravity_mps2, dtype=np.float32),
+        "body_rates_b": np.zeros((2, 3), dtype=np.float32),
+    })
+    assert [item.workload_index for item in step.completed] == [0, 1]
+    assert [item.terminal_reason for item in step.completed] == ["timeout", "timeout"]
+    assert step.state.active.tolist() == [True, False]
+    assert step.state.workload_indices.tolist() == [2, -1]
+
+    step = runner.step({
+        "thrust_n": np.full(2, params.mass_kg * params.gravity_mps2, dtype=np.float32),
+        "body_rates_b": np.zeros((2, 3), dtype=np.float32),
+    })
+    assert [item.workload_index for item in step.completed] == [2]
+    assert step.state.active.tolist() == [False, False]
+
+
 def test_sim_engine_render_config_requests_only_selected_camera():
     params = _params()
     backend = PufferSimEngineBackend(
         SimConfig(
             pursuer=params,
-            render=RenderConfig(enabled=True, camera_id="front", backend="unity"),
+            rendering=True,
+            render=RenderConfig(camera_id="front", backend="unity"),
         )
     )
 
@@ -256,7 +381,8 @@ def test_sim_engine_render_fail_on_error_raises():
     backend = PufferSimEngineBackend(
         SimConfig(
             pursuer=_params(),
-            render=RenderConfig(enabled=True, camera_id="front", backend="unity", fail_on_error=True),
+            rendering=True,
+            render=RenderConfig(camera_id="front", backend="unity", fail_on_error=True),
         )
     )
 
@@ -286,7 +412,8 @@ def test_sim_engine_software_render_outputs_frame_bytes():
     backend = PufferSimEngineBackend(
         SimConfig(
             pursuer=_params(),
-            render=RenderConfig(enabled=True, camera_id="front", backend="software"),
+            rendering=True,
+            render=RenderConfig(camera_id="front", backend="software"),
         )
     )
 

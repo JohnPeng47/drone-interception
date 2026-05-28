@@ -4,7 +4,7 @@ import numpy as np
 
 from backends.csim.bindings.types import SimConfig
 from backends.csim.generator.generator import SimGenerator, get_config
-from backends.csim.generator.generators.robust_intercept import RobustInterceptConfigGenerator, evaluate_samples
+from scripts.generators.robust_intercept import RobustInterceptConfigGenerator, evaluate_samples
 
 
 def test_base_config_resolver_returns_typed_sim_config():

@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import json
 
-from rendering.python.episode import generate_puffer_pov_episode
-from rendering.python.liftoff_assets import variant_names
+from backends.csim.rendering.python.episode import generate_puffer_pov_episode
+from backends.csim.rendering.python.liftoff_assets import variant_names
 
 
 def test_liftoff_asset_variants_are_named():

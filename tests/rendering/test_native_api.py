@@ -3,7 +3,7 @@ from __future__ import annotations
 import numpy as np
 
 from backends import RenderConfig
-from rendering.python import (
+from backends.csim.rendering.python import (
     LIFTOFF_RENDER_BACKEND_UNAVAILABLE,
     LIFTOFF_RENDER_DISABLED,
     LIFTOFF_RENDER_OK,
@@ -12,7 +12,7 @@ from rendering.python import (
 
 
 def test_native_backend_none_returns_disabled():
-    with NativeRenderEngine(RenderConfig(enabled=True, backend="none")) as renderer:
+    with NativeRenderEngine(RenderConfig(backend="none")) as renderer:
         result = renderer.render_frame(
             drone=_drone(),
             camera=_camera(),
@@ -27,7 +27,7 @@ def test_native_backend_none_returns_disabled():
 
 
 def test_native_unity_stub_returns_backend_unavailable():
-    with NativeRenderEngine(RenderConfig(enabled=True, backend="unity")) as renderer:
+    with NativeRenderEngine(RenderConfig(backend="unity")) as renderer:
         result = renderer.render_frame(
             drone=_drone(),
             camera=_camera(),
@@ -43,7 +43,7 @@ def test_native_unity_stub_returns_backend_unavailable():
 
 def test_native_software_backend_returns_rgb_frame(monkeypatch, tmp_path):
     monkeypatch.setenv("LIFTOFF_RENDER_DRONE_MESH", str(tmp_path / "missing_target_drone.obj"))
-    with NativeRenderEngine(RenderConfig(enabled=True, backend="software")) as renderer:
+    with NativeRenderEngine(RenderConfig(backend="software")) as renderer:
         result = renderer.render_frame(
             drone=_drone(),
             camera=_camera(),
@@ -117,7 +117,7 @@ def test_native_software_backend_loads_target_mesh(monkeypatch, tmp_path):
     )
     monkeypatch.setenv("LIFTOFF_RENDER_DRONE_MESH", str(mesh_path))
 
-    with NativeRenderEngine(RenderConfig(enabled=True, backend="software")) as renderer:
+    with NativeRenderEngine(RenderConfig(backend="software")) as renderer:
         result = renderer.render_frame(
             drone=_drone(),
             camera=_camera(),
@@ -142,7 +142,7 @@ def test_native_software_backend_loads_target_mesh(monkeypatch, tmp_path):
 
 def test_native_software_backend_depends_on_camera_attitude(monkeypatch, tmp_path):
     monkeypatch.setenv("LIFTOFF_RENDER_DRONE_MESH", str(tmp_path / "missing_target_drone.obj"))
-    with NativeRenderEngine(RenderConfig(enabled=True, backend="software")) as renderer:
+    with NativeRenderEngine(RenderConfig(backend="software")) as renderer:
         level = renderer.render_frame(
             drone=_drone(),
             camera=_camera(),

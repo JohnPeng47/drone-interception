@@ -2,6 +2,8 @@
 
 #pragma once
 
+#include <stddef.h>
+
 #include "target_sim.h"
 
 typedef struct {
@@ -44,7 +46,10 @@ typedef struct {
     int frame_width_px;
     int frame_height_px;
     int frame_channels;
-    unsigned char* frame_rgb;
+    int frame_stride_bytes;
+    size_t frame_byte_count;
+    int render_status;
+    const unsigned char* frame_rgb;
 } CameraOutput;
 
 void camera_sim_reset(CameraSim* camera);

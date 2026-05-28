@@ -50,7 +50,8 @@ def generate_puffer_pov_episode(
             SimConfig(
                 pursuer=params,
                 options=SimOptions(backend_dt=0.002, action_substeps=5),
-                render=RenderConfig(enabled=True, camera_id=camera_id, backend="software"),
+                rendering=True,
+                render=RenderConfig(camera_id=camera_id, backend="software"),
             )
         )
         snapshot = backend.reset(
@@ -131,7 +132,7 @@ def _ensure_liftoff_target_mesh(asset_dir: Path, target_variant: str) -> Path | 
     if mesh_path.exists():
         return mesh_path
     try:
-        from rendering.python.liftoff_assets import DEFAULT_LIFTOFF_DATA_DIR, export_target_drone_variants
+        from .liftoff_assets import DEFAULT_LIFTOFF_DATA_DIR, export_target_drone_variants
     except Exception:
         return None
     if not DEFAULT_LIFTOFF_DATA_DIR.exists():
@@ -203,7 +204,7 @@ def _array(value: Any) -> list[float]:
 
 
 def main() -> int:
-    from rendering.python.liftoff_assets import variant_names
+    from .liftoff_assets import variant_names
 
     parser = argparse.ArgumentParser()
     parser.add_argument("--out-dir", type=Path, default=Path(".runs/rendered_pov_episode"))

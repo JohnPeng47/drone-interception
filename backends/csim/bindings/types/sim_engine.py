@@ -37,7 +37,6 @@ class SimOptions:
 
 @dataclass(frozen=True)
 class RenderConfig:
-    enabled: bool = False
     camera_id: str | None = None
     backend: str = "software"
     platform: str = "auto"
@@ -56,6 +55,7 @@ class SimConfig:
     max_thrust_n: float = 0.0
     max_rate_rps: float = 0.0
     noise: NoiseConfig = field(default_factory=NoiseConfig)
+    rendering: bool = False
     render: RenderConfig = field(default_factory=RenderConfig)
 
 

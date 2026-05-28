@@ -1,6 +1,6 @@
 # Liftoff Render Bridge
 
-This is the Liftoff-side half of `SimConfig.render_frames`.
+This is the Liftoff-side half of `SimConfig.rendering` for the Unity backend.
 
 The bridge is intended to run inside the Liftoff Unity process through a Mono
 loader such as BepInEx 5 x64. It receives one selected SimEngine drone/camera

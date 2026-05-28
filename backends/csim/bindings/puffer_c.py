@@ -12,6 +12,8 @@ import numpy as np
 from .types import (
     DEFAULT_MAX_OMEGA_RPS,
     DEFAULT_MAX_VEL_MPS,
+    PUFFER_ACTION_DT,
+    PUFFER_ACTION_SUBSTEPS,
     PursuerInitialState,
     PursuerParams,
     RenderConfig,
@@ -20,6 +22,7 @@ from .types import (
     SimOptions,
     TargetConfig,
 )
+from ..rendering.python.config import backend_kind, platform_kind, status_name
 
 
 class _CQuat(C.Structure):
@@ -176,7 +179,20 @@ class _CCameraOutput(C.Structure):
         ("frame_width_px", C.c_int),
         ("frame_height_px", C.c_int),
         ("frame_channels", C.c_int),
+        ("frame_stride_bytes", C.c_int),
+        ("frame_byte_count", C.c_size_t),
+        ("render_status", C.c_int),
         ("frame_rgb", C.c_void_p),
+    ]
+
+
+class _CLiftoffRenderConfig(C.Structure):
+    _fields_ = [
+        ("backend", C.c_int),
+        ("platform", C.c_int),
+        ("timeout_ms", C.c_uint32),
+        ("flags", C.c_uint32),
+        ("scene_id", C.c_char * 256),
     ]
 
 
@@ -190,6 +206,29 @@ class _CSimEngine(C.Structure):
         ("t", C.c_float),
         ("intercept_radius_m", C.c_float),
         ("metrics", _CInterceptMetrics),
+        ("render_enabled", C.c_int),
+        ("render_camera_id", C.c_int),
+        ("render_fail_on_error", C.c_int),
+        ("render_config", _CLiftoffRenderConfig),
+        ("render_engine", C.c_void_p),
+        ("render_sequence_id", C.c_ulonglong),
+        ("render_frame_buffers", C.c_void_p * SIM_MAX_CAMERA_OUTPUTS),
+        ("render_frame_buffer_bytes", C.c_size_t * SIM_MAX_CAMERA_OUTPUTS),
+    ]
+
+
+class _CSimSnapshot(C.Structure):
+    _fields_ = [
+        ("t", C.c_float),
+        ("pursuer_state", _CState),
+        ("num_targets", C.c_int),
+        ("target_states", _CTargetState * SIM_MAX_TARGETS),
+        ("target_ids", C.c_int * SIM_MAX_TARGETS),
+        ("target_radii_m", C.c_float * SIM_MAX_TARGETS),
+        ("intercept_radius_m", C.c_float),
+        ("metrics", _CInterceptMetrics),
+        ("num_camera_outputs", C.c_int),
+        ("camera_outputs", _CCameraOutput * SIM_MAX_CAMERA_OUTPUTS),
     ]
 
 
@@ -413,6 +452,7 @@ class PufferSimEngineBackend(PufferDroneBackend):
         self.config = params if isinstance(params, SimConfig) else None
         self.params = params.pursuer if isinstance(params, SimConfig) else params
         self.options = options or (params.options if isinstance(params, SimConfig) else SimOptions())
+        self.rendering = bool(params.rendering) if isinstance(params, SimConfig) else False
         self.render_config = params.render if isinstance(params, SimConfig) else RenderConfig()
         self.mass_kg = self.params.mass_kg
         self.dt = self.options.backend_dt * self.options.action_substeps
@@ -420,8 +460,6 @@ class PufferSimEngineBackend(PufferDroneBackend):
         self._engine = _CSimEngine()
         self._target_specs: tuple[dict[str, Any], ...] = ()
         self._camera_specs: tuple[dict[str, Any], ...] = ()
-        self._renderer: Any | None = None
-        self._renderer_key: tuple[Any, ...] | None = None
         self._render_sequence_id = 0
 
     def reset(
@@ -438,6 +476,7 @@ class PufferSimEngineBackend(PufferDroneBackend):
             initial_state = instance.pursuer_initial
             targets = _target_specs_from_instance(instance)
             cameras = instance.config.cameras
+            self.rendering = bool(instance.config.rendering)
             self.render_config = instance.config.render
             if intercept_radius_m is None:
                 intercept_radius_m = instance.config.intercept_radius_m
@@ -454,6 +493,7 @@ class PufferSimEngineBackend(PufferDroneBackend):
             if initial_state.wind_w is None
             else np.asarray(initial_state.wind_w, dtype=float).copy()
         )
+        self._lib.sim_engine_close_rendering(C.byref(self._engine))
         c_state = _state_to_c({
             "x": np.asarray(initial_state.position_w, dtype=float),
             "v": np.asarray(initial_state.velocity_w, dtype=float),
@@ -474,9 +514,8 @@ class PufferSimEngineBackend(PufferDroneBackend):
         self._set_engine_targets(self._target_specs)
         self._camera_specs = tuple(_camera_spec_from_python(camera, i) for i, camera in enumerate(cameras))
         self._set_engine_cameras(self._camera_specs)
-        self._configure_renderer(self.render_config)
-        camera_outputs = self._collect_camera_outputs()
-        return self._snapshot_from_engine(wind, camera_outputs=camera_outputs)
+        self._configure_renderer()
+        return self._snapshot_from_engine(wind)
 
     def step_ctbr(
         self,
@@ -494,6 +533,7 @@ class PufferSimEngineBackend(PufferDroneBackend):
         dt = self.dt if dt is None else float(dt)
         vehicle_state = _copy_numeric_state(snapshot["vehicle_state"])
         wind = np.asarray(vehicle_state.get("wind", np.zeros(3)), dtype=float).copy()
+        self._lib.sim_engine_close_rendering(C.byref(self._engine))
         self._lib.sim_engine_init(
             C.byref(self._engine),
             _params_to_c(self.params),
@@ -517,6 +557,7 @@ class PufferSimEngineBackend(PufferDroneBackend):
             self._camera_specs,
         )
         self._set_engine_cameras(camera_specs)
+        self._configure_renderer()
 
         cmd_speeds = self.ctbr_to_motor_speeds(vehicle_state, thrust_n, body_rates_b)
         speed_arr = (C.c_float * 4)(*cmd_speeds.astype(np.float32))
@@ -526,8 +567,7 @@ class PufferSimEngineBackend(PufferDroneBackend):
             C.c_float(dt),
             C.c_int(max(1, int(self.options.action_substeps))),
         )
-        camera_outputs = self._collect_camera_outputs()
-        return self._snapshot_from_engine(wind, camera_outputs=camera_outputs)
+        return self._snapshot_from_engine(wind)
 
     def _set_engine_targets(self, specs: tuple[dict[str, Any], ...]) -> None:
         c_targets = [_target_to_c(spec) for spec in specs]
@@ -572,98 +612,241 @@ class PufferSimEngineBackend(PufferDroneBackend):
             _camera_output_from_c(outputs[i], self._target_specs, self._camera_specs)
             for i in range(int(count))
         )
-        return self._render_camera_outputs(camera_outputs)
-
-    def _configure_renderer(self, config: RenderConfig) -> None:
-        key = _render_config_key(config)
-        if not config.enabled:
-            self._close_renderer()
-            self._renderer_key = key
-            return
-        if self._renderer is not None and self._renderer_key == key:
-            return
-        self._close_renderer()
-        from rendering.python import NativeRenderEngine
-
-        self._renderer = NativeRenderEngine(config)
-        self._renderer_key = key
-
-    def _close_renderer(self) -> None:
-        if self._renderer is not None:
-            self._renderer.close()
-            self._renderer = None
-
-    def _render_camera_outputs(
-        self,
-        camera_outputs: tuple[dict[str, Any], ...],
-    ) -> tuple[dict[str, Any], ...]:
-        # Stage A renderer hook: keep C sim geometry authoritative while the
-        # production C-level renderer integration is still being built.
-        if self._renderer is None or not self.render_config.enabled:
-            return camera_outputs
-        rendered = []
+        self._render_sequence_id = int(self._engine.render_sequence_id)
         for output in camera_outputs:
-            if not self._render_output_selected(output):
-                rendered.append(output)
-                continue
-            self._render_sequence_id += 1
-            result = self._renderer.render_frame(
-                drone=_render_drone_state_from_engine(self._engine),
-                camera=_camera_render_state(self._engine, output),
-                targets=_render_targets_from_engine(self._engine, self._target_specs),
-                sequence_id=self._render_sequence_id,
+            render_status = output.get("render_status")
+            if self.render_config.fail_on_error and render_status not in (None, 0, 1):
+                from ..rendering.python import RenderError
+
+                raise RenderError(render_status, f"render failed: {output.get('render_status_name')}")
+        return camera_outputs
+
+    def _configure_renderer(self) -> None:
+        c_config = _render_config_to_c(self.render_config)
+        status = int(
+            self._lib.sim_engine_configure_rendering(
+                C.byref(self._engine),
+                C.c_int(1 if self.rendering else 0),
+                C.c_int(_render_camera_c_id(self.render_config.camera_id, self._camera_specs)),
+                C.c_int(1 if self.render_config.fail_on_error else 0),
+                C.byref(c_config),
             )
-            if self.render_config.fail_on_error and result.status not in (0, 1):
-                from rendering.python import RenderError
+        )
+        if self.rendering and self.render_config.fail_on_error and status not in (0, 1):
+            from ..rendering.python import RenderError
 
-                raise RenderError(result.status, f"render failed: {result.status_name}")
-            rendered_output = dict(output)
-            rendered_output.update({
-                "render_status": result.status,
-                "render_status_name": result.status_name,
-                "has_frame": result.has_frame,
-                "frame_width_px": result.width_px or output["frame_width_px"],
-                "frame_height_px": result.height_px or output["frame_height_px"],
-                "frame_channels": result.channels or output["frame_channels"],
-                "frame_stride_bytes": result.stride_bytes,
-                "frame_rgb": result.pixels,
-            })
-            rendered.append(rendered_output)
-        return tuple(rendered)
+            raise RenderError(status, f"render setup failed: {status_name(status)}")
+        self._engine.render_sequence_id = self._render_sequence_id
 
-    def _render_output_selected(self, output: dict[str, Any]) -> bool:
-        camera_id = self.render_config.camera_id
-        if camera_id is None:
-            return True
-        return str(camera_id) in {
-            str(output.get("camera_id")),
-            str(output.get("c_camera_id")),
-        }
+    def close(self) -> None:
+        self._lib.sim_engine_close_rendering(C.byref(self._engine))
+
+    def __del__(self) -> None:
+        try:
+            self.close()
+        except Exception:
+            pass
 
     def _snapshot_from_engine(
         self,
         wind: np.ndarray,
-        camera_outputs: tuple[dict[str, Any], ...] = (),
     ) -> dict[str, Any]:
-        vehicle = _state_from_c(self._lib.sim_engine_get_pursuer_state(C.byref(self._engine)))
+        snapshot = _CSimSnapshot()
+        self._lib.sim_engine_get_snapshot(C.byref(self._engine), C.byref(snapshot))
+
+        vehicle = _state_from_c(snapshot.pursuer_state)
         vehicle["wind"] = np.asarray(wind, dtype=float).copy()
         targets = []
-        count = int(self._lib.sim_engine_get_num_targets(C.byref(self._engine)))
+        count = min(int(snapshot.num_targets), SIM_MAX_TARGETS)
         for i in range(count):
-            state = self._lib.sim_engine_get_target_state(C.byref(self._engine), C.c_int(i))
-            spec = self._target_specs[i] if i < len(self._target_specs) else {}
-            targets.append(_target_snapshot_from_c(state, spec, self._engine.targets[i]))
+            spec = dict(self._target_specs[i]) if i < len(self._target_specs) else {}
+            spec.setdefault("c_id", int(snapshot.target_ids[i]))
+            spec.setdefault("id", str(int(snapshot.target_ids[i])))
+            spec.setdefault("radius_m", float(snapshot.target_radii_m[i]))
+            targets.append(_target_snapshot_from_c(snapshot.target_states[i], spec))
+        camera_outputs = tuple(
+            _camera_output_from_c(snapshot.camera_outputs[i], self._target_specs, self._camera_specs)
+            for i in range(min(int(snapshot.num_camera_outputs), SIM_MAX_CAMERA_OUTPUTS))
+        )
+        self._render_sequence_id = int(self._engine.render_sequence_id)
+        for output in camera_outputs:
+            render_status = output.get("render_status")
+            if self.render_config.fail_on_error and render_status not in (None, 0, 1):
+                from ..rendering.python import RenderError
+
+                raise RenderError(render_status, f"render failed: {output.get('render_status_name')}")
         return {
-            "t": float(self._engine.t),
+            "t": float(snapshot.t),
             "vehicle_state": vehicle,
             "target_states": tuple(targets),
-            "intercept_radius_m": float(self._engine.intercept_radius_m),
-            "metrics": _metrics_from_c(
-                self._lib.sim_engine_get_metrics(C.byref(self._engine))
-            ),
+            "intercept_radius_m": float(snapshot.intercept_radius_m),
+            "metrics": _metrics_from_c(snapshot.metrics),
             "camera_states": _camera_states_from_engine(self._engine, self._camera_specs),
-            "camera_outputs": tuple(camera_outputs),
+            "camera_outputs": camera_outputs,
         }
+
+
+class BatchPufferSimEngineBackend:
+    """Batched Python binding for many independent C SimEngine slots."""
+
+    def __init__(self, num_envs: int):
+        self.num_envs = int(num_envs)
+        if self.num_envs <= 0:
+            raise ValueError("num_envs must be positive")
+        self._lib = _load_lib()
+        self._engines = (_CSimEngine * self.num_envs)()
+        self._params: list[PursuerParams | None] = [None] * self.num_envs
+        self._target_specs: list[tuple[dict[str, Any], ...]] = [()] * self.num_envs
+        self._camera_specs: list[tuple[dict[str, Any], ...]] = [()] * self.num_envs
+        self._pursuer = np.zeros((self.num_envs, 17), dtype=np.float32)
+        self._targets = np.zeros((self.num_envs, 6), dtype=np.float32)
+        self._metrics = np.zeros((self.num_envs, 5), dtype=np.float32)
+        self._camera = np.zeros((self.num_envs, 3), dtype=np.float32)
+        self._tm_to_f = np.zeros((self.num_envs, 4, 4), dtype=np.float32)
+        self._inertia = np.ones((self.num_envs, 3), dtype=np.float32)
+        self._k_w = np.ones(self.num_envs, dtype=np.float32)
+        self._k_thrust = np.ones(self.num_envs, dtype=np.float32)
+        self._min_rpm = np.zeros(self.num_envs, dtype=np.float32)
+        self._max_rpm = np.ones(self.num_envs, dtype=np.float32)
+        self._max_thrust = np.ones(self.num_envs, dtype=np.float32)
+        self._max_rate = np.ones(self.num_envs, dtype=np.float32)
+        self._dt = None
+        self._substeps = None
+
+    @property
+    def max_thrust_n(self) -> np.ndarray:
+        return self._max_thrust.copy()
+
+    @property
+    def max_rate_rps(self) -> np.ndarray:
+        return self._max_rate.copy()
+
+    def reset_many(self, indices: np.ndarray, instances: list[SimInstance] | tuple[SimInstance, ...]) -> dict[str, np.ndarray]:
+        indices = np.asarray(indices, dtype=np.int64).reshape(-1)
+        if len(indices) != len(instances):
+            raise ValueError("indices and instances must have the same length")
+        for slot, instance in zip(indices, instances):
+            self._reset_one(int(slot), instance)
+        return self.snapshot()
+
+    def step_ctbr_many(self, actions: np.ndarray) -> dict[str, np.ndarray]:
+        actions = np.asarray(actions, dtype=np.float32).reshape(self.num_envs, 4)
+        thrust = np.clip((actions[:, 0] + 1.0) * 0.5, 0.0, 1.0) * self._max_thrust
+        body_rates = np.clip(actions[:, 1:4], -1.0, 1.0) * self._max_rate[:, None]
+        return self.step_ctbr_commands_many(thrust, body_rates)
+
+    def step_ctbr_commands_many(self, thrust_n: np.ndarray, body_rates_b: np.ndarray) -> dict[str, np.ndarray]:
+        thrust = np.asarray(thrust_n, dtype=np.float32).reshape(self.num_envs)
+        body_rates = np.asarray(body_rates_b, dtype=np.float32).reshape(self.num_envs, 3)
+        thrust = np.clip(thrust, 0.0, self._max_thrust)
+        body_rates = np.clip(body_rates, -self._max_rate[:, None], self._max_rate[:, None])
+        cmd_rpms = self._ctbr_to_motor_speeds(thrust, body_rates)
+        self._lib.sim_engine_batch_step_motor_speeds_dt(
+            self._engines,
+            np.ascontiguousarray(cmd_rpms, dtype=np.float32).ctypes.data_as(C.POINTER(C.c_float)),
+            C.c_int(self.num_envs),
+            C.c_float(float(self._dt if self._dt is not None else PUFFER_ACTION_DT)),
+            C.c_int(max(1, int(self._substeps if self._substeps is not None else PUFFER_ACTION_SUBSTEPS))),
+        )
+        snapshot = self.snapshot()
+        snapshot["body_rates_b"] = body_rates.astype(np.float32, copy=False)
+        snapshot["thrust_n"] = thrust.astype(np.float32, copy=False)
+        return snapshot
+
+    def snapshot(self) -> dict[str, np.ndarray]:
+        self._lib.sim_engine_batch_snapshot_first_target(
+            self._engines,
+            C.c_int(self.num_envs),
+            self._pursuer.ctypes.data_as(C.POINTER(C.c_float)),
+            self._targets.ctypes.data_as(C.POINTER(C.c_float)),
+            self._metrics.ctypes.data_as(C.POINTER(C.c_float)),
+            self._camera.ctypes.data_as(C.POINTER(C.c_float)),
+        )
+        return {
+            "pursuer": self._pursuer.copy(),
+            "target": self._targets.copy(),
+            "metrics": self._metrics.copy(),
+            "camera": self._camera.copy(),
+            "max_rate_rps": self._max_rate.copy(),
+            "max_rpm": self._max_rpm.copy(),
+        }
+
+    def _reset_one(self, slot: int, instance: SimInstance) -> None:
+        if slot < 0 or slot >= self.num_envs:
+            raise IndexError(slot)
+        if instance.config is None:
+            raise ValueError("batched SimEngine scenarios require SimInstance.config")
+        config = instance.config
+        options = config.options
+        if self._dt is None:
+            self._dt = float(options.backend_dt) * max(1, int(options.action_substeps))
+            self._substeps = max(1, int(options.action_substeps))
+        else:
+            dt = float(options.backend_dt) * max(1, int(options.action_substeps))
+            substeps = max(1, int(options.action_substeps))
+            if abs(dt - float(self._dt)) > 1e-12 or substeps != int(self._substeps):
+                raise ValueError("BatchPufferSimEngineBackend requires homogeneous dt/action_substeps")
+
+        initial = instance.pursuer_initial
+        rotor_speeds = initial.rotor_speeds
+        params = config.pursuer
+        if rotor_speeds is None:
+            rotor_speeds = np.full(4, _hover_rpm(params), dtype=float)
+        c_state = _state_to_c({
+            "x": np.asarray(initial.position_w, dtype=float),
+            "v": np.asarray(initial.velocity_w, dtype=float),
+            "q": _normalize(np.asarray(initial.quat_xyzw, dtype=float)),
+            "w": np.asarray(initial.body_rates_b, dtype=float),
+            "rotor_speeds": np.asarray(rotor_speeds, dtype=float),
+        })
+        engine = self._engines[slot]
+        self._lib.sim_engine_init(C.byref(engine), _params_to_c(params), c_state)
+        self._lib.sim_engine_set_intercept_radius(
+            C.byref(engine),
+            C.c_float(float(config.intercept_radius_m)),
+        )
+
+        target_specs = _target_specs_from_instance(instance)
+        c_targets = [_target_to_c(spec) for spec in target_specs]
+        if c_targets:
+            arr_type = _CTargetSim * len(c_targets)
+            count = self._lib.sim_engine_set_targets(C.byref(engine), arr_type(*c_targets), C.c_int(len(c_targets)))
+            if count != len(c_targets):
+                raise ValueError(f"SimEngine accepted {count} targets out of {len(c_targets)}")
+        else:
+            self._lib.sim_engine_clear_targets(C.byref(engine))
+
+        camera_specs = tuple(_camera_spec_from_python(camera, i) for i, camera in enumerate(config.cameras))
+        c_cameras = [_camera_to_c(spec) for spec in camera_specs]
+        if c_cameras:
+            arr_type = _CCameraSim * len(c_cameras)
+            count = self._lib.sim_engine_set_cameras(C.byref(engine), arr_type(*c_cameras), C.c_int(len(c_cameras)))
+            if count != len(c_cameras):
+                raise ValueError(f"SimEngine accepted {count} cameras out of {len(c_cameras)}")
+        else:
+            self._lib.sim_engine_clear_cameras(C.byref(engine))
+
+        self._params[slot] = params
+        self._target_specs[slot] = target_specs
+        self._camera_specs[slot] = camera_specs
+        self._tm_to_f[slot] = _tm_to_f_from_params(params)
+        self._inertia[slot] = np.asarray([params.ixx, params.iyy, params.izz], dtype=np.float32)
+        self._k_w[slot] = float(params.k_w)
+        self._k_thrust[slot] = float(params.k_thrust)
+        self._min_rpm[slot] = float(_min_rpm(params))
+        self._max_rpm[slot] = float(params.max_rpm)
+        self._max_thrust[slot] = float(config.max_thrust_n or params.mass_kg * params.gravity_mps2 * 2.0)
+        self._max_rate[slot] = float(config.max_rate_rps or params.max_omega_rps)
+
+    def _ctbr_to_motor_speeds(self, thrust_n: np.ndarray, body_rates_b: np.ndarray) -> np.ndarray:
+        omega = self._pursuer[:, 10:13]
+        wdot_cmd = self._k_w[:, None] * (body_rates_b - omega)
+        cmd_moment = self._inertia * wdot_cmd
+        desired = np.concatenate([np.maximum(thrust_n[:, None], 0.0), cmd_moment], axis=1)
+        rotor_thrusts = np.einsum("nij,nj->ni", self._tm_to_f, desired)
+        rotor_speed_sq = rotor_thrusts / np.maximum(self._k_thrust[:, None], 1e-12)
+        cmd_speeds = np.sign(rotor_speed_sq) * np.sqrt(np.abs(rotor_speed_sq))
+        return np.clip(cmd_speeds, self._min_rpm[:, None], self._max_rpm[:, None])
 
 
 def _load_lib() -> C.CDLL:
@@ -671,7 +854,11 @@ def _load_lib() -> C.CDLL:
     if _LIB is not None:
         return _LIB
 
+    from ..rendering.python.build_native import build_native
+
     csim_dir = Path(__file__).resolve().parents[1]
+    rendering_dir = csim_dir / "rendering"
+    render_lib_path = build_native()
     sources = [
         csim_dir / "pursuer_sim.c",
         csim_dir / "target_sim.c",
@@ -685,6 +872,9 @@ def _load_lib() -> C.CDLL:
         csim_dir / "camera_sim.h",
         csim_dir / "sim_types.h",
         csim_dir / "sim_math.h",
+        rendering_dir / "include" / "liftoff_render_api.h",
+        rendering_dir / "include" / "liftoff_render_errors.h",
+        rendering_dir / "include" / "liftoff_render_types.h",
     ]
     build_dir = Path(__file__).resolve().parent / "_build"
     build_dir.mkdir(parents=True, exist_ok=True)
@@ -696,8 +886,11 @@ def _load_lib() -> C.CDLL:
     if (not lib_path.exists()) or lib_path.stat().st_mtime < newest_source_mtime:
         subprocess.run(
             [
-                "cc", "-std=gnu99", "-O3", "-fPIC", "-shared",
+                "cc", "-std=gnu99", "-O3", "-fPIC", "-shared", "-fopenmp",
+                f"-I{rendering_dir / 'include'}",
                 *(str(src) for src in sources),
+                str(render_lib_path),
+                "-Wl,-rpath," + str(render_lib_path.parent),
                 "-lm", "-o", str(lib_path),
             ],
             check=True,
@@ -734,6 +927,16 @@ def _load_lib() -> C.CDLL:
     lib.sim_engine_set_cameras.restype = C.c_int
     lib.sim_engine_add_camera.argtypes = [C.POINTER(_CSimEngine), _CCameraSim]
     lib.sim_engine_add_camera.restype = C.c_int
+    lib.sim_engine_configure_rendering.argtypes = [
+        C.POINTER(_CSimEngine),
+        C.c_int,
+        C.c_int,
+        C.c_int,
+        C.POINTER(_CLiftoffRenderConfig),
+    ]
+    lib.sim_engine_configure_rendering.restype = C.c_int
+    lib.sim_engine_close_rendering.argtypes = [C.POINTER(_CSimEngine)]
+    lib.sim_engine_close_rendering.restype = None
     lib.sim_engine_collect_camera_outputs.argtypes = [C.POINTER(_CSimEngine), C.POINTER(_CCameraOutput), C.c_int]
     lib.sim_engine_collect_camera_outputs.restype = C.c_int
     lib.sim_engine_step_motor_dt.argtypes = [C.POINTER(_CSimEngine), C.POINTER(C.c_float), C.c_float, C.c_int]
@@ -748,6 +951,25 @@ def _load_lib() -> C.CDLL:
     lib.sim_engine_get_target_state.restype = _CTargetState
     lib.sim_engine_get_metrics.argtypes = [C.POINTER(_CSimEngine)]
     lib.sim_engine_get_metrics.restype = _CInterceptMetrics
+    lib.sim_engine_get_snapshot.argtypes = [C.POINTER(_CSimEngine), C.POINTER(_CSimSnapshot)]
+    lib.sim_engine_get_snapshot.restype = None
+    lib.sim_engine_batch_step_motor_speeds_dt.argtypes = [
+        C.POINTER(_CSimEngine),
+        C.POINTER(C.c_float),
+        C.c_int,
+        C.c_float,
+        C.c_int,
+    ]
+    lib.sim_engine_batch_step_motor_speeds_dt.restype = None
+    lib.sim_engine_batch_snapshot_first_target.argtypes = [
+        C.POINTER(_CSimEngine),
+        C.c_int,
+        C.POINTER(C.c_float),
+        C.POINTER(C.c_float),
+        C.POINTER(C.c_float),
+        C.POINTER(C.c_float),
+    ]
+    lib.sim_engine_batch_snapshot_first_target.restype = None
     _LIB = lib
     return lib
 
@@ -1132,6 +1354,11 @@ def _camera_output_from_c(
         if int(spec.get("c_id", -1)) == c_camera_id:
             camera_id = str(spec.get("id", camera_id))
             break
+    frame_bytes = None
+    frame_byte_count = int(output.frame_byte_count)
+    if output.frame_rgb and frame_byte_count > 0:
+        frame_bytes = C.string_at(output.frame_rgb, frame_byte_count)
+    render_status = int(output.render_status)
     return {
         "camera_id": camera_id,
         "c_camera_id": c_camera_id,
@@ -1149,67 +1376,37 @@ def _camera_output_from_c(
         "frame_width_px": int(output.frame_width_px),
         "frame_height_px": int(output.frame_height_px),
         "frame_channels": int(output.frame_channels),
-        "frame_stride_bytes": 0,
-        "frame_rgb": None,
-        "render_status": None,
-        "render_status_name": None,
+        "frame_stride_bytes": int(output.frame_stride_bytes),
+        "frame_rgb": frame_bytes,
+        "render_status": render_status if render_status >= 0 else None,
+        "render_status_name": status_name(render_status) if render_status >= 0 else None,
     }
 
 
-def _render_config_key(config: RenderConfig) -> tuple[Any, ...]:
-    return (
-        bool(config.enabled),
-        config.camera_id,
-        config.backend,
-        config.platform,
-        config.scene_id,
-        int(config.timeout_ms),
-        bool(config.fail_on_error),
+def _render_config_to_c(config: RenderConfig) -> _CLiftoffRenderConfig:
+    scene_id = str(config.scene_id).encode("utf-8")
+    if len(scene_id) >= 256:
+        raise ValueError("Render scene_id must encode to fewer than 256 bytes")
+    c_scene_id = (scene_id + b"\0" * 256)[:256]
+    return _CLiftoffRenderConfig(
+        C.c_int(backend_kind(config.backend)),
+        C.c_int(platform_kind(config.platform)),
+        C.c_uint32(int(config.timeout_ms)),
+        C.c_uint32(0),
+        c_scene_id,
     )
 
 
-def _render_drone_state_from_engine(engine: _CSimEngine) -> dict[str, Any]:
-    state = _state_from_c(engine.pursuer.state)
-    state["t"] = float(engine.t)
-    return state
-
-
-def _camera_render_state(engine: _CSimEngine, output: dict[str, Any]) -> dict[str, Any]:
-    camera_index = int(output["c_camera_id"])
-    camera = engine.cameras[camera_index]
-    return {
-        "c_id": int(camera.id),
-        "position_b": np.array([camera.position_b.x, camera.position_b.y, camera.position_b.z], dtype=float),
-        "body_to_camera": np.array(
-            [[camera.body_to_camera.m[r][c] for c in range(3)] for r in range(3)],
-            dtype=float,
-        ),
-        "width_px": int(camera.intrinsics.width_px),
-        "height_px": int(camera.intrinsics.height_px),
-        "fx_px": float(camera.intrinsics.fx_px),
-        "fy_px": float(camera.intrinsics.fy_px),
-        "cx_px": float(camera.intrinsics.cx_px),
-        "cy_px": float(camera.intrinsics.cy_px),
-        "hfov_rad": float(camera.intrinsics.hfov_rad),
-        "vfov_rad": float(camera.intrinsics.vfov_rad),
-    }
-
-
-def _render_targets_from_engine(
-    engine: _CSimEngine,
-    target_specs: tuple[dict[str, Any], ...],
-) -> tuple[dict[str, Any], ...]:
-    targets = []
-    for i in range(int(engine.num_targets)):
-        state = engine.targets[i].state
-        spec = target_specs[i] if i < len(target_specs) else {}
-        targets.append({
-            "c_id": int(engine.targets[i].id),
-            "position_w": np.array([state.pos.x, state.pos.y, state.pos.z], dtype=float),
-            "velocity_w": np.array([state.vel.x, state.vel.y, state.vel.z], dtype=float),
-            "radius_m": float(spec.get("radius_m", engine.targets[i].radius)),
-        })
-    return tuple(targets)
+def _render_camera_c_id(camera_id: str | None, camera_specs: tuple[dict[str, Any], ...]) -> int:
+    if camera_id is None:
+        return -1
+    for spec in camera_specs:
+        if str(spec.get("id", spec.get("c_id"))) == str(camera_id):
+            return int(spec.get("c_id", -1))
+    try:
+        return int(camera_id)
+    except ValueError:
+        return -2
 
 
 def _metrics_from_c(metrics: _CInterceptMetrics) -> dict[str, float | int | bool | None]:
@@ -1232,6 +1429,41 @@ def _metrics_to_c(metrics: dict[str, Any]) -> _CInterceptMetrics:
         C.c_float(float(metrics.get("intercept_time_s", -1.0) if intercepted else -1.0)),
         C.c_int(int(metrics.get("target_index", -1))),
     )
+
+
+def _tm_to_f_from_params(params: PursuerParams) -> np.ndarray:
+    rotor_positions = params.rotor_positions_b
+    rotor_directions = params.rotor_directions
+    if rotor_positions is None or rotor_directions is None:
+        arm_factor = params.arm_len_m / np.sqrt(2.0)
+        allocation = np.array([
+            [1.0, 1.0, 1.0, 1.0],
+            [-arm_factor, -arm_factor, arm_factor, arm_factor],
+            [-arm_factor, arm_factor, arm_factor, -arm_factor],
+            [-params.k_yaw, params.k_yaw, -params.k_yaw, params.k_yaw],
+        ], dtype=float)
+    else:
+        rotor_positions = np.asarray(rotor_positions, dtype=float).reshape(4, 3)
+        rotor_directions = np.asarray(rotor_directions, dtype=float).reshape(4)
+        yaw = params.k_yaw * rotor_directions
+        allocation = np.vstack((
+            np.ones(4),
+            rotor_positions[:, 1],
+            -rotor_positions[:, 0],
+            yaw,
+        ))
+    return np.linalg.inv(allocation).astype(np.float32)
+
+
+def _hover_rpm(params: PursuerParams) -> float:
+    return float(np.sqrt((params.mass_kg * params.gravity_mps2) / (4.0 * params.k_thrust)))
+
+
+def _min_rpm(params: PursuerParams) -> float:
+    if params.rpm_min is not None:
+        return float(np.clip(params.rpm_min, 0.0, params.max_rpm))
+    min_rpm = 2.0 * _hover_rpm(params) - params.max_rpm
+    return float(np.clip(min_rpm, 0.0, params.max_rpm))
 
 
 def _vec3(value: np.ndarray | list[float] | tuple[float, ...]) -> _CVec3:

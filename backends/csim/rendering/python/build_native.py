@@ -7,18 +7,17 @@ from pathlib import Path
 
 
 def repo_root() -> Path:
-    return Path(__file__).resolve().parents[2]
+    return Path(__file__).resolve().parents[4]
 
 
 def native_library_path() -> Path:
-    root = repo_root()
     suffix = ".dll" if os.name == "nt" else ".so"
-    return root / "rendering" / "native" / "_build" / f"libliftoff_render_native{suffix}"
+    return Path(__file__).resolve().parents[1] / "native" / "_build" / f"libliftoff_render_native{suffix}"
 
 
 def build_native(force: bool = False) -> Path:
     root = repo_root()
-    rendering_dir = root / "rendering"
+    rendering_dir = root / "backends" / "csim" / "rendering"
     native_dir = rendering_dir / "native"
     platform_name = platform.system().lower()
     platform_source = (

@@ -6,6 +6,7 @@ All this does is to proliferate different implementations of the same function, 
 - All interactions with `SimEngine` must go through the C API and the Python binding layer in `backends/csim/bindings`.
 - Python callers should pass typed objects from `backends/csim/bindings/types` (`SimInstance`, `SimConfig`, `PursuerInitialState`, `TargetConfig`, `CameraConfig`) rather than raw dicts or parallel adapter types.
 - Do not add bypasses that call `sim_engine_*` directly outside the binding layer.
+- All generators that subclass `SimGenerator` or `PregeneratedSimGenerator` must be implemented within `scripts/generators`.
 
 # Drone Detection
 - Anytime progress is made on drone image detection, document it in `docs/detection/worklog.md` with the date.

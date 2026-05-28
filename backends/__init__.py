@@ -1,4 +1,4 @@
-from .csim.bindings import PufferDroneBackend, PufferSimEngineBackend
+from .csim.bindings import BatchPufferSimEngineBackend, PufferDroneBackend, PufferSimEngineBackend
 from .csim.bindings.types import (
     CameraConfig,
     CameraIntrinsics,
@@ -32,6 +32,7 @@ __all__ = [
     "CameraConfig",
     "CameraIntrinsics",
     "NoiseConfig",
+    "BatchPufferSimEngineBackend",
     "PufferDroneBackend",
     "PufferSimEngineBackend",
     "PregeneratedSimGenerator",

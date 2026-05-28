@@ -4,9 +4,14 @@ import argparse
 import copy
 import json
 import math
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+
+REPO_ROOT = Path(__file__).resolve().parents[2]
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
 
 import numpy as np
 from scipy.spatial.transform import Rotation
@@ -21,17 +26,14 @@ from backends.csim.generator.generator import SimGenerator, get_config
 from backends.csim.generator.instance_store import write_sim_instances
 
 
-DEFAULT_OUTPUT_DIR = Path(".runs/csim_generator_sampling")
-SAMPLE_BINARY_NAME_TEMPLATE = "{strategy}_samples.csimin"
-
-
-DEFAULT_ROBUST_INTERCEPT_CONFIG: dict[str, Any] = {
+DEFAULT_ROBUST_INTERCEPT_UNIFORM_DISTANCE_CONFIG: dict[str, Any] = {
     "sampling": {
-        "strategy": "sobol",
+        "strategy": "uniform",
         "seed": 1,
-        "n_samples": 7200,
+        "n_samples": 1500,
         "scramble": True,
         "active_parameters": [
+            "range_m",
             "camera_azimuth_deg",
             "camera_elevation_deg",
             "camera_u_fraction",
@@ -71,13 +73,15 @@ DEFAULT_ROBUST_INTERCEPT_CONFIG: dict[str, Any] = {
         "capture_rate_hz": 30.0,
     },
     "parameters": {
-        "range_m": {"min": 8.0, "max": 8.0, "distribution": "uniform"},
+        "range_m": {"min": 5.0, "max": 20.0, "distribution": "uniform"},
         "camera_azimuth_deg": {"min": 0.0, "max": 360.0, "distribution": "uniform"},
         "camera_elevation_deg": {"min": -90.0, "max": 90.0, "distribution": "uniform_sin"},
         "camera_u_fraction": {"min": -0.9, "max": 0.9, "distribution": "uniform"},
         "camera_v_fraction": {"min": -0.9, "max": 0.9, "distribution": "uniform"},
         "camera_roll_deg": {"min": 0.0, "max": 0.0, "distribution": "uniform"},
-        "forward_speed_mps": {"min": 2.0, "max": 2.0, "distribution": "uniform"},
+        "closing_speed_mps": {"min": 2.0, "max": 2.0, "distribution": "uniform"},
+        "lateral_speed_mps": {"min": 0.0, "max": 0.0, "distribution": "uniform"},
+        "lateral_direction_rad": {"min": 0.0, "max": 0.0, "distribution": "uniform"},
         "target_speed_mps": {"min": 0.0, "max": 0.0, "distribution": "uniform"},
         "target_azimuth_rad": {"min": 0.0, "max": 0.0, "distribution": "uniform"},
         "target_elevation_deg": {"min": 0.0, "max": 0.0, "distribution": "uniform_sin"},
@@ -89,8 +93,7 @@ DEFAULT_ROBUST_INTERCEPT_CONFIG: dict[str, Any] = {
         "wind_vertical_mps": {"min": 0.0, "max": 0.0, "distribution": "uniform"},
     },
     "grid": {
-        "range_m": [5.0, 8.0, 20.0],
-        "forward_speed_mps": [0.5, 2.0, 8.0],
+        "closing_speed_mps": [0.0, 5.0, 10.0, 20.0],
     },
 }
 
@@ -107,12 +110,12 @@ class _SamplePoint:
 class SampleEvaluation:
     instance: SimInstance
     record: dict[str, Any]
-    labels: dict[str, bool]
-    label_details: dict[str, str]
+    valid: bool
+    validation_error: str | None
 
 
-class RobustInterceptConfigGenerator(SimGenerator):
-    """Generate robust interception initial conditions from strategy-agnostic distributions.
+class RobustInterceptUniformDistanceConfigGenerator(SimGenerator):
+    """Generate robust interception samples with uniform start distance and speed buckets.
 
     The sampler backend produces unit-cube samples. Parameter specs transform
     those unit values to physical variables, and the resolver maps the variables
@@ -120,14 +123,14 @@ class RobustInterceptConfigGenerator(SimGenerator):
     """
 
     def __init__(self, config: dict[str, Any] | None = None):
-        self.config = _deep_merge(DEFAULT_ROBUST_INTERCEPT_CONFIG, config or {})
+        self.config = _deep_merge(DEFAULT_ROBUST_INTERCEPT_UNIFORM_DISTANCE_CONFIG, config or {})
         self.parameters = tuple(self.config["parameters"].keys())
         self._sample_points = _build_sample_points(self.config, self.parameters)
         self._by_seed = {point.seed: point for point in self._sample_points}
 
     @classmethod
     def default_config(cls) -> dict[str, Any]:
-        return copy.deepcopy(DEFAULT_ROBUST_INTERCEPT_CONFIG)
+        return copy.deepcopy(DEFAULT_ROBUST_INTERCEPT_UNIFORM_DISTANCE_CONFIG)
 
     def sample_many(self, *, count: int, seed_start: int = 1, **kwargs: Any) -> list[SimInstance]:
         if kwargs:
@@ -146,12 +149,12 @@ class RobustInterceptConfigGenerator(SimGenerator):
 
 
 def write_default_config(path: str | Path) -> None:
-    config = copy.deepcopy(DEFAULT_ROBUST_INTERCEPT_CONFIG)
+    config = copy.deepcopy(DEFAULT_ROBUST_INTERCEPT_UNIFORM_DISTANCE_CONFIG)
     Path(path).write_text(json.dumps(config, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
 
 def generate_instances(config: dict[str, Any]) -> list[SimInstance]:
-    return [evaluation.instance for evaluation in evaluate_samples(config)]
+    return [evaluation.instance for evaluation in evaluate_samples(config) if evaluation.valid]
 
 
 def generate_sample_records(config: dict[str, Any]) -> list[dict[str, Any]]:
@@ -163,16 +166,22 @@ def evaluate_samples(config: dict[str, Any]) -> list[SampleEvaluation]:
 
 
 def iter_sample_evaluations(config: dict[str, Any]):
-    generator = RobustInterceptConfigGenerator(config)
+    generator = RobustInterceptUniformDistanceConfigGenerator(config)
     for point in generator._sample_points:
         instance = _resolve_instance(generator.config, point)
-        labels, label_details = _label_instance(instance)
-        record = _sample_record(generator.config, point, labels=labels, label_details=label_details)
+        valid = True
+        validation_error = None
+        try:
+            generator._validate_instance(instance)
+        except ValueError as exc:
+            valid = False
+            validation_error = str(exc)
+        record = _sample_record(generator.config, point, valid=valid, validation_error=validation_error)
         yield SampleEvaluation(
             instance=instance,
             record=record,
-            labels=labels,
-            label_details=label_details,
+            valid=valid,
+            validation_error=validation_error,
         )
 
 
@@ -209,20 +218,20 @@ def plot_sample_records(records_by_strategy: dict[str, list[dict[str, Any]]], ou
         _scatter(
             axes[0, 2],
             rows,
-            "los_closing_speed_mps",
-            "los_lateral_speed_mps",
+            "closing_speed_mps",
+            "lateral_speed_mps",
             "closing speed m/s",
             "lateral speed m/s",
-            "Derived relative velocity",
+            "Relative velocity",
         )
         _scatter(
             axes[1, 0],
             rows,
             "range_m",
-            "forward_speed_mps",
+            "closing_speed_mps",
             "range m",
-            "forward speed m/s",
-            "Range vs forward speed",
+            "closing speed m/s",
+            "Range vs closure",
         )
         _scatter(
             axes[1, 1],
@@ -371,13 +380,13 @@ def _resolve_instance(config: dict[str, Any], point: _SamplePoint) -> SimInstanc
         rotation_wb = Rotation.align_vectors([los_w], [target_dir_b])[0]
         if abs(values["camera_roll_deg"]) > 1e-12:
             rotation_wb = Rotation.from_rotvec(math.radians(values["camera_roll_deg"]) * los_w) * rotation_wb
-        rotation_wc = rotation_wb.as_matrix() @ body_to_camera.T
-        camera_forward_w = _unit(rotation_wc @ np.array([1.0, 0.0, 0.0], dtype=float))
 
     target_position_w = _array(scenario["target_origin_w"], length=3)
     pursuer_position_w = target_position_w - float(values["range_m"]) * los_w
 
-    relative_velocity_w = values["forward_speed_mps"] * camera_forward_w
+    basis_1, basis_2 = _orthonormal_perpendicular_basis(los_w)
+    lateral_dir = math.cos(values["lateral_direction_rad"]) * basis_1 + math.sin(values["lateral_direction_rad"]) * basis_2
+    relative_velocity_w = values["closing_speed_mps"] * los_w + values["lateral_speed_mps"] * lateral_dir
     target_dir_w = _spherical_rad(values["target_azimuth_rad"], math.radians(values["target_elevation_deg"]))
     target_velocity_w = values["target_speed_mps"] * target_dir_w
     pursuer_velocity_w = target_velocity_w + relative_velocity_w
@@ -413,56 +422,21 @@ def _sample_record(
     config: dict[str, Any],
     point: _SamplePoint,
     *,
-    labels: dict[str, bool] | None = None,
-    label_details: dict[str, str] | None = None,
+    valid: bool | None = None,
+    validation_error: str | None = None,
 ) -> dict[str, Any]:
     derived_values = _derived_record_values(config, point.values)
     return {
-        "scenario": "robust_intercept",
+        "scenario": "robust_intercept_uniform_distance",
         "strategy": str(config["sampling"].get("strategy", "sobol")).lower(),
         "stratum": point.stratum,
         "sample_index": point.index,
         "seed": point.seed,
-        "labels": {} if labels is None else dict(labels),
-        "label_details": {} if label_details is None else dict(label_details),
+        **({} if valid is None else {"valid": bool(valid)}),
+        **({} if validation_error is None else {"validation_error": validation_error}),
         **{name: float(value) for name, value in point.values.items()},
         **derived_values,
     }
-
-
-def _label_instance(instance: SimInstance) -> tuple[dict[str, bool], dict[str, str]]:
-    from backends.csim.generator.validations import (
-        validate_kinematic_intercept,
-        validate_no_straight_path_capture,
-        validate_target_in_fov,
-    )
-
-    labels: dict[str, bool] = {}
-    details: dict[str, str] = {}
-
-    labels["target_in_fov"] = _passes_label(validate_target_in_fov, instance, details, "target_in_fov")
-    labels["straight_path_capture"] = not _passes_label(
-        validate_no_straight_path_capture,
-        instance,
-        details,
-        "straight_path_capture",
-    )
-    labels["kinematic_intercept_feasible"] = _passes_label(
-        validate_kinematic_intercept,
-        instance,
-        details,
-        "kinematic_intercept_feasible",
-    )
-    return labels, details
-
-
-def _passes_label(validate: Any, instance: SimInstance, details: dict[str, str], name: str) -> bool:
-    try:
-        validate(instance)
-    except ValueError as exc:
-        details[name] = str(exc)
-        return False
-    return True
 
 
 def _grid_cells(grid: dict[str, list[float]]) -> list[tuple[str, dict[str, float]]]:
@@ -497,18 +471,9 @@ def _derived_record_values(config: dict[str, Any], values: dict[str, float]) -> 
     rotation_wc = _camera_rotation_from_forward(camera_forward_w)
     los_w = _unit(rotation_wc @ target_dir_c)
     los_azimuth_deg, los_elevation_deg = _azimuth_elevation_deg(los_w)
-    relative_velocity_w = float(values["forward_speed_mps"]) * camera_forward_w
-    los_closing_speed = float(np.dot(relative_velocity_w, los_w))
-    los_lateral_velocity_w = relative_velocity_w - los_closing_speed * los_w
-    los_lateral_speed = float(np.linalg.norm(los_lateral_velocity_w))
     return {
         "los_azimuth_deg": los_azimuth_deg,
         "los_elevation_deg": los_elevation_deg,
-        "los_closing_speed_mps": los_closing_speed,
-        "los_lateral_speed_mps": los_lateral_speed,
-        "trajectory_angle_deg": math.degrees(
-            math.atan2(los_lateral_speed, max(los_closing_speed, 1.0e-12))
-        ),
     }
 
 
@@ -588,29 +553,25 @@ def _edge_fov_bearing(u_radius: float, u_angle: float, r_min: float, r_max: floa
 def _scatter(ax: Any, rows: list[dict[str, Any]], x_key: str, y_key: str, x_label: str, y_label: str, title: str) -> None:
     strata = sorted(set(str(row["stratum"]) for row in rows))
     for stratum in strata:
-        straight_path_subset = [
-            row for row in rows if row["stratum"] == stratum and row.get("labels", {}).get("straight_path_capture", False)
-        ]
-        ordinary_subset = [
-            row for row in rows if row["stratum"] == stratum and not row.get("labels", {}).get("straight_path_capture", False)
-        ]
-        if ordinary_subset:
+        valid_subset = [row for row in rows if row["stratum"] == stratum and row.get("valid", True)]
+        invalid_subset = [row for row in rows if row["stratum"] == stratum and not row.get("valid", True)]
+        if valid_subset:
             ax.scatter(
-                [row[x_key] for row in ordinary_subset],
-                [row[y_key] for row in ordinary_subset],
+                [row[x_key] for row in valid_subset],
+                [row[y_key] for row in valid_subset],
                 s=8,
                 alpha=0.6,
                 label=stratum,
             )
-        if straight_path_subset:
+        if invalid_subset:
             ax.scatter(
-                [row[x_key] for row in straight_path_subset],
-                [row[y_key] for row in straight_path_subset],
+                [row[x_key] for row in invalid_subset],
+                [row[y_key] for row in invalid_subset],
                 s=18,
                 alpha=0.85,
                 marker="x",
                 c="#dc2626",
-                label=f"{stratum} straight path",
+                label=f"{stratum} invalid",
             )
     ax.set_xlabel(x_label)
     ax.set_ylabel(y_label)
@@ -676,7 +637,7 @@ def _unit(value: np.ndarray) -> np.ndarray:
 
 def _load_config(path: str | Path | None) -> dict[str, Any]:
     if path is None:
-        return copy.deepcopy(DEFAULT_ROBUST_INTERCEPT_CONFIG)
+        return copy.deepcopy(DEFAULT_ROBUST_INTERCEPT_UNIFORM_DISTANCE_CONFIG)
     config_path = Path(path)
     text = config_path.read_text(encoding="utf-8")
     if config_path.suffix.lower() in {".yaml", ".yml"}:
@@ -685,13 +646,15 @@ def _load_config(path: str | Path | None) -> dict[str, Any]:
         loaded = yaml.safe_load(text)
     else:
         loaded = json.loads(text)
-    return _deep_merge(DEFAULT_ROBUST_INTERCEPT_CONFIG, loaded)
+    return _deep_merge(DEFAULT_ROBUST_INTERCEPT_UNIFORM_DISTANCE_CONFIG, loaded)
 
 
 def _main() -> None:
-    parser = argparse.ArgumentParser(description="Generate robust-intercept samples and strategy visualizations.")
+    parser = argparse.ArgumentParser(
+        description="Generate robust-intercept uniform-distance samples and strategy visualizations."
+    )
     parser.add_argument("--config", type=Path, default=None)
-    parser.add_argument("--out-dir", type=Path, default=DEFAULT_OUTPUT_DIR)
+    parser.add_argument("--out-dir", type=Path, default=Path(".runs/csim_generator_sampling"))
     parser.add_argument("--n-samples", type=int, default=None)
     parser.add_argument("--strategies", default="sobol,latin,uniform")
     parser.add_argument("--write-default-config", type=Path, default=None)
@@ -715,28 +678,22 @@ def _main() -> None:
         config = _deep_merge(base_config, {"sampling": {"strategy": strategy}})
         records: list[dict[str, Any]] = []
         total_count = 0
-        label_counts: dict[str, int] = {}
-        should_label = not args.skip_records or not args.skip_plots
+        valid_count = 0
+        invalid_count = 0
 
-        def labeled_instances():
-            nonlocal total_count, label_counts, records
-            if should_label:
-                for evaluation in iter_sample_evaluations(config):
-                    total_count += 1
-                    for name, value in evaluation.labels.items():
-                        if value:
-                            label_counts[name] = label_counts.get(name, 0) + 1
-                    records.append(evaluation.record)
-                    yield evaluation.instance
-                return
-
-            generator = RobustInterceptConfigGenerator(config)
-            for point in generator._sample_points:
+        def valid_instances():
+            nonlocal total_count, valid_count, invalid_count, records
+            for evaluation in iter_sample_evaluations(config):
                 total_count += 1
-                yield _resolve_instance(generator.config, point)
+                if evaluation.valid:
+                    valid_count += 1
+                    yield evaluation.instance
+                else:
+                    invalid_count += 1
+                if not args.skip_records or not args.skip_plots:
+                    records.append(evaluation.record)
 
-        samples_path = out_dir / SAMPLE_BINARY_NAME_TEMPLATE.format(strategy=strategy)
-        write_sim_instances(samples_path, labeled_instances())
+        write_sim_instances(out_dir / f"{strategy}_samples.csimin", valid_instances())
         if not args.skip_records:
             (out_dir / f"{strategy}_sample_records.json").write_text(
                 json.dumps(records, indent=2, sort_keys=True) + "\n",
@@ -746,11 +703,10 @@ def _main() -> None:
             records_by_strategy[strategy] = records
         summary["strategies"][strategy] = {
             "total": total_count,
-            "written": total_count,
-            "samples": str(samples_path),
+            "valid": valid_count,
+            "invalid": invalid_count,
+            "samples": str(out_dir / f"{strategy}_samples.csimin"),
         }
-        if should_label:
-            summary["strategies"][strategy]["labels"] = label_counts
         if not args.skip_records:
             summary["strategies"][strategy]["records"] = str(out_dir / f"{strategy}_sample_records.json")
 

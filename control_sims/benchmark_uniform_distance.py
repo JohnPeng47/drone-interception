@@ -17,7 +17,7 @@ from typing import Any
 import numpy as np
 
 from backends.csim.generator.instance_store import read_sim_instances
-from backends.csim.generator.generators.robust_intercept_uniform_distance import (
+from scripts.generators.robust_intercept_uniform_distance import (
     RobustInterceptUniformDistanceConfigGenerator,
 )
 
@@ -37,9 +37,16 @@ from pydrake.systems.analysis import Simulator  # noqa: E402
 
 from control_sims.beihang_paper_sim.diagram import build_diagram_from_config  # noqa: E402
 from control_sims.beihang_paper_sim.noise_config import NoiseConfig  # noqa: E402
+from control_sims.sim_runner import (  # noqa: E402
+    BatchSimEngineRunner,
+    BatchSimEngineRunnerConfig,
+    CompletedSim,
+    HoverCommandProvider,
+)
 
 
-SIMS = ("beihang_minimal", "beihang_paper")
+SIMS = ("beihang_minimal", "beihang_paper", "puffer_c_batch")
+BATCH_SIMS = ("puffer_c_batch",)
 _GENERATOR: RobustInterceptUniformDistanceConfigGenerator | None = None
 
 
@@ -60,6 +67,12 @@ def main() -> int:
     parser.add_argument("--sims", default=",".join(SIMS))
     parser.add_argument("--out-dir", type=Path, default=None)
     parser.add_argument("--progress-every", type=int, default=25)
+    parser.add_argument(
+        "--batch-envs",
+        type=int,
+        default=None,
+        help="Number of C SimEngine slots for batchable sims. Defaults to min(samples, CPU count).",
+    )
     parser.add_argument(
         "--workers",
         type=int,
@@ -106,28 +119,48 @@ def main() -> int:
             duration_s = math.nan
             dt_s = math.nan
 
-    workers = _resolve_workers(args.workers, sample_count)
+    batch_sims = tuple(sim for sim in sims if sim in BATCH_SIMS)
+    process_sims = tuple(sim for sim in sims if sim not in BATCH_SIMS)
+    workers = _resolve_workers(args.workers, sample_count) if process_sims else 1
     rows: list[dict[str, Any]] = []
     start = time.perf_counter()
-    print(f"running {sample_count} scenarios x {len(sims)} sims with {workers} worker(s)", flush=True)
-    if workers == 1:
-        for index, task in enumerate(tasks, start=1):
-            rows.extend(_run_task(task, sims))
-            _print_progress(index, sample_count, len(sims), int(args.progress_every), start)
-    else:
-        with concurrent.futures.ProcessPoolExecutor(max_workers=workers) as executor:
-            futures = {
-                executor.submit(_run_task, task, sims): task
-                for task in tasks
-            }
-            for index, future in enumerate(concurrent.futures.as_completed(futures), start=1):
-                task = futures[future]
-                try:
-                    rows.extend(future.result())
-                except Exception as exc:  # noqa: BLE001
-                    seed = int(task if isinstance(task, int) else task.seed)
-                    rows.extend(_seed_error_rows(seed, sims, str(exc)))
-                _print_progress(index, sample_count, len(sims), int(args.progress_every), start)
+    print(
+        f"running {sample_count} scenarios x {len(sims)} sims "
+        f"with {workers} worker(s), batch_sims={batch_sims}",
+        flush=True,
+    )
+    if process_sims:
+        if workers == 1:
+            for index, task in enumerate(tasks, start=1):
+                rows.extend(_run_task(task, process_sims))
+                _print_progress(index, sample_count, len(process_sims), int(args.progress_every), start)
+        else:
+            with concurrent.futures.ProcessPoolExecutor(max_workers=workers) as executor:
+                futures = {
+                    executor.submit(_run_task, task, process_sims): task
+                    for task in tasks
+                }
+                for index, future in enumerate(concurrent.futures.as_completed(futures), start=1):
+                    task = futures[future]
+                    try:
+                        rows.extend(future.result())
+                    except Exception as exc:  # noqa: BLE001
+                        seed = int(task if isinstance(task, int) else task.seed)
+                        rows.extend(_seed_error_rows(seed, process_sims, str(exc)))
+                    _print_progress(index, sample_count, len(process_sims), int(args.progress_every), start)
+
+    if batch_sims:
+        instances, scenario_fields = _materialize_tasks(tasks)
+        batch_envs = _resolve_batch_envs(args.batch_envs, len(instances))
+        rows.extend(
+            _run_batch_sims(
+                instances,
+                scenario_fields,
+                batch_sims,
+                batch_envs=batch_envs,
+                progress_every=int(args.progress_every),
+            )
+        )
 
     sim_order = {sim_name: index for index, sim_name in enumerate(sims)}
     rows.sort(key=lambda row: (int(row["seed"]), sim_order.get(str(row["sim"]), len(sim_order))))
@@ -141,6 +174,7 @@ def main() -> int:
         "seed_start": int(args.seed_start),
         "offset": int(args.offset),
         "workers": int(workers),
+        "batch_envs": None if not batch_sims else int(_resolve_batch_envs(args.batch_envs, sample_count)),
         "duration_s": duration_s,
         "dt": dt_s,
         "elapsed_wall_s": time.perf_counter() - start,
@@ -158,6 +192,14 @@ def _resolve_workers(requested: int | None, samples: int) -> int:
     return max(1, min(int(samples), max(1, cpu_count - 1)))
 
 
+def _resolve_batch_envs(requested: int | None, samples: int) -> int:
+    if samples <= 0:
+        return 0
+    if requested is not None:
+        return max(1, min(int(samples), int(requested)))
+    return max(1, min(int(samples), os.cpu_count() or 1))
+
+
 def _print_progress(
     completed: int,
     total: int,
@@ -166,6 +208,8 @@ def _print_progress(
     start: float,
 ) -> None:
     if progress_every <= 0:
+        return
+    if completed <= 0:
         return
     if completed % progress_every != 0 and completed != total:
         return
@@ -204,6 +248,61 @@ def _run_instance(instance, sims: tuple[str, ...], scenario_fields: dict[str, An
     return rows
 
 
+def _materialize_tasks(tasks: list[Any]) -> tuple[list[Any], list[dict[str, Any]]]:
+    instances = []
+    scenario_fields = []
+    for task in tasks:
+        if isinstance(task, int):
+            generator = _get_generator()
+            instance = generator.sample(seed=int(task))
+            point = generator._by_seed[int(task)]
+            fields = _scenario_fields(point)
+        else:
+            instance = task
+            fields = _scenario_fields_from_instance(instance)
+        instances.append(instance)
+        scenario_fields.append(fields)
+    return instances, scenario_fields
+
+
+def _run_batch_sims(
+    instances: list[Any],
+    scenario_fields: list[dict[str, Any]],
+    sims: tuple[str, ...],
+    *,
+    batch_envs: int,
+    progress_every: int,
+) -> list[dict[str, Any]]:
+    if sims != ("puffer_c_batch",):
+        raise ValueError(f"unsupported batch sims: {sims}")
+    fields_by_workload_index = {
+        index: fields
+        for index, fields in enumerate(scenario_fields)
+    }
+    runner = BatchSimEngineRunner(BatchSimEngineRunnerConfig(max_envs=batch_envs))
+    provider = HoverCommandProvider()
+    rows: list[dict[str, Any]] = []
+    start = time.perf_counter()
+    runner.reset(instances)
+    completed_count = 0
+    while runner.has_active:
+        step = runner.step(provider(runner.state()))
+        for completed in step.completed:
+            row = _puffer_batch_row(completed)
+            row.update(fields_by_workload_index[int(completed.workload_index)])
+            row["wall_s"] = math.nan
+            row["error"] = None
+            rows.append(row)
+        completed_count += len(step.completed)
+        _print_progress(completed_count, len(instances), len(sims), progress_every, start)
+
+    elapsed = time.perf_counter() - start
+    wall_per_scenario = elapsed / max(len(instances), 1)
+    for row in rows:
+        row["wall_s"] = wall_per_scenario
+    return rows
+
+
 def _get_generator() -> RobustInterceptUniformDistanceConfigGenerator:
     global _GENERATOR
     if _GENERATOR is None:
@@ -230,7 +329,29 @@ def _run_one(sim_name: str, instance) -> dict[str, Any]:
         return _run_minimal(instance)
     if sim_name == "beihang_paper":
         return _run_paper(instance)
+    if sim_name == "puffer_c_batch":
+        raise ValueError("puffer_c_batch must be run through _run_batch_sims")
     raise ValueError(sim_name)
+
+
+def _puffer_batch_row(completed: CompletedSim) -> dict[str, Any]:
+    snapshot = completed.terminal_snapshot
+    metrics = np.asarray(snapshot["metrics"], dtype=float)
+    caught = bool(metrics[2] > 0.5)
+    pos = np.asarray(snapshot["pursuer"][0:3], dtype=float)
+    return {
+        "sim": "puffer_c_batch",
+        "seed": int(completed.seed),
+        "caught": caught,
+        "catch_time_s": float(metrics[3]) if caught else None,
+        "min_distance_m": float(metrics[1]),
+        "final_distance_m": float(metrics[0]),
+        "visible_fraction": float(completed.visible_fraction),
+        "control_effort": float(completed.control_effort),
+        "steps": int(completed.steps),
+        "crashed": bool(pos[2] <= -100.0),
+        "out_of_bounds": bool(completed.terminal_reason == "oob"),
+    }
 
 
 def _run_minimal(instance) -> dict[str, Any]:

@@ -1,6 +1,7 @@
 """Python bindings for the shared C simulation core."""
 
 from .puffer_c import (
+    BatchPufferSimEngineBackend,
     PufferDroneBackend,
     PufferSimEngineBackend,
     initial_state_from_rotorpy,
@@ -24,6 +25,7 @@ from .types import (
 __all__ = [
     "CameraConfig",
     "CameraIntrinsics",
+    "BatchPufferSimEngineBackend",
     "PufferDroneBackend",
     "PufferSimEngineBackend",
     "PursuerInitialState",
