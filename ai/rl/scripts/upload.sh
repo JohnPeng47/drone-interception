@@ -5,8 +5,8 @@ ROOT="$(cd "$(dirname "$0")/../../.." && pwd)"
 META="$ROOT/ai/rl/scripts/.runpod_pod.json"
 [ -f "$META" ] || { echo "no $META - run ai/rl/scripts/runpod_setup.sh first"; exit 1; }
 
-SCENARIO_TABLE=${SCENARIO_TABLE:-.runs/csim_generator_sampling/camera_basis_grid_589824/sobol_samples.csimin}
-SCENARIO_MANIFEST=${SCENARIO_MANIFEST:-.runs/csim_generator_sampling/camera_basis_grid_589824/sobol_samples_grid_manifest.json}
+SCENARIO_TABLE=${SCENARIO_TABLE:-scripts/generators/sim_instances/sobol_samples.csimin}
+SCENARIO_MANIFEST=${SCENARIO_MANIFEST:-}
 
 IP=$(jq -r '.runtime.ports[] | select(.privatePort==22) | .ip' "$META")
 PORT=$(jq -r '.runtime.ports[] | select(.privatePort==22) | .publicPort' "$META")
@@ -35,8 +35,10 @@ echo ">> Uploading scenario table"
 $SSH root@$IP 'mkdir -p /workspace/drone-interception/data/scenarios'
 rsync -az -e "ssh $SSH_OPTS" "$ROOT/$SCENARIO_TABLE" \
     "root@$IP:/workspace/drone-interception/data/scenarios/sobol_samples.csimin"
-rsync -az -e "ssh $SSH_OPTS" "$ROOT/$SCENARIO_MANIFEST" \
-    "root@$IP:/workspace/drone-interception/data/scenarios/sobol_samples_grid_manifest.json"
+if [ -n "$SCENARIO_MANIFEST" ]; then
+    rsync -az -e "ssh $SSH_OPTS" "$ROOT/$SCENARIO_MANIFEST" \
+        "root@$IP:/workspace/drone-interception/data/scenarios/sobol_samples_grid_manifest.json"
+fi
 
 if [ -f "$ROOT/.wandb_key" ]; then
     scp -q -P "$PORT" -o StrictHostKeyChecking=accept-new -o UserKnownHostsFile=/dev/null \

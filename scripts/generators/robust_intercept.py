@@ -22,11 +22,12 @@ from backends.csim.bindings.types import (
     SimInstance,
     TargetInitialState,
 )
-from backends.csim.generator.generator import SimGenerator, get_config
+from backends.csim.generator.generator import SimInstanceGenerator, get_config
 from backends.csim.generator.instance_store import write_sim_instances
+from backends.csim.generator.metadata import write_sample_metadata
 
 
-DEFAULT_OUTPUT_DIR = Path(".runs/csim_generator_sampling")
+DEFAULT_OUTPUT_DIR = Path("scripts/generators/sim_instances")
 SAMPLE_BINARY_NAME_TEMPLATE = "{strategy}_samples.csimin"
 
 
@@ -116,7 +117,7 @@ class SampleEvaluation:
     label_details: dict[str, str]
 
 
-class RobustInterceptConfigGenerator(SimGenerator):
+class RobustInterceptConfigGenerator(SimInstanceGenerator):
     """Generate robust interception initial conditions from strategy-agnostic distributions.
 
     The sampler backend produces unit-cube samples. Parameter specs transform
@@ -742,26 +743,43 @@ def _main() -> None:
 
         samples_path = out_dir / SAMPLE_BINARY_NAME_TEMPLATE.format(strategy=strategy)
         write_sim_instances(samples_path, labeled_instances())
+        records_path = out_dir / f"{strategy}_sample_records.json"
         if not args.skip_records:
-            (out_dir / f"{strategy}_sample_records.json").write_text(
+            records_path.write_text(
                 json.dumps(records, indent=2, sort_keys=True) + "\n",
                 encoding="utf-8",
             )
         if not args.skip_plots:
             records_by_strategy[strategy] = records
+        metadata_path = write_sample_metadata(
+            samples_path,
+            generator=RobustInterceptConfigGenerator.__name__,
+            strategy=strategy,
+            config=config,
+            total_samples=total_count,
+            written_samples=total_count,
+            records_path=None if args.skip_records else records_path,
+            labels=label_counts if should_label else None,
+        )
         summary["strategies"][strategy] = {
             "total": total_count,
             "written": total_count,
             "samples": str(samples_path),
+            "metadata": str(metadata_path),
         }
         if should_label:
             summary["strategies"][strategy]["labels"] = label_counts
         if not args.skip_records:
-            summary["strategies"][strategy]["records"] = str(out_dir / f"{strategy}_sample_records.json")
+            summary["strategies"][strategy]["records"] = str(records_path)
 
     if not args.skip_plots:
         written = plot_sample_records(records_by_strategy, out_dir)
         summary["pngs"] = [str(path) for path in written]
+        for strategy_summary in summary["strategies"].values():
+            metadata_path = Path(strategy_summary["metadata"])
+            metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+            metadata["plots"] = summary["pngs"]
+            metadata_path.write_text(json.dumps(metadata, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     print(json.dumps(summary, indent=2))
 
 

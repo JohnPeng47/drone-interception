@@ -22,8 +22,9 @@ from backends.csim.bindings.types import (
     SimInstance,
     TargetInitialState,
 )
-from backends.csim.generator.generator import SimGenerator, get_config
+from backends.csim.generator.generator import SimInstanceGenerator, get_config
 from backends.csim.generator.instance_store import write_sim_instances
+from backends.csim.generator.metadata import write_sample_metadata
 
 
 DEFAULT_ROBUST_INTERCEPT_UNIFORM_DISTANCE_CONFIG: dict[str, Any] = {
@@ -114,7 +115,7 @@ class SampleEvaluation:
     validation_error: str | None
 
 
-class RobustInterceptUniformDistanceConfigGenerator(SimGenerator):
+class RobustInterceptUniformDistanceConfigGenerator(SimInstanceGenerator):
     """Generate robust interception samples with uniform start distance and speed buckets.
 
     The sampler backend produces unit-cube samples. Parameter specs transform
@@ -654,7 +655,7 @@ def _main() -> None:
         description="Generate robust-intercept uniform-distance samples and strategy visualizations."
     )
     parser.add_argument("--config", type=Path, default=None)
-    parser.add_argument("--out-dir", type=Path, default=Path(".runs/csim_generator_sampling"))
+    parser.add_argument("--out-dir", type=Path, default=Path("scripts/generators/sim_instances"))
     parser.add_argument("--n-samples", type=int, default=None)
     parser.add_argument("--strategies", default="sobol,latin,uniform")
     parser.add_argument("--write-default-config", type=Path, default=None)
@@ -693,26 +694,44 @@ def _main() -> None:
                 if not args.skip_records or not args.skip_plots:
                     records.append(evaluation.record)
 
-        write_sim_instances(out_dir / f"{strategy}_samples.csimin", valid_instances())
+        samples_path = out_dir / f"{strategy}_samples.csimin"
+        write_sim_instances(samples_path, valid_instances())
+        records_path = out_dir / f"{strategy}_sample_records.json"
         if not args.skip_records:
-            (out_dir / f"{strategy}_sample_records.json").write_text(
+            records_path.write_text(
                 json.dumps(records, indent=2, sort_keys=True) + "\n",
                 encoding="utf-8",
             )
         if not args.skip_plots:
             records_by_strategy[strategy] = records
+        metadata_path = write_sample_metadata(
+            samples_path,
+            generator=RobustInterceptUniformDistanceConfigGenerator.__name__,
+            strategy=strategy,
+            config=config,
+            total_samples=total_count,
+            written_samples=valid_count,
+            invalid_samples=invalid_count,
+            records_path=None if args.skip_records else records_path,
+        )
         summary["strategies"][strategy] = {
             "total": total_count,
             "valid": valid_count,
             "invalid": invalid_count,
-            "samples": str(out_dir / f"{strategy}_samples.csimin"),
+            "samples": str(samples_path),
+            "metadata": str(metadata_path),
         }
         if not args.skip_records:
-            summary["strategies"][strategy]["records"] = str(out_dir / f"{strategy}_sample_records.json")
+            summary["strategies"][strategy]["records"] = str(records_path)
 
     if not args.skip_plots:
         written = plot_sample_records(records_by_strategy, out_dir)
         summary["pngs"] = [str(path) for path in written]
+        for strategy_summary in summary["strategies"].values():
+            metadata_path = Path(strategy_summary["metadata"])
+            metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+            metadata["plots"] = summary["pngs"]
+            metadata_path.write_text(json.dumps(metadata, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     print(json.dumps(summary, indent=2))
 
 

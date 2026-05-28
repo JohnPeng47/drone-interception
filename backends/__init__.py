@@ -15,7 +15,7 @@ from .csim.bindings.types import (
     TargetInitialState,
     TargetState,
 )
-from .csim.generator import PregeneratedSimGenerator, SimGenerator, read_sim_instances, write_sim_instances
+from .csim.generator import SimGenerator, SimInstanceGenerator, read_sim_instances, write_sim_instances
 
 
 def __getattr__(name: str):
@@ -35,7 +35,6 @@ __all__ = [
     "BatchPufferSimEngineBackend",
     "PufferDroneBackend",
     "PufferSimEngineBackend",
-    "PregeneratedSimGenerator",
     "PursuerInitialState",
     "PursuerParams",
     "RenderConfig",
@@ -43,6 +42,7 @@ __all__ = [
     "RotorPyMultirotorPlant",
     "SimConfig",
     "SimGenerator",
+    "SimInstanceGenerator",
     "SimInstance",
     "SimOptions",
     "TargetBehaviorConfig",

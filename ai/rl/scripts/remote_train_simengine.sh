@@ -4,7 +4,7 @@ set -euo pipefail
 cd /workspace/drone-interception
 
 SCENARIO_TABLE=${SCENARIO_TABLE:-/workspace/drone-interception/data/scenarios/sobol_samples.csimin}
-SCENARIO_MANIFEST=${SCENARIO_MANIFEST:-/workspace/drone-interception/data/scenarios/sobol_samples_grid_manifest.json}
+SCENARIO_MANIFEST=${SCENARIO_MANIFEST:-}
 MAX_SCENARIOS=${MAX_SCENARIOS:-}
 TOTAL_TIMESTEPS=${TOTAL_TIMESTEPS:-500000000}
 NUM_ENVS=${NUM_ENVS:-1024}
@@ -48,17 +48,25 @@ S3_ARGS=()
 if [ -n "$S3_CHECKPOINT_PREFIX" ]; then
     S3_ARGS=(--s3-checkpoint-prefix "$S3_CHECKPOINT_PREFIX")
 fi
+MANIFEST_ARGS=()
+if [ -n "$SCENARIO_MANIFEST" ]; then
+    MANIFEST_ARGS=(--manifest "$SCENARIO_MANIFEST")
+fi
 
 mkdir -p logs checkpoints/simengine_batch
 
 echo "=== run metadata ===" | tee logs/simengine_train.log
 git rev-parse HEAD 2>/dev/null | tee -a logs/simengine_train.log || true
-sha256sum "$SCENARIO_TABLE" "$SCENARIO_MANIFEST" | tee -a logs/simengine_train.log
+if [ -n "$SCENARIO_MANIFEST" ]; then
+    sha256sum "$SCENARIO_TABLE" "$SCENARIO_MANIFEST" | tee -a logs/simengine_train.log
+else
+    sha256sum "$SCENARIO_TABLE" | tee -a logs/simengine_train.log
+fi
 nvidia-smi --query-gpu=name,memory.total,driver_version --format=csv | tee -a logs/simengine_train.log
 
 python3 -m ai.rl.simengine_batch.train \
     --scenario-table "$SCENARIO_TABLE" \
-    --manifest "$SCENARIO_MANIFEST" \
+    "${MANIFEST_ARGS[@]}" \
     "${MAX_SCENARIO_ARGS[@]}" \
     --num-envs "$NUM_ENVS" \
     --horizon "$HORIZON" \

@@ -1,16 +1,18 @@
 from __future__ import annotations
 
+import json
+
 import numpy as np
 
 from backends import (
     CameraConfig,
     CameraIntrinsics,
     NoiseConfig,
-    PregeneratedSimGenerator,
     PursuerInitialState,
     PursuerParams,
     RenderConfig,
     SimConfig,
+    SimGenerator,
     SimInstance,
     SimOptions,
     TargetBehaviorConfig,
@@ -20,6 +22,7 @@ from backends import (
     read_sim_instances,
     write_sim_instances,
 )
+from backends.csim.generator.metadata import write_sample_metadata
 
 
 def test_sim_instance_binary_round_trip(tmp_path):
@@ -58,13 +61,13 @@ def test_sim_instance_binary_round_trip(tmp_path):
     assert restored.metadata == {}
 
 
-def test_pregenerated_generator_reads_slices_from_disk(tmp_path):
+def test_sim_generator_reads_slices_from_disk(tmp_path):
     path = tmp_path / "instances.bin"
     write_sim_instances(path, [_instance(seed=1), _instance(seed=2), _instance(seed=3)])
 
-    assert [instance.seed for instance in PregeneratedSimGenerator.sample_many_from_disk(path, count=2, offset=1)] == [2, 3]
+    assert [instance.seed for instance in SimGenerator.sample_many_from_disk(path, count=2, offset=1)] == [2, 3]
 
-    generator = PregeneratedSimGenerator.from_disk(path)
+    generator = SimGenerator.from_disk(path)
     assert generator.sample(seed=2).seed == 2
     assert [instance.seed for instance in generator.sample_many(count=2, seed_start=1)] == [1, 2]
 
@@ -76,6 +79,43 @@ def test_read_sim_instances_supports_bounded_reads(tmp_path):
     assert [instance.seed for instance in read_sim_instances(path, count=2)] == [1, 2]
     assert [instance.seed for instance in read_sim_instances(path, count=2, offset=2)] == [3, 4]
     assert read_sim_instances(path, count=2, offset=10) == []
+
+
+def test_sample_metadata_sidecar_records_table_summary(tmp_path):
+    path = tmp_path / "sobol_samples.csimin"
+    write_sim_instances(path, [_instance(seed=1), _instance(seed=2)])
+
+    metadata_path = write_sample_metadata(
+        path,
+        generator="TestGenerator",
+        strategy="sobol",
+        config={
+            "sampling": {
+                "n_samples": 3,
+                "seed": 7,
+                "scramble": True,
+                "active_parameters": ["range_m"],
+            },
+            "sim": {"backend": "puffer_c", "duration_s": 3.0, "dt": 0.005},
+            "parameters": {"range_m": {"min": 5.0, "max": 20.0, "distribution": "uniform"}},
+        },
+        total_samples=3,
+        written_samples=2,
+        invalid_samples=1,
+    )
+
+    metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+    assert metadata_path == tmp_path / "sobol_samples.json"
+    assert metadata["samples"]["path"] == str(path)
+    assert metadata["samples"]["count"] == 2
+    assert metadata["samples"]["file_size_bytes"] == path.stat().st_size
+    assert metadata["samples"]["format_magic"] == "CSIMINST"
+    assert metadata["generator"] == {"name": "TestGenerator", "strategy": "sobol"}
+    assert metadata["sampling"]["requested_samples"] == 3
+    assert metadata["sampling"]["total_samples"] == 3
+    assert metadata["sampling"]["written_samples"] == 2
+    assert metadata["sampling"]["invalid_samples"] == 1
+    assert metadata["sim"]["dt"] == 0.005
 
 
 def _instance(seed: int) -> SimInstance:

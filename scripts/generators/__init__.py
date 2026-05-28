@@ -1,1 +1,1 @@
-"""Concrete SimGenerator implementations."""
+"""Concrete SimInstanceGenerator implementations."""

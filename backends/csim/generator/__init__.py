@@ -1,10 +1,10 @@
 from backends.csim.bindings.types import SimInstance, TargetInitialState
-from .generator import PregeneratedSimGenerator, SimGenerator, get_config
+from .generator import SimGenerator, SimInstanceGenerator, get_config
 from .instance_store import read_sim_instances, write_sim_instances
 
 __all__ = [
-    "PregeneratedSimGenerator",
     "SimGenerator",
+    "SimInstanceGenerator",
     "SimInstance",
     "TargetInitialState",
     "get_config",

@@ -24,9 +24,6 @@ from control_sims.beihang_minimal_sim.config import (
 from control_sims.beihang_minimal_sim.replay import run_trial as run_minimal_trial
 from control_sims.beihang_paper_sim._paths import ensure_paths
 from control_sims.beihang_paper_sim.noise_config import NoiseConfig
-from scripts.generators.robust_intercept_uniform_distance import (
-    RobustInterceptUniformDistanceConfigGenerator,
-)
 
 
 ensure_paths()
@@ -37,7 +34,6 @@ from control_sims.beihang_paper_sim.diagram import build_diagram_from_config  # 
 
 
 SIMS = ("beihang_minimal", "beihang_paper")
-_GENERATOR: RobustInterceptUniformDistanceConfigGenerator | None = None
 
 
 @dataclass(frozen=True)
@@ -163,16 +159,10 @@ def run_cli(sim_name: str, description: str) -> int:
 
 
 def _load_tasks(args: argparse.Namespace) -> tuple[list[Any], str, float, float]:
-    global _GENERATOR
-    generator = RobustInterceptUniformDistanceConfigGenerator()
     if args.scenario_table is None:
-        sample_count = int(args.samples) if args.samples is not None else 100
-        _GENERATOR = generator
-        return (
-            list(range(int(args.seed_start), int(args.seed_start) + sample_count)),
-            "robust_intercept_uniform_distance",
-            float(generator.config["sim"]["duration_s"]),
-            float(generator.config["sim"]["dt"]),
+        raise ValueError(
+            "--scenario-table is required. Generate a .csimin file under "
+            "scripts/generators/sim_instances before running control sims."
         )
 
     scenario_table = Path(args.scenario_table)
@@ -232,19 +222,7 @@ def _run_task(task: Any, sim_name: str, log_snapshots: bool, snapshot_log_rate: 
 
 
 def _materialize_task(task: Any):
-    if isinstance(task, int):
-        generator = _get_generator()
-        instance = generator.sample(seed=int(task))
-        point = generator._by_seed[int(task)]
-        return instance, _scenario_fields(point)
     return task, _scenario_fields_from_instance(task)
-
-
-def _get_generator() -> RobustInterceptUniformDistanceConfigGenerator:
-    global _GENERATOR
-    if _GENERATOR is None:
-        _GENERATOR = RobustInterceptUniformDistanceConfigGenerator()
-    return _GENERATOR
 
 
 def _run_minimal(instance, *, log_snapshots: bool, snapshot_log_rate: int) -> tuple[dict[str, Any], list[dict[str, Any]]]:
@@ -501,8 +479,6 @@ def _scenario_fields(point) -> dict[str, Any]:
 
 
 def _scenario_fields_for_task(task: Any) -> dict[str, Any]:
-    if isinstance(task, int):
-        return {"stratum": "unknown", "range_m": math.nan, "closing_speed_mps": math.nan}
     return _scenario_fields_from_instance(task)
 
 
@@ -514,7 +490,7 @@ def _scenario_fields_from_instance(instance) -> dict[str, Any]:
     los_w = rel_pos / max(range_m, 1e-12)
     metadata = getattr(instance, "metadata", {}) or {}
     return {
-        "stratum": str(metadata.get("stratum", "pregenerated")),
+        "stratum": str(metadata.get("stratum", "generated")),
         "range_m": range_m,
         "closing_speed_mps": float(np.dot(rel_vel, los_w)),
     }

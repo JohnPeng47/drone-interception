@@ -17,8 +17,7 @@ Muon optimizer.
 
 ```bash
 python -m ai.rl.simengine_batch.train \
-  --scenario-table .runs/csim_generator_sampling/camera_basis_grid_589824/sobol_samples.csimin \
-  --manifest .runs/csim_generator_sampling/camera_basis_grid_589824/sobol_samples_grid_manifest.json \
+  --scenario-table scripts/generators/sim_instances/sobol_samples.csimin \
   --max-scenarios 64 \
   --num-envs 8 \
   --total-timesteps 2048 \
@@ -29,8 +28,7 @@ python -m ai.rl.simengine_batch.train \
 
 ```bash
 python -m ai.rl.simengine_batch.benchmark \
-  --scenario-table .runs/csim_generator_sampling/camera_basis_grid_589824/sobol_samples.csimin \
-  --manifest .runs/csim_generator_sampling/camera_basis_grid_589824/sobol_samples_grid_manifest.json \
+  --scenario-table scripts/generators/sim_instances/sobol_samples.csimin \
   --num-envs 64 128 256 512 1024 \
   --steps 256
 ```
@@ -39,8 +37,7 @@ python -m ai.rl.simengine_batch.benchmark \
 
 ```bash
 python -m ai.rl.simengine_batch.train \
-  --scenario-table .runs/csim_generator_sampling/camera_basis_grid_589824/sobol_samples.csimin \
-  --manifest .runs/csim_generator_sampling/camera_basis_grid_589824/sobol_samples_grid_manifest.json \
+  --scenario-table scripts/generators/sim_instances/sobol_samples.csimin \
   --num-envs 1024 \
   --horizon 128 \
   --total-timesteps 500000000
@@ -73,7 +70,6 @@ For local resume from an already downloaded checkpoint:
 
 ```bash
 python -m ai.rl.simengine_batch.train \
-  --scenario-table .runs/csim_generator_sampling/camera_basis_grid_589824/sobol_samples.csimin \
-  --manifest .runs/csim_generator_sampling/camera_basis_grid_589824/sobol_samples_grid_manifest.json \
+  --scenario-table scripts/generators/sim_instances/sobol_samples.csimin \
   --resume-from checkpoints/simengine_batch/latest.pt
 ```

@@ -3,7 +3,7 @@ from __future__ import annotations
 import numpy as np
 
 from backends.csim.bindings.types import SimConfig
-from backends.csim.generator.generator import SimGenerator, get_config
+from backends.csim.generator.generator import SimInstanceGenerator, get_config
 from scripts.generators.robust_intercept import RobustInterceptConfigGenerator, evaluate_samples
 
 
@@ -14,7 +14,7 @@ def test_base_config_resolver_returns_typed_sim_config():
     assert config.targets[0].radius_m == 0.2
     assert config.options.duration_s == 3.0
     assert len(config.cameras) == 1
-    assert SimGenerator.get_config("base").targets[0].id == "target"
+    assert SimInstanceGenerator.get_config("base").targets[0].id == "target"
 
 
 def test_camera_bearing_offset_drives_current_path_lateral_miss():

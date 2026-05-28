@@ -25,7 +25,7 @@ def get_config(config_name: str) -> SimConfig:
     return config
 
 
-class SimGenerator(ABC):
+class SimInstanceGenerator(ABC):
     """Shared scenario-generation contract for control sim and RL.
 
     `sample()` is the required boundary: it resolves a distribution/scenario
@@ -103,7 +103,7 @@ class SimGenerator(ABC):
         raise NotImplementedError(f"{type(self).__name__} does not implement run()")
 
 
-class PregeneratedSimGenerator(SimGenerator):
+class SimGenerator:
     """SimGenerator backed by already-resolved SimInstance records."""
 
     def __init__(self, instances: list[SimInstance] | tuple[SimInstance, ...]):
@@ -115,7 +115,7 @@ class PregeneratedSimGenerator(SimGenerator):
             self._by_seed[instance.seed] = instance
 
     @classmethod
-    def from_disk(cls, path: str | Path) -> "PregeneratedSimGenerator":
+    def from_disk(cls, path: str | Path) -> "SimGenerator":
         return cls(cls.sample_many_from_disk(path))
 
     @staticmethod
@@ -143,12 +143,9 @@ class PregeneratedSimGenerator(SimGenerator):
         try:
             return self._by_seed[int(seed)]
         except KeyError as exc:
-            raise KeyError(f"No pregenerated SimInstance for seed {seed}") from exc
+            raise KeyError(f"No generated SimInstance for seed {seed}") from exc
 
     def sample_many(self, *, count: int, seed_start: int = 1, **kwargs: Any) -> list[SimInstance]:
         if kwargs:
             raise TypeError(f"{type(self).__name__}.sample_many does not accept kwargs")
         return [self.sample(seed=seed) for seed in range(int(seed_start), int(seed_start) + int(count))]
-
-    def _sample_once(self, *, seed: int, **kwargs: Any) -> SimInstance:
-        return self.sample(seed=seed, **kwargs)
