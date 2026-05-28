@@ -1,5 +1,6 @@
 """Manual/classical control simulations using the shared Puffer backend."""
 
+from .logging import LoggingConfig, SnapshotLogger
 from .sim_runner import (
     BatchSimEngineRunner,
     BatchSimEngineRunnerConfig,
@@ -18,4 +19,6 @@ __all__ = [
     "CompletedSim",
     "CtbrCommandBatch",
     "HoverCommandProvider",
+    "LoggingConfig",
+    "SnapshotLogger",
 ]

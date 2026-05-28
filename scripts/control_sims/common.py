@@ -1,5 +1,3 @@
-"""Benchmark control_sims controllers on robust uniform-distance datapoints."""
-
 from __future__ import annotations
 
 import argparse
@@ -17,10 +15,6 @@ from typing import Any
 import numpy as np
 
 from backends.csim.generator.instance_store import read_sim_instances
-from scripts.generators.robust_intercept_uniform_distance import (
-    RobustInterceptUniformDistanceConfigGenerator,
-)
-
 from control_sims.beihang_minimal_sim.config import (
     CameraConfig as MinimalCameraConfig,
     TargetConfig as MinimalTargetConfig,
@@ -29,6 +23,10 @@ from control_sims.beihang_minimal_sim.config import (
 )
 from control_sims.beihang_minimal_sim.replay import run_trial as run_minimal_trial
 from control_sims.beihang_paper_sim._paths import ensure_paths
+from control_sims.beihang_paper_sim.noise_config import NoiseConfig
+from scripts.generators.robust_intercept_uniform_distance import (
+    RobustInterceptUniformDistanceConfigGenerator,
+)
 
 
 ensure_paths()
@@ -36,271 +34,210 @@ ensure_paths()
 from pydrake.systems.analysis import Simulator  # noqa: E402
 
 from control_sims.beihang_paper_sim.diagram import build_diagram_from_config  # noqa: E402
-from control_sims.beihang_paper_sim.noise_config import NoiseConfig  # noqa: E402
-from control_sims.sim_runner import (  # noqa: E402
-    BatchSimEngineRunner,
-    BatchSimEngineRunnerConfig,
-    CompletedSim,
-    HoverCommandProvider,
-)
 
 
-SIMS = ("beihang_minimal", "beihang_paper", "puffer_c_batch")
-BATCH_SIMS = ("puffer_c_batch",)
+SIMS = ("beihang_minimal", "beihang_paper")
 _GENERATOR: RobustInterceptUniformDistanceConfigGenerator | None = None
 
 
 @dataclass(frozen=True)
-class _PaperMetrics:
+class PaperMetrics:
     catch_time_s: float | None
     min_distance_m: float
     final_distance_m: float
     target_visible_fraction: float
 
 
-def main() -> int:
-    parser = argparse.ArgumentParser()
+def run_cli(sim_name: str, description: str) -> int:
+    parser = argparse.ArgumentParser(description=description)
     parser.add_argument("--samples", type=int, default=None)
     parser.add_argument("--seed-start", type=int, default=1)
     parser.add_argument("--scenario-table", type=Path, default=None)
     parser.add_argument("--offset", type=int, default=0)
-    parser.add_argument("--sims", default=",".join(SIMS))
     parser.add_argument("--out-dir", type=Path, default=None)
-    parser.add_argument("--progress-every", type=int, default=25)
-    parser.add_argument(
-        "--batch-envs",
-        type=int,
-        default=None,
-        help="Number of C SimEngine slots for batchable sims. Defaults to min(samples, CPU count).",
-    )
+    parser.add_argument("--progress-every", type=int, default=10)
     parser.add_argument(
         "--workers",
         type=int,
         default=None,
         help="Number of scenario workers. Defaults to min(samples, CPU count - 1). Use 1 for serial.",
     )
+    parser.add_argument("--log-snapshots", action="store_true")
+    parser.add_argument(
+        "--snapshot-log-rate",
+        type=int,
+        default=100,
+        help="Write one snapshot row every N sim ticks when --log-snapshots is enabled.",
+    )
     args = parser.parse_args()
 
-    sims = tuple(item.strip() for item in args.sims.split(",") if item.strip())
-    unknown = sorted(set(sims) - set(SIMS))
-    if unknown:
-        raise ValueError(f"Unknown sim names: {unknown}; expected {SIMS}")
+    if sim_name not in SIMS:
+        raise ValueError(f"unknown control sim {sim_name!r}")
+    if int(args.snapshot_log_rate) <= 0:
+        raise ValueError("--snapshot-log-rate must be positive")
 
-    run_dir = args.out_dir or Path(".runs/control_sims_uniform_distance") / dt.datetime.now().strftime("run_%Y%m%d_%H%M%S")
+    run_dir = args.out_dir or Path(".runs") / sim_name / dt.datetime.now().strftime("run_%Y%m%d_%H%M%S")
     run_dir.mkdir(parents=True, exist_ok=True)
 
-    global _GENERATOR
-    source: str
-    generator = RobustInterceptUniformDistanceConfigGenerator()
-    if args.scenario_table is None:
-        sample_count = int(args.samples) if args.samples is not None else 1500
-        _GENERATOR = generator
-        tasks = list(range(int(args.seed_start), int(args.seed_start) + sample_count))
-        source = "robust_intercept_uniform_distance"
-        duration_s = float(generator.config["sim"]["duration_s"])
-        dt_s = float(generator.config["sim"]["dt"])
-    else:
-        scenario_table = Path(args.scenario_table)
-        if not scenario_table.exists():
-            raise FileNotFoundError(f"scenario table not found: {scenario_table}")
-        instances = read_sim_instances(
-            scenario_table,
-            count=None if args.samples is None else int(args.samples),
-            offset=int(args.offset),
-        )
-        tasks = list(instances)
-        sample_count = len(tasks)
-        source = str(scenario_table)
-        if tasks:
-            first_config = tasks[0].config
-            duration_s = float(first_config.options.duration_s)
-            dt_s = float(first_config.options.backend_dt)
-        else:
-            duration_s = math.nan
-            dt_s = math.nan
+    tasks, source, duration_s, dt_s = _load_tasks(args)
+    workers = _resolve_workers(args.workers, len(tasks))
+    print(f"running {len(tasks)} scenarios with {workers} worker(s) for {sim_name}", flush=True)
 
-    batch_sims = tuple(sim for sim in sims if sim in BATCH_SIMS)
-    process_sims = tuple(sim for sim in sims if sim not in BATCH_SIMS)
-    workers = _resolve_workers(args.workers, sample_count) if process_sims else 1
     rows: list[dict[str, Any]] = []
+    snapshots: list[dict[str, Any]] = []
     start = time.perf_counter()
-    print(
-        f"running {sample_count} scenarios x {len(sims)} sims "
-        f"with {workers} worker(s), batch_sims={batch_sims}",
-        flush=True,
-    )
-    if process_sims:
-        if workers == 1:
-            for index, task in enumerate(tasks, start=1):
-                rows.extend(_run_task(task, process_sims))
-                _print_progress(index, sample_count, len(process_sims), int(args.progress_every), start)
-        else:
-            with concurrent.futures.ProcessPoolExecutor(max_workers=workers) as executor:
-                futures = {
-                    executor.submit(_run_task, task, process_sims): task
-                    for task in tasks
-                }
-                for index, future in enumerate(concurrent.futures.as_completed(futures), start=1):
-                    task = futures[future]
-                    try:
-                        rows.extend(future.result())
-                    except Exception as exc:  # noqa: BLE001
-                        seed = int(task if isinstance(task, int) else task.seed)
-                        rows.extend(_seed_error_rows(seed, process_sims, str(exc)))
-                    _print_progress(index, sample_count, len(process_sims), int(args.progress_every), start)
+    if workers == 1:
+        for index, task in enumerate(tasks, start=1):
+            result = _run_task(task, sim_name, bool(args.log_snapshots), int(args.snapshot_log_rate))
+            rows.append(result["row"])
+            snapshots.extend(result["snapshots"])
+            _print_progress(index, len(tasks), int(args.progress_every), start)
+    else:
+        with concurrent.futures.ProcessPoolExecutor(max_workers=workers) as executor:
+            futures = {
+                executor.submit(
+                    _run_task,
+                    task,
+                    sim_name,
+                    bool(args.log_snapshots),
+                    int(args.snapshot_log_rate),
+                ): task
+                for task in tasks
+            }
+            for index, future in enumerate(concurrent.futures.as_completed(futures), start=1):
+                task = futures[future]
+                try:
+                    result = future.result()
+                    rows.append(result["row"])
+                    snapshots.extend(result["snapshots"])
+                except Exception as exc:  # noqa: BLE001
+                    seed = int(task if isinstance(task, int) else task.seed)
+                    row = _error_row_for_seed(sim_name, seed, str(exc))
+                    row.update(_scenario_fields_for_task(task))
+                    row["wall_s"] = math.nan
+                    rows.append(row)
+                _print_progress(index, len(tasks), int(args.progress_every), start)
 
-    if batch_sims:
-        instances, scenario_fields = _materialize_tasks(tasks)
-        batch_envs = _resolve_batch_envs(args.batch_envs, len(instances))
-        rows.extend(
-            _run_batch_sims(
-                instances,
-                scenario_fields,
-                batch_sims,
-                batch_envs=batch_envs,
-                progress_every=int(args.progress_every),
+    rows.sort(key=lambda row: int(row["seed"]))
+    snapshots.sort(key=lambda row: (int(row["seed"]), int(row["tick"])))
+    _write_rows(run_dir / "trials.csv", rows)
+    snapshot_path = None
+    if args.log_snapshots:
+        snapshot_path = run_dir / "snapshots" / f"{sim_name}.csv"
+        _write_snapshots(snapshot_path, snapshots)
+        (snapshot_path.parent / "logging_config.json").write_text(
+            json.dumps(
+                {
+                    "every_n_ticks": int(args.snapshot_log_rate),
+                    "output_dir": str(snapshot_path.parent),
+                    "sim": sim_name,
+                },
+                indent=2,
+                sort_keys=True,
             )
+            + "\n",
+            encoding="utf-8",
         )
 
-    sim_order = {sim_name: index for index, sim_name in enumerate(sims)}
-    rows.sort(key=lambda row: (int(row["seed"]), sim_order.get(str(row["sim"]), len(sim_order))))
-
-    _write_rows(run_dir / "trials.csv", rows)
     summary = {
         "run_dir": str(run_dir),
         "source": source,
-        "sims": list(sims),
-        "num_scenarios": int(sample_count),
+        "sim": sim_name,
+        "num_scenarios": int(len(tasks)),
         "seed_start": int(args.seed_start),
         "offset": int(args.offset),
         "workers": int(workers),
-        "batch_envs": None if not batch_sims else int(_resolve_batch_envs(args.batch_envs, sample_count)),
         "duration_s": duration_s,
         "dt": dt_s,
         "elapsed_wall_s": time.perf_counter() - start,
-        "summary": _summarize(rows),
+        "snapshot_log": {
+            "enabled": bool(args.log_snapshots),
+            "every_n_ticks": int(args.snapshot_log_rate),
+            "path": None if snapshot_path is None else str(snapshot_path),
+        },
+        "summary": _summarize_subset(rows),
     }
     (run_dir / "summary.json").write_text(json.dumps(summary, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     print(json.dumps(summary, indent=2, sort_keys=True))
     return 0
 
 
+def _load_tasks(args: argparse.Namespace) -> tuple[list[Any], str, float, float]:
+    global _GENERATOR
+    generator = RobustInterceptUniformDistanceConfigGenerator()
+    if args.scenario_table is None:
+        sample_count = int(args.samples) if args.samples is not None else 100
+        _GENERATOR = generator
+        return (
+            list(range(int(args.seed_start), int(args.seed_start) + sample_count)),
+            "robust_intercept_uniform_distance",
+            float(generator.config["sim"]["duration_s"]),
+            float(generator.config["sim"]["dt"]),
+        )
+
+    scenario_table = Path(args.scenario_table)
+    if not scenario_table.exists():
+        raise FileNotFoundError(f"scenario table not found: {scenario_table}")
+    instances = read_sim_instances(
+        scenario_table,
+        count=None if args.samples is None else int(args.samples),
+        offset=int(args.offset),
+    )
+    if not instances:
+        return [], str(scenario_table), math.nan, math.nan
+    first_config = instances[0].config
+    return (
+        list(instances),
+        str(scenario_table),
+        float(first_config.options.duration_s),
+        float(first_config.options.backend_dt),
+    )
+
+
 def _resolve_workers(requested: int | None, samples: int) -> int:
+    if samples <= 0:
+        return 1
     if requested is not None:
         return max(1, min(int(samples), int(requested)))
     cpu_count = os.cpu_count() or 1
     return max(1, min(int(samples), max(1, cpu_count - 1)))
 
 
-def _resolve_batch_envs(requested: int | None, samples: int) -> int:
-    if samples <= 0:
-        return 0
-    if requested is not None:
-        return max(1, min(int(samples), int(requested)))
-    return max(1, min(int(samples), os.cpu_count() or 1))
-
-
-def _print_progress(
-    completed: int,
-    total: int,
-    sim_count: int,
-    progress_every: int,
-    start: float,
-) -> None:
+def _print_progress(completed: int, total: int, progress_every: int, start: float) -> None:
     if progress_every <= 0:
-        return
-    if completed <= 0:
         return
     if completed % progress_every != 0 and completed != total:
         return
     elapsed = time.perf_counter() - start
-    print(f"completed {completed}/{total} scenarios x {sim_count} sims in {elapsed:.1f}s", flush=True)
+    print(f"completed {completed}/{total} scenarios in {elapsed:.1f}s", flush=True)
 
 
-def _run_task(task: Any, sims: tuple[str, ...]) -> list[dict[str, Any]]:
-    if isinstance(task, int):
-        return _run_scenario(int(task), sims)
-    return _run_instance(task, sims)
-
-
-def _run_scenario(seed: int, sims: tuple[str, ...]) -> list[dict[str, Any]]:
-    generator = _get_generator()
-    instance = generator.sample(seed=seed)
-    point = generator._by_seed[int(seed)]
-    scenario_fields = _scenario_fields(point)
-    return _run_instance(instance, sims, scenario_fields=scenario_fields)
-
-
-def _run_instance(instance, sims: tuple[str, ...], scenario_fields: dict[str, Any] | None = None) -> list[dict[str, Any]]:
-    if scenario_fields is None:
-        scenario_fields = _scenario_fields_from_instance(instance)
-    rows: list[dict[str, Any]] = []
-    for sim_name in sims:
-        trial_start = time.perf_counter()
-        try:
-            row = _run_one(sim_name, instance)
-            row["error"] = None
-        except Exception as exc:  # noqa: BLE001
-            row = _error_row(sim_name, instance, str(exc))
-        row.update(scenario_fields)
-        row["wall_s"] = time.perf_counter() - trial_start
-        rows.append(row)
-    return rows
-
-
-def _materialize_tasks(tasks: list[Any]) -> tuple[list[Any], list[dict[str, Any]]]:
-    instances = []
-    scenario_fields = []
-    for task in tasks:
-        if isinstance(task, int):
-            generator = _get_generator()
-            instance = generator.sample(seed=int(task))
-            point = generator._by_seed[int(task)]
-            fields = _scenario_fields(point)
-        else:
-            instance = task
-            fields = _scenario_fields_from_instance(instance)
-        instances.append(instance)
-        scenario_fields.append(fields)
-    return instances, scenario_fields
-
-
-def _run_batch_sims(
-    instances: list[Any],
-    scenario_fields: list[dict[str, Any]],
-    sims: tuple[str, ...],
-    *,
-    batch_envs: int,
-    progress_every: int,
-) -> list[dict[str, Any]]:
-    if sims != ("puffer_c_batch",):
-        raise ValueError(f"unsupported batch sims: {sims}")
-    fields_by_workload_index = {
-        index: fields
-        for index, fields in enumerate(scenario_fields)
-    }
-    runner = BatchSimEngineRunner(BatchSimEngineRunnerConfig(max_envs=batch_envs))
-    provider = HoverCommandProvider()
-    rows: list[dict[str, Any]] = []
+def _run_task(task: Any, sim_name: str, log_snapshots: bool, snapshot_log_rate: int) -> dict[str, Any]:
+    instance, scenario_fields = _materialize_task(task)
     start = time.perf_counter()
-    runner.reset(instances)
-    completed_count = 0
-    while runner.has_active:
-        step = runner.step(provider(runner.state()))
-        for completed in step.completed:
-            row = _puffer_batch_row(completed)
-            row.update(fields_by_workload_index[int(completed.workload_index)])
-            row["wall_s"] = math.nan
-            row["error"] = None
-            rows.append(row)
-        completed_count += len(step.completed)
-        _print_progress(completed_count, len(instances), len(sims), progress_every, start)
+    snapshots: list[dict[str, Any]] = []
+    try:
+        if sim_name == "beihang_minimal":
+            row, snapshots = _run_minimal(instance, log_snapshots=log_snapshots, snapshot_log_rate=snapshot_log_rate)
+        elif sim_name == "beihang_paper":
+            row, snapshots = _run_paper(instance, log_snapshots=log_snapshots, snapshot_log_rate=snapshot_log_rate)
+        else:
+            raise ValueError(sim_name)
+        row["error"] = None
+    except Exception as exc:  # noqa: BLE001
+        row = _error_row_for_seed(sim_name, int(instance.seed), str(exc))
+    row.update(scenario_fields)
+    row["wall_s"] = time.perf_counter() - start
+    return {"row": row, "snapshots": snapshots}
 
-    elapsed = time.perf_counter() - start
-    wall_per_scenario = elapsed / max(len(instances), 1)
-    for row in rows:
-        row["wall_s"] = wall_per_scenario
-    return rows
+
+def _materialize_task(task: Any):
+    if isinstance(task, int):
+        generator = _get_generator()
+        instance = generator.sample(seed=int(task))
+        point = generator._by_seed[int(task)]
+        return instance, _scenario_fields(point)
+    return task, _scenario_fields_from_instance(task)
 
 
 def _get_generator() -> RobustInterceptUniformDistanceConfigGenerator:
@@ -310,51 +247,7 @@ def _get_generator() -> RobustInterceptUniformDistanceConfigGenerator:
     return _GENERATOR
 
 
-def _seed_error_rows(seed: int, sims: tuple[str, ...], error: str) -> list[dict[str, Any]]:
-    rows = []
-    for sim_name in sims:
-        row = _error_row_for_seed(sim_name, seed, error)
-        row.update({
-            "stratum": "unknown",
-            "range_m": math.nan,
-            "closing_speed_mps": math.nan,
-            "wall_s": math.nan,
-        })
-        rows.append(row)
-    return rows
-
-
-def _run_one(sim_name: str, instance) -> dict[str, Any]:
-    if sim_name == "beihang_minimal":
-        return _run_minimal(instance)
-    if sim_name == "beihang_paper":
-        return _run_paper(instance)
-    if sim_name == "puffer_c_batch":
-        raise ValueError("puffer_c_batch must be run through _run_batch_sims")
-    raise ValueError(sim_name)
-
-
-def _puffer_batch_row(completed: CompletedSim) -> dict[str, Any]:
-    snapshot = completed.terminal_snapshot
-    metrics = np.asarray(snapshot["metrics"], dtype=float)
-    caught = bool(metrics[2] > 0.5)
-    pos = np.asarray(snapshot["pursuer"][0:3], dtype=float)
-    return {
-        "sim": "puffer_c_batch",
-        "seed": int(completed.seed),
-        "caught": caught,
-        "catch_time_s": float(metrics[3]) if caught else None,
-        "min_distance_m": float(metrics[1]),
-        "final_distance_m": float(metrics[0]),
-        "visible_fraction": float(completed.visible_fraction),
-        "control_effort": float(completed.control_effort),
-        "steps": int(completed.steps),
-        "crashed": bool(pos[2] <= -100.0),
-        "out_of_bounds": bool(completed.terminal_reason == "oob"),
-    }
-
-
-def _run_minimal(instance) -> dict[str, Any]:
+def _run_minimal(instance, *, log_snapshots: bool, snapshot_log_rate: int) -> tuple[dict[str, Any], list[dict[str, Any]]]:
     target = instance.config.targets[0]
     target_initial = instance.target_initials[0]
     camera = instance.config.cameras[0]
@@ -394,7 +287,7 @@ def _run_minimal(instance) -> dict[str, Any]:
     metrics, samples = run_minimal_trial(config)
     if metrics is None:
         raise RuntimeError("minimal sim produced no metrics")
-    return {
+    row = {
         "sim": "beihang_minimal",
         "seed": int(instance.seed),
         "caught": bool(metrics.captured),
@@ -407,9 +300,11 @@ def _run_minimal(instance) -> dict[str, Any]:
         "crashed": bool(metrics.crashed),
         "out_of_bounds": bool(metrics.out_of_bounds),
     }
+    snapshot_rows = _minimal_snapshot_rows(instance.seed, samples, snapshot_log_rate) if log_snapshots else []
+    return row, snapshot_rows
 
 
-def _run_paper(instance) -> dict[str, Any]:
+def _run_paper(instance, *, log_snapshots: bool, snapshot_log_rate: int) -> tuple[dict[str, Any], list[dict[str, Any]]]:
     raw = _paper_raw_config(instance)
     diagram, logger = build_diagram_from_config(
         raw,
@@ -425,7 +320,7 @@ def _run_paper(instance) -> dict[str, Any]:
     sim.AdvanceTo(duration_s)
     log = logger.get_log()[: int(math.ceil(duration_s / dt_s))]
     metrics = _compute_paper_metrics(log, catch_radius_m=catch_radius_m)
-    return {
+    row = {
         "sim": "beihang_paper",
         "seed": int(instance.seed),
         "caught": metrics.catch_time_s is not None,
@@ -438,6 +333,8 @@ def _run_paper(instance) -> dict[str, Any]:
         "crashed": False,
         "out_of_bounds": False,
     }
+    snapshot_rows = _paper_snapshot_rows(instance.seed, log, snapshot_log_rate) if log_snapshots else []
+    return row, snapshot_rows
 
 
 def _paper_raw_config(instance) -> dict[str, Any]:
@@ -501,12 +398,112 @@ def _paper_raw_config(instance) -> dict[str, Any]:
     }
 
 
+def _minimal_snapshot_rows(seed: int, samples: list[Any], every_n_ticks: int) -> list[dict[str, Any]]:
+    rows = []
+    for tick, sample in enumerate(samples, start=1):
+        if tick % every_n_ticks != 0:
+            continue
+        row = _base_snapshot_row("beihang_minimal", seed, tick, float(sample.t))
+        _add_vector(row, "pursuer", "position_w", sample.vehicle.position_w)
+        _add_vector(row, "pursuer", "velocity_w", sample.vehicle.velocity_w)
+        _add_vector(row, "target", "position_w", sample.target.position_w)
+        _add_vector(row, "target", "velocity_w", sample.target.velocity_w)
+        row.update({
+            "distance_m": float(sample.metrics.distance_m),
+            "min_distance_m": float(sample.metrics.min_distance_m),
+            "intercepted": bool(sample.metrics.captured),
+            "camera_detected": bool(sample.feature.detected),
+            "camera_u_norm": _maybe_index(sample.feature.uv_norm, 0),
+            "camera_v_norm": _maybe_index(sample.feature.uv_norm, 1),
+            "command_thrust_n": float(sample.command.thrust_n),
+            "command_body_rate_x_rad_s": float(sample.command.body_rates_b[0]),
+            "command_body_rate_y_rad_s": float(sample.command.body_rates_b[1]),
+            "command_body_rate_z_rad_s": float(sample.command.body_rates_b[2]),
+        })
+        rows.append(row)
+    return rows
+
+
+def _paper_snapshot_rows(seed: int, log: list[Any], every_n_ticks: int) -> list[dict[str, Any]]:
+    rows = []
+    for tick, step in enumerate(log, start=1):
+        if tick % every_n_ticks != 0:
+            continue
+        row = _base_snapshot_row("beihang_paper", seed, tick, float(step.t))
+        state = step.rotorpy_state
+        _add_vector(row, "pursuer", "position_w", state.get("x"))
+        _add_vector(row, "pursuer", "velocity_w", state.get("v"))
+        quat = state.get("q")
+        if quat is not None:
+            row.update({
+                "pursuer_qx": float(quat[0]),
+                "pursuer_qy": float(quat[1]),
+                "pursuer_qz": float(quat[2]),
+                "pursuer_qw": float(quat[3]),
+            })
+        body_rates = state.get("w")
+        if body_rates is not None:
+            row.update({
+                "pursuer_p_b_rad_s": float(body_rates[0]),
+                "pursuer_q_b_rad_s": float(body_rates[1]),
+                "pursuer_r_b_rad_s": float(body_rates[2]),
+            })
+        rotor_speeds = state.get("rotor_speeds")
+        if rotor_speeds is not None:
+            for i, rpm in enumerate(np.asarray(rotor_speeds, dtype=float).reshape(-1)[:4]):
+                row[f"motor_{i}_rpm"] = float(rpm)
+        target = step.scene.targets[0] if step.scene.targets else None
+        if target is not None:
+            _add_vector(row, "target", "position_w", target.position_w)
+            _add_vector(row, "target", "velocity_w", target.velocity_w)
+            distance = float(np.linalg.norm(step.scene.pursuer.position_w - target.position_w))
+            row["distance_m"] = distance
+        row.update({
+            "intercepted": False,
+            "camera_detected": bool(step.capture is not None and step.capture.detected),
+            "camera_u_norm": "" if step.capture is None else _maybe_index(step.capture.uv_norm, 0),
+            "camera_v_norm": "" if step.capture is None else _maybe_index(step.capture.uv_norm, 1),
+            "command_thrust_n": float(step.command.thrust_n),
+            "command_body_rate_x_rad_s": float(step.command.body_rates_b[0]),
+            "command_body_rate_y_rad_s": float(step.command.body_rates_b[1]),
+            "command_body_rate_z_rad_s": float(step.command.body_rates_b[2]),
+        })
+        rows.append(row)
+    return rows
+
+
+def _base_snapshot_row(sim: str, seed: int, tick: int, t_s: float) -> dict[str, Any]:
+    return {"sim": sim, "seed": int(seed), "tick": int(tick), "t_s": float(t_s)}
+
+
+def _add_vector(row: dict[str, Any], entity: str, name: str, value: Any) -> None:
+    if value is None:
+        return
+    arr = np.asarray(value, dtype=float).reshape(-1)
+    suffixes = ("x", "y", "z")
+    unit = "m" if "position" in name else "mps"
+    for suffix, scalar in zip(suffixes, arr[:3]):
+        row[f"{entity}_{suffix}_w_{unit}"] = float(scalar)
+
+
+def _maybe_index(value: Any, index: int) -> float | str:
+    if value is None:
+        return ""
+    return float(np.asarray(value, dtype=float).reshape(-1)[index])
+
+
 def _scenario_fields(point) -> dict[str, Any]:
     return {
         "stratum": str(point.stratum),
         "range_m": float(point.values["range_m"]),
         "closing_speed_mps": float(point.values["closing_speed_mps"]),
     }
+
+
+def _scenario_fields_for_task(task: Any) -> dict[str, Any]:
+    if isinstance(task, int):
+        return {"stratum": "unknown", "range_m": math.nan, "closing_speed_mps": math.nan}
+    return _scenario_fields_from_instance(task)
 
 
 def _scenario_fields_from_instance(instance) -> dict[str, Any]:
@@ -521,10 +518,6 @@ def _scenario_fields_from_instance(instance) -> dict[str, Any]:
         "range_m": range_m,
         "closing_speed_mps": float(np.dot(rel_vel, los_w)),
     }
-
-
-def _error_row(sim_name: str, instance, error: str) -> dict[str, Any]:
-    return _error_row_for_seed(sim_name, int(instance.seed), error)
 
 
 def _error_row_for_seed(sim_name: str, seed: int, error: str) -> dict[str, Any]:
@@ -570,20 +563,53 @@ def _write_rows(path: Path, rows: list[dict[str, Any]]) -> None:
         writer.writerows(rows)
 
 
-def _summarize(rows: list[dict[str, Any]]) -> dict[str, Any]:
-    return {
-        sim_name: {
-            **_summarize_subset([row for row in rows if row["sim"] == sim_name]),
-            "by_closing_speed_mps": {
-                str(speed): _summarize_subset([
-                    row for row in rows
-                    if row["sim"] == sim_name and float(row["closing_speed_mps"]) == speed
-                ])
-                for speed in sorted({float(row["closing_speed_mps"]) for row in rows if row["sim"] == sim_name})
-            },
-        }
-        for sim_name in sorted({row["sim"] for row in rows})
-    }
+SNAPSHOT_FIELDNAMES = [
+    "sim",
+    "seed",
+    "tick",
+    "t_s",
+    "pursuer_x_w_m",
+    "pursuer_y_w_m",
+    "pursuer_z_w_m",
+    "pursuer_x_w_mps",
+    "pursuer_y_w_mps",
+    "pursuer_z_w_mps",
+    "pursuer_qx",
+    "pursuer_qy",
+    "pursuer_qz",
+    "pursuer_qw",
+    "pursuer_p_b_rad_s",
+    "pursuer_q_b_rad_s",
+    "pursuer_r_b_rad_s",
+    "motor_0_rpm",
+    "motor_1_rpm",
+    "motor_2_rpm",
+    "motor_3_rpm",
+    "target_x_w_m",
+    "target_y_w_m",
+    "target_z_w_m",
+    "target_x_w_mps",
+    "target_y_w_mps",
+    "target_z_w_mps",
+    "distance_m",
+    "min_distance_m",
+    "intercepted",
+    "camera_detected",
+    "camera_u_norm",
+    "camera_v_norm",
+    "command_thrust_n",
+    "command_body_rate_x_rad_s",
+    "command_body_rate_y_rad_s",
+    "command_body_rate_z_rad_s",
+]
+
+
+def _write_snapshots(path: Path, rows: list[dict[str, Any]]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", newline="", encoding="utf-8") as handle:
+        writer = csv.DictWriter(handle, fieldnames=SNAPSHOT_FIELDNAMES, extrasaction="ignore")
+        writer.writeheader()
+        writer.writerows(rows)
 
 
 def _summarize_subset(rows: list[dict[str, Any]]) -> dict[str, Any]:
@@ -620,9 +646,9 @@ def _paper_control_effort(log, dt_s: float) -> float:
     return total
 
 
-def _compute_paper_metrics(log, *, catch_radius_m: float) -> _PaperMetrics:
+def _compute_paper_metrics(log, *, catch_radius_m: float) -> PaperMetrics:
     if not log:
-        return _PaperMetrics(
+        return PaperMetrics(
             catch_time_s=None,
             min_distance_m=math.nan,
             final_distance_m=math.nan,
@@ -645,7 +671,7 @@ def _compute_paper_metrics(log, *, catch_radius_m: float) -> _PaperMetrics:
             catch_time_s = float(step.t)
 
     finite = _finite_array(distances)
-    return _PaperMetrics(
+    return PaperMetrics(
         catch_time_s=catch_time_s,
         min_distance_m=float(np.min(finite)) if finite.size else math.nan,
         final_distance_m=float(distances[-1]) if math.isfinite(float(distances[-1])) else math.nan,
@@ -668,7 +694,3 @@ def _mean(values: np.ndarray) -> float:
 
 def _list(value) -> list[float]:
     return [float(x) for x in np.asarray(value, dtype=float).reshape(-1)]
-
-
-if __name__ == "__main__":
-    raise SystemExit(main())

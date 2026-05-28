@@ -50,6 +50,7 @@ class BatchSimEngineRunnerState:
 class BatchSimEngineStep:
     state: BatchSimEngineRunnerState
     completed: tuple[CompletedSim, ...]
+    commands: CtbrCommandBatch | None = None
 
 
 CommandProvider = Callable[[BatchSimEngineRunnerState], CtbrCommandBatch | Mapping[str, Any]]
@@ -143,6 +144,7 @@ class BatchSimEngineRunner:
         thrust_n, body_rates_b = self._commands_to_arrays(commands)
         thrust_n = np.where(self._active, thrust_n, 0.0).astype(np.float32, copy=False)
         body_rates_b = np.where(self._active[:, None], body_rates_b, 0.0).astype(np.float32, copy=False)
+        applied_commands = CtbrCommandBatch(thrust_n=thrust_n.copy(), body_rates_b=body_rates_b.copy())
 
         terminal_snapshot = self.backend.step_ctbr_commands_many(thrust_n, body_rates_b)
         self.snapshot = terminal_snapshot
@@ -156,6 +158,10 @@ class BatchSimEngineRunner:
             for slot in np.flatnonzero(done)
         )
 
+        step = BatchSimEngineStep(state=self.state(), completed=completed, commands=applied_commands)
+        for callback in self.step_callbacks:
+            callback(step)
+
         if completed:
             done_slots = np.flatnonzero(done)
             self._active[done_slots] = False
@@ -164,10 +170,7 @@ class BatchSimEngineRunner:
                 self._instances[int(slot)] = None
             self._fill_slots(done_slots)
 
-        step = BatchSimEngineStep(state=self.state(), completed=completed)
-        for callback in self.step_callbacks:
-            callback(step)
-        return step
+        return BatchSimEngineStep(state=self.state(), completed=completed, commands=applied_commands)
 
     def run(
         self,
