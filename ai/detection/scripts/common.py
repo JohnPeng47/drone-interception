@@ -4,8 +4,8 @@ import os
 from pathlib import Path
 
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
-DETECTION_ROOT = REPO_ROOT / "detection"
+REPO_ROOT = Path(__file__).resolve().parents[3]
+DETECTION_ROOT = REPO_ROOT / "ai" / "detection"
 DATASETS_ROOT = DETECTION_ROOT / "datasets"
 
 DUT_ROOT = DATASETS_ROOT / "dut_anti_uav"

@@ -17,19 +17,19 @@ This folder contains the local setup for drone detector training and evaluation.
 Create validation sample:
 
 ```bash
-python detection/scripts/prepare_validation_sample.py
+python ai/detection/scripts/prepare_validation_sample.py
 ```
 
 Download the community HF drone detector:
 
 ```bash
-python detection/scripts/download_hf_model.py
+python ai/detection/scripts/download_hf_model.py
 ```
 
 Run inference:
 
 ```bash
-python detection/scripts/run_inference.py
+python ai/detection/scripts/run_inference.py
 ```
 
 ## Training Dataset Prep
@@ -37,13 +37,13 @@ python detection/scripts/run_inference.py
 Build the real-drone MVP dataset:
 
 ```bash
-python detection/scripts/prepare_yolo_real_mvp.py
+python ai/detection/scripts/prepare_yolo_real_mvp.py
 ```
 
 This creates:
 
 ```text
-detection/data/yolo_real_mvp/
+ai/detection/data/yolo_real_mvp/
   images/{train,val,test}
   labels/{train,val,test}
   data.yaml
@@ -56,12 +56,12 @@ Smoke training command:
 ```bash
 yolo detect train \
   model=yolo11n.pt \
-  data=detection/data/yolo_real_mvp/data.yaml \
+  data=ai/detection/data/yolo_real_mvp/data.yaml \
   imgsz=640 \
   epochs=5 \
   batch=8 \
   device=cpu \
-  project=detection/runs/train \
+  project=ai/detection/runs/train \
   name=yolo11n_real_mvp_smoke
 ```
 

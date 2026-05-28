@@ -11,7 +11,7 @@
 - Exported local mesh caches under `.runs/liftoff_assets/variants/`.
 - Rendered one centered `640x480` image per variant with the native software renderer.
 - Ran the downloaded Hugging Face YOLO checkpoint:
-  `/home/john/drone-interception/detection/models/doguilmak__Drone-Detection-YOLOv11x/weight/best.pt`
+  `/home/john/drone-interception/ai/detection/models/doguilmak__Drone-Detection-YOLOv11x/weight/best.pt`
 - Detection result: 5/5 variants detected.
 
 | Variant | Detections | Best Confidence |
