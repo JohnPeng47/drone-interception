@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from .common import run_cli
+from control_sims.common import run_cli
 
 
 def main() -> int:

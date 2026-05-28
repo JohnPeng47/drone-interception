@@ -2,11 +2,13 @@ from __future__ import annotations
 
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
 import numpy as np
 
 from backends.csim.bindings import BatchPufferSimEngineBackend, SimInstance
+from utils.logging import RunsDirLogger
 
 
 @dataclass(frozen=True)
@@ -55,6 +57,79 @@ class BatchSimEngineStep:
 
 CommandProvider = Callable[[BatchSimEngineRunnerState], CtbrCommandBatch | Mapping[str, Any]]
 StepCallback = Callable[[BatchSimEngineStep], None]
+
+
+@dataclass(frozen=True)
+class ControlSimRunPaths:
+    run_dir: Path
+    trials_path: Path | None = None
+    summary_path: Path | None = None
+    snapshot_path: Path | None = None
+
+
+class ControlSimRunsRunner:
+    """Own run directory naming and artifact writes for one control sim flavor."""
+
+    def __init__(self, sim_name: str, runs_logger: RunsDirLogger):
+        self.sim_name = str(sim_name)
+        self.runs_logger = runs_logger
+
+    def create_run_dir(self, *, suffix: str | None = None, out_dir: Path | None = None) -> Path:
+        if out_dir is not None:
+            run_dir = Path(out_dir)
+            run_dir.mkdir(parents=True, exist_ok=True)
+            return run_dir
+        return self.runs_logger.create_run_dir(suffix)
+
+    def write_trials(self, run_dir: Path, rows: list[Mapping[str, Any]], fieldnames: list[str]) -> Path:
+        return self.runs_logger.write_csv(run_dir, "trials.csv", rows, fieldnames)
+
+    def write_snapshots(
+        self,
+        run_dir: Path,
+        rows: list[Mapping[str, Any]],
+        fieldnames: list[str],
+        *,
+        every_n_ticks: int,
+    ) -> Path:
+        snapshot_path = self.runs_logger.write_csv(
+            run_dir,
+            Path("snapshots") / f"{self.sim_name}.csv",
+            rows,
+            fieldnames,
+            extrasaction="ignore",
+        )
+        self.runs_logger.write_json(
+            run_dir,
+            Path("snapshots") / "logging_config.json",
+            {
+                "every_n_ticks": int(every_n_ticks),
+                "output_dir": str(snapshot_path.parent),
+                "sim": self.sim_name,
+            },
+        )
+        return snapshot_path
+
+    def write_summary(self, run_dir: Path, summary: Mapping[str, Any]) -> Path:
+        return self.runs_logger.write_json(run_dir, "summary.json", summary)
+
+
+class BeihangMinimalControlSimRunner(ControlSimRunsRunner):
+    def __init__(self, runs_logger: RunsDirLogger | None = None):
+        super().__init__("beihang_minimal", runs_logger or RunsDirLogger("beihang_minimal"))
+
+
+class BeihangPaperControlSimRunner(ControlSimRunsRunner):
+    def __init__(self, runs_logger: RunsDirLogger | None = None):
+        super().__init__("beihang_paper", runs_logger or RunsDirLogger("beihang_paper"))
+
+
+def control_sim_runner_for(sim_name: str) -> ControlSimRunsRunner:
+    if sim_name == "beihang_minimal":
+        return BeihangMinimalControlSimRunner()
+    if sim_name == "beihang_paper":
+        return BeihangPaperControlSimRunner()
+    raise ValueError(f"unknown control sim {sim_name!r}")
 
 
 class BatchSimEngineRunner:

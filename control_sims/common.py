@@ -2,9 +2,6 @@ from __future__ import annotations
 
 import argparse
 import concurrent.futures
-import csv
-import datetime as dt
-import json
 import math
 import os
 import time
@@ -24,6 +21,7 @@ from control_sims.beihang_minimal_sim.config import (
 from control_sims.beihang_minimal_sim.replay import run_trial as run_minimal_trial
 from control_sims.beihang_paper_sim._paths import ensure_paths
 from control_sims.beihang_paper_sim.noise_config import NoiseConfig
+from control_sims.sim_runner import control_sim_runner_for
 
 
 ensure_paths()
@@ -51,6 +49,7 @@ def run_cli(sim_name: str, description: str) -> int:
     parser.add_argument("--scenario-table", type=Path, default=None)
     parser.add_argument("--offset", type=int, default=0)
     parser.add_argument("--out-dir", type=Path, default=None)
+    parser.add_argument("--run-suffix", default=None)
     parser.add_argument("--progress-every", type=int, default=10)
     parser.add_argument(
         "--workers",
@@ -72,8 +71,8 @@ def run_cli(sim_name: str, description: str) -> int:
     if int(args.snapshot_log_rate) <= 0:
         raise ValueError("--snapshot-log-rate must be positive")
 
-    run_dir = args.out_dir or Path(".runs") / sim_name / dt.datetime.now().strftime("run_%Y%m%d_%H%M%S")
-    run_dir.mkdir(parents=True, exist_ok=True)
+    runner = control_sim_runner_for(sim_name)
+    run_dir = runner.create_run_dir(suffix=args.run_suffix, out_dir=args.out_dir)
 
     tasks, source, duration_s, dt_s = _load_tasks(args)
     workers = _resolve_workers(args.workers, len(tasks))
@@ -116,23 +115,14 @@ def run_cli(sim_name: str, description: str) -> int:
 
     rows.sort(key=lambda row: int(row["seed"]))
     snapshots.sort(key=lambda row: (int(row["seed"]), int(row["tick"])))
-    _write_rows(run_dir / "trials.csv", rows)
+    runner.write_trials(run_dir, rows, TRIAL_FIELDNAMES)
     snapshot_path = None
     if args.log_snapshots:
-        snapshot_path = run_dir / "snapshots" / f"{sim_name}.csv"
-        _write_snapshots(snapshot_path, snapshots)
-        (snapshot_path.parent / "logging_config.json").write_text(
-            json.dumps(
-                {
-                    "every_n_ticks": int(args.snapshot_log_rate),
-                    "output_dir": str(snapshot_path.parent),
-                    "sim": sim_name,
-                },
-                indent=2,
-                sort_keys=True,
-            )
-            + "\n",
-            encoding="utf-8",
+        snapshot_path = runner.write_snapshots(
+            run_dir,
+            snapshots,
+            SNAPSHOT_FIELDNAMES,
+            every_n_ticks=int(args.snapshot_log_rate),
         )
 
     summary = {
@@ -153,8 +143,8 @@ def run_cli(sim_name: str, description: str) -> int:
         },
         "summary": _summarize_subset(rows),
     }
-    (run_dir / "summary.json").write_text(json.dumps(summary, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-    print(json.dumps(summary, indent=2, sort_keys=True))
+    summary_path = runner.write_summary(run_dir, summary)
+    print(summary_path.read_text(encoding="utf-8"), end="")
     return 0
 
 
@@ -361,7 +351,7 @@ def _paper_raw_config(instance) -> dict[str, Any]:
             "capture_rate_hz": float(camera.capture_rate_hz),
         },
         "perception": {
-            "processing_delay_s": float(instance.config.noise.processing_delay_s),
+            "camera_image_delay_s": float(instance.config.noise.camera_image_delay_s),
             "pixel_noise_std_px": [0.0, 0.0],
             "dropout_probability": 0.0,
             "rng_seed": int(instance.seed),
@@ -513,30 +503,24 @@ def _error_row_for_seed(sim_name: str, seed: int, error: str) -> dict[str, Any]:
     }
 
 
-def _write_rows(path: Path, rows: list[dict[str, Any]]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    fieldnames = [
-        "sim",
-        "seed",
-        "stratum",
-        "range_m",
-        "closing_speed_mps",
-        "caught",
-        "catch_time_s",
-        "min_distance_m",
-        "final_distance_m",
-        "visible_fraction",
-        "control_effort",
-        "steps",
-        "crashed",
-        "out_of_bounds",
-        "wall_s",
-        "error",
-    ]
-    with path.open("w", newline="", encoding="utf-8") as handle:
-        writer = csv.DictWriter(handle, fieldnames=fieldnames)
-        writer.writeheader()
-        writer.writerows(rows)
+TRIAL_FIELDNAMES = [
+    "sim",
+    "seed",
+    "stratum",
+    "range_m",
+    "closing_speed_mps",
+    "caught",
+    "catch_time_s",
+    "min_distance_m",
+    "final_distance_m",
+    "visible_fraction",
+    "control_effort",
+    "steps",
+    "crashed",
+    "out_of_bounds",
+    "wall_s",
+    "error",
+]
 
 
 SNAPSHOT_FIELDNAMES = [
@@ -578,14 +562,6 @@ SNAPSHOT_FIELDNAMES = [
     "command_body_rate_y_rad_s",
     "command_body_rate_z_rad_s",
 ]
-
-
-def _write_snapshots(path: Path, rows: list[dict[str, Any]]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("w", newline="", encoding="utf-8") as handle:
-        writer = csv.DictWriter(handle, fieldnames=SNAPSHOT_FIELDNAMES, extrasaction="ignore")
-        writer.writeheader()
-        writer.writerows(rows)
 
 
 def _summarize_subset(rows: list[dict[str, Any]]) -> dict[str, Any]:
