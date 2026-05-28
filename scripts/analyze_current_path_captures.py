@@ -16,7 +16,7 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 from backends import SimInstance, read_sim_instances  # noqa: E402
-from backends.csim.generator.generators.robust_intercept import (  # noqa: E402
+from scripts.generators.robust_intercept import (  # noqa: E402
     DEFAULT_OUTPUT_DIR,
     SAMPLE_BINARY_NAME_TEMPLATE,
 )

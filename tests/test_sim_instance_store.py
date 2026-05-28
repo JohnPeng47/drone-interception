@@ -47,7 +47,7 @@ def test_sim_instance_binary_round_trip(tmp_path):
     assert restored.config.noise.pixel_noise_std_px == (1.0, 2.0)
     assert restored.config.noise.dropout_probability == 0.25
     assert restored.config.noise.rng_seed == 99
-    assert restored.config.render.enabled is True
+    assert restored.config.rendering is True
     assert restored.config.render.camera_id == "front"
     assert restored.config.render.backend == "none"
     assert restored.config.render.platform == "linux"
@@ -137,8 +137,8 @@ def _instance(seed: int) -> SimInstance:
             bias_init_std=0.005,
             rng_seed=99,
         ),
+        rendering=True,
         render=RenderConfig(
-            enabled=True,
             camera_id="front",
             backend="none",
             platform="linux",

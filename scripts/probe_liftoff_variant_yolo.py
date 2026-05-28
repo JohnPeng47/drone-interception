@@ -12,8 +12,8 @@ from PIL import Image, ImageDraw
 from ultralytics import YOLO
 
 from backends import RenderConfig
-from rendering.python import LIFTOFF_RENDER_OK, NativeRenderEngine
-from rendering.python.liftoff_assets import export_target_drone_variants, variant_names
+from backends.csim.rendering.python import LIFTOFF_RENDER_OK, NativeRenderEngine
+from backends.csim.rendering.python.liftoff_assets import export_target_drone_variants, variant_names
 
 
 DEFAULT_MODEL = (
@@ -134,7 +134,7 @@ def render_variant(
     old_mesh_path = os.environ.get("LIFTOFF_RENDER_DRONE_MESH")
     os.environ["LIFTOFF_RENDER_DRONE_MESH"] = str(mesh_path)
     try:
-        with NativeRenderEngine(RenderConfig(enabled=True, backend="software")) as renderer:
+        with NativeRenderEngine(RenderConfig(backend="software")) as renderer:
             result = renderer.render_frame(
                 drone=_drone(),
                 camera=_camera(width_px, height_px),

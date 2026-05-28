@@ -465,6 +465,7 @@ def _write_sim_config(buf: bytearray, config: SimConfig | None) -> None:
     _write_f32(buf, config.max_thrust_n)
     _write_f32(buf, config.max_rate_rps)
     _write_noise_config(buf, config.noise)
+    _write_u8(buf, int(config.rendering))
     _write_render_config(buf, config.render)
 
 
@@ -485,6 +486,7 @@ def _read_sim_config(cursor: _Cursor) -> SimConfig | None:
     max_thrust_n = _read_f32(cursor)
     max_rate_rps = _read_f32(cursor)
     noise = _read_noise_config(cursor)
+    rendering = bool(_read_u8(cursor))
     return SimConfig(
         pursuer=pursuer,
         options=SimOptions(
@@ -502,12 +504,12 @@ def _read_sim_config(cursor: _Cursor) -> SimConfig | None:
         max_thrust_n=max_thrust_n,
         max_rate_rps=max_rate_rps,
         noise=noise,
+        rendering=rendering,
         render=_read_render_config(cursor),
     )
 
 
 def _write_render_config(buf: bytearray, config: RenderConfig) -> None:
-    _write_u8(buf, int(config.enabled))
     _write_optional_string(buf, config.camera_id)
     _write_string(buf, config.backend)
     _write_string(buf, config.platform)
@@ -518,7 +520,6 @@ def _write_render_config(buf: bytearray, config: RenderConfig) -> None:
 
 def _read_render_config(cursor: _Cursor) -> RenderConfig:
     return RenderConfig(
-        enabled=bool(_read_u8(cursor)),
         camera_id=_read_optional_string(cursor),
         backend=_read_string(cursor),
         platform=_read_string(cursor),

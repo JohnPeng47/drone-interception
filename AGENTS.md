@@ -16,3 +16,12 @@ All this does is to proliferate different implementations of the same function, 
 # Integration Tests
 - After every significant change to sim logic, run this test
 python -m pytest -q tests/test_sim_instance_store.py tests/test_puffer_backend_smoke.py
+
+# Scripts and Runnable Code
+- *ALL* executable CLI code (except for analysis, and others explicitly defined in this doc) must follow these conventions
+    - be implemented inside scripts/ -> 
+
+# One-Off Analysis
+- *All* analysis scripts that generate output should be implemented inside docs/analysis
+- If the target of the analysis is tied to a specific source code folder, then you should create a subfolder for that source code inside docs/analysis/<source_folder>
+- If the analysis generates artifacts, then put it into the analysis folder

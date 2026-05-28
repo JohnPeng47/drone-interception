@@ -4,14 +4,15 @@ Current committed baseline:
 
 `317841c Add native rendering API scaffold`
 
-This commit adds only the new `rendering/` scaffold. It does not wire rendering into `csim` yet and does not implement Unity rendering yet.
+This note started from the original `rendering/` scaffold. Rendering now lives under
+`backends/csim/rendering/`, and `SimEngine` owns the native render call.
 
 The existing dirty worktree has unrelated and older changes from prior attempts. A new worktree should ideally start from `317841c` or cherry-pick only that commit.
 
 ## Current Rendering Structure
 
 ```text
-rendering/
+backends/csim/rendering/
   README.md
   include/
     liftoff_render_api.h
@@ -30,32 +31,30 @@ rendering/
 
 Purpose:
 
-- `rendering/include/*` is the public C ABI that `csim` should depend on.
-- `rendering/native/src/render_engine.cpp` currently implements a no-op engine.
-- `rendering/native/platform/*` boxes Windows/Linux transport details.
+- `backends/csim/rendering/include/*` is the public C ABI that `csim` should depend on.
+- `backends/csim/rendering/native/src/render_engine.cpp` currently implements a no-op engine.
+- `backends/csim/rendering/native/platform/*` boxes Windows/Linux transport details.
 - No Unity project exists yet.
-- No `csim` integration exists yet.
+- `csim` integration exists through `SimConfig.rendering` and `RenderConfig`.
 
 ## Important Config Note
 
 These fields currently exist in `SimConfig`, but they are from the abandoned TCP/BepInEx bridge path:
 
 ```python
-render_frames: bool = False
-render_camera_id: str | None = None
-render_endpoint: str = "tcp://127.0.0.1:47391"
+rendering: bool = False
+render: RenderConfig = field(default_factory=RenderConfig)
 ```
 
-Do not build the new implementation around `render_endpoint` as TCP. Replace or evolve this into a native-renderer config, for example:
+Do not build the implementation around TCP endpoints. The native-renderer config is:
 
 ```python
 @dataclass(frozen=True)
 class RenderConfig:
-    enabled: bool = False
     camera_id: str | None = None
-    backend: str = "unity"
+    backend: str = "software"
     platform: str = "auto"
-    endpoint: str = "liftoff_fpv_0"
+    scene_id: str = "liftoff_fpv_0"
     timeout_ms: int = 16
     fail_on_error: bool = False
 ```
@@ -66,6 +65,7 @@ Then use:
 @dataclass(frozen=True)
 class SimConfig:
     ...
+    rendering: bool = False
     render: RenderConfig = field(default_factory=RenderConfig)
 ```
 
@@ -75,9 +75,9 @@ Given the project instruction against temporary compatibility, prefer the nested
 
 ```text
 SimEngine / csim
-  -> rendering/include/liftoff_render_api.h
-  -> rendering/native/src/render_engine.cpp
-  -> rendering/native/platform/{win32,linux}
+  -> backends/csim/rendering/include/liftoff_render_api.h
+  -> backends/csim/rendering/native/src/render_engine.cpp
+  -> backends/csim/rendering/native/platform/{win32,linux}
   -> Unity native plugin / transport
   -> Unity C# thin glue
   -> Unity Camera + shaders + RenderTexture
@@ -88,8 +88,8 @@ SimEngine / csim
 Rules:
 
 - `csim` includes only `liftoff_render_api.h`.
-- Platform code is boxed under `rendering/native/platform`.
-- Unity-specific code should live under `rendering/unity`.
+- Platform code is boxed under `backends/csim/rendering/native/platform`.
+- Unity-specific code should live under `backends/csim/rendering/unity`.
 - C# should be thin glue, not the core API.
 - Native C++ owns transport, frame lifetime, status codes, and ABI.
 - `csim` should continue to produce geometric camera observations even if rendering fails.
@@ -111,19 +111,19 @@ tests/test_puffer_backend_smoke.py
 
 ### 2. Add ctypes Bindings For New Render API
 
-Create Python ctypes mirrors for `rendering/include/liftoff_render_types.h`.
+Create Python ctypes mirrors for `backends/csim/rendering/include/liftoff_render_types.h`.
 
 Suggested files:
 
 ```text
-rendering/python/
+backends/csim/rendering/python/
   __init__.py
   ctypes_api.py
   engine.py
   config.py
 ```
 
-The initial implementation should load `rendering/native/_build/libliftoff_render_native.so` and call:
+The initial implementation should load `backends/csim/rendering/native/_build/libliftoff_render_native.so` and call:
 
 ```c
 liftoff_render_engine_create
@@ -143,14 +143,14 @@ Add a direct `c++` build helper for the native renderer, similar to the existing
 Possible file:
 
 ```text
-rendering/python/build_native.py
+backends/csim/rendering/python/build_native.py
 ```
 
 It should compile:
 
 ```text
-rendering/native/src/render_engine.cpp
-rendering/native/platform/linux/render_platform_linux.cpp
+backends/csim/rendering/native/src/render_engine.cpp
+backends/csim/rendering/native/platform/linux/render_platform_linux.cpp
 ```
 
 on Linux/WSL, and the Win32 file when building on Windows.
@@ -158,7 +158,7 @@ on Linux/WSL, and the Win32 file when building on Windows.
 Use generated outputs under:
 
 ```text
-rendering/native/_build/
+backends/csim/rendering/native/_build/
 ```
 
 Do not commit generated binaries.
@@ -282,7 +282,7 @@ python -m pytest tests/rendering tests/test_puffer_backend_smoke.py tests/test_s
 Once `csim` can call the native API and receive no-op/unavailable statuses correctly, add:
 
 ```text
-rendering/unity/
+backends/csim/rendering/unity/
   LiftoffFpvRenderer/
     Assets/
       LiftoffFpv/
@@ -318,7 +318,7 @@ Native responsibilities:
 
 ### 9. Windows Boundary Design
 
-Under `rendering/native/platform/win32`, implement one transport type first. Recommended initial Windows transport:
+Under `backends/csim/rendering/native/platform/win32`, implement one transport type first. Recommended initial Windows transport:
 
 ```text
 Named shared memory + named events
@@ -334,7 +334,7 @@ Why:
 Windows files to add later:
 
 ```text
-rendering/native/platform/win32/
+backends/csim/rendering/native/platform/win32/
   win32_handles.h
   win32_shared_memory.cpp
   win32_events.cpp
@@ -360,11 +360,11 @@ Before commit, the native scaffold was verified with direct compile because `cma
 
 ```bash
 c++ -std=c++17 -O2 -fPIC -shared \
-  -Irendering/include \
-  -Irendering/native/platform \
-  -Irendering/native/src \
-  rendering/native/src/render_engine.cpp \
-  rendering/native/platform/linux/render_platform_linux.cpp \
+  -Ibackends/csim/rendering/include \
+  -Ibackends/csim/rendering/native/platform \
+  -Ibackends/csim/rendering/native/src \
+  backends/csim/rendering/native/src/render_engine.cpp \
+  backends/csim/rendering/native/platform/linux/render_platform_linux.cpp \
   -o /tmp/liftoff-render-check/libliftoff_render_native.so
 ```
 
@@ -374,4 +374,4 @@ That passed.
 
 ## Suggested First Prompt For Next Agent
 
-Start from commit `317841c`. Implement the next integration step for the new `rendering/` API: replace old `SimConfig` bridge fields with a native `RenderConfig`, add Python ctypes bindings/build helper for `liftoff_render_api.h`, and wire `PufferSimEngineBackend` to call the no-op renderer without Unity. Keep Windows/Linux platform logic boxed in `rendering/native/platform`. Run focused tests and the red balloon replay required by `AGENTS.md`.
+Start from commit `317841c`. Implement the next integration step for the new `rendering/` API: replace old `SimConfig` bridge fields with a native `RenderConfig`, add Python ctypes bindings/build helper for `liftoff_render_api.h`, and wire `PufferSimEngineBackend` to call the no-op renderer without Unity. Keep Windows/Linux platform logic boxed in `backends/csim/rendering/native/platform`. Run focused tests and the red balloon replay required by `AGENTS.md`.
