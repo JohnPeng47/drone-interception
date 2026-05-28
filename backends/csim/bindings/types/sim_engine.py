@@ -12,7 +12,7 @@ from .target_sim import TargetConfig, TargetInitialState
 class NoiseConfig:
     """Sensor/perception noise owned by a typed sim configuration."""
 
-    processing_delay_s: float = 0.0
+    camera_image_delay_s: float = 0.0
     pixel_noise_std_px: tuple[float, float] = (0.0, 0.0)
     dropout_probability: float = 0.0
     sigma_img: float = 0.0

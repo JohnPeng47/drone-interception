@@ -10,7 +10,7 @@ from ..types import CameraCapture, ImageFeatureMeasurement
 
 @dataclass
 class FeaturePerceptionModel:
-    processing_delay_s: float
+    camera_image_delay_s: float
     pixel_noise_std_px: np.ndarray = field(default_factory=lambda: np.zeros(2, dtype=float))
     pixel_to_norm: np.ndarray | None = None
     dropout_probability: float = 0.0
@@ -36,7 +36,7 @@ class FeaturePerceptionModel:
         self._pending.append(
             ImageFeatureMeasurement(
                 t_capture=capture.t_capture,
-                t_available=capture.t_capture + self.processing_delay_s,
+                t_available=capture.t_capture + self.camera_image_delay_s,
                 camera_id=capture.camera_id,
                 target_id=capture.target_id,
                 detected=detected,

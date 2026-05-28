@@ -1,0 +1,39 @@
+{
+  "los_azimuth_deg": {
+    "max": 358.77689614131725,
+    "min": 0.11021540245315765
+  },
+  "los_elevation_deg": {
+    "max": 88.8089164010043,
+    "min": -81.17642182189441
+  },
+  "plots": {
+    "azimuth_bearing": "docs/analysis/scripts/generators/generated_sim_instance_plots/los_azimuth_elevation.png",
+    "uv_offsets": "docs/analysis/scripts/generators/generated_sim_instance_plots/camera_uv_offsets.png",
+    "world_3d": "docs/analysis/scripts/generators/generated_sim_instance_plots/initial_positions_world_3d.png"
+  },
+  "range_m": {
+    "max": 20.000001001978124,
+    "mean": 10.982421860056062,
+    "min": 4.9999997171047585,
+    "unique_rounded": [
+      5.0,
+      8.0,
+      20.0
+    ]
+  },
+  "sample_count": 512,
+  "scenario_table": "scripts/generators/sim_instances/sobol_samples.csimin",
+  "target_center_w": [
+    0.0,
+    0.0,
+    3.0
+  ],
+  "uv": {
+    "u_max": 0.8989824164898537,
+    "u_min": -0.8993560377438116,
+    "v_max": 0.5196146982524097,
+    "v_min": -0.5191965743179954,
+    "visible_fraction": 1.0
+  }
+}

@@ -59,12 +59,6 @@ DEFAULT_ROBUST_INTERCEPT_CONFIG: dict[str, Any] = {
         "max_rate_rps": 8.0,
         "max_thrust_n": 40.0,
     },
-    "perception": {
-        "processing_delay_s": 0.0,
-        "pixel_noise_std_px": [0.0, 0.0],
-        "dropout_probability": 0.0,
-        "rng_seed": 1,
-    },
     "camera": {
         "id": "front",
         "parent_id": "interceptor",

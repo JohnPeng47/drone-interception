@@ -39,7 +39,7 @@ def validate_experiment_config(raw: dict[str, Any]) -> None:
             "vfov_deg",
             "capture_rate_hz",
         ),
-        "perception": ("processing_delay_s",),
+        "perception": ("camera_image_delay_s",),
         "observer": ("type",),
         "controller": ("max_rate_rps",),
         "metrics": ("catch_radius_m",),
@@ -105,7 +105,7 @@ def camera_from_config(camera_config: dict[str, Any]) -> CameraRig:
 
 def perception_from_config(perception_config: dict[str, Any]) -> FeaturePerceptionModel:
     return FeaturePerceptionModel(
-        processing_delay_s=float(perception_config["processing_delay_s"]),
+        camera_image_delay_s=float(perception_config["camera_image_delay_s"]),
         pixel_noise_std_px=array(perception_config.get("pixel_noise_std_px", [0.0, 0.0]), length=2),
         dropout_probability=float(perception_config.get("dropout_probability", 0.0)),
         rng=np.random.default_rng(int(perception_config.get("rng_seed", 1))),

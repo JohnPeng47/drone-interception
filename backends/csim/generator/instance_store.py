@@ -410,7 +410,7 @@ def _read_camera(cursor: _Cursor) -> CameraConfig:
 
 def _write_noise_config(buf: bytearray, noise: NoiseConfig) -> None:
     for value in (
-        noise.processing_delay_s,
+        noise.camera_image_delay_s,
         noise.pixel_noise_std_px[0],
         noise.pixel_noise_std_px[1],
         noise.dropout_probability,
@@ -428,7 +428,7 @@ def _write_noise_config(buf: bytearray, noise: NoiseConfig) -> None:
 def _read_noise_config(cursor: _Cursor) -> NoiseConfig:
     values = [_read_f32(cursor) for _ in range(10)]
     return NoiseConfig(
-        processing_delay_s=values[0],
+        camera_image_delay_s=values[0],
         pixel_noise_std_px=(values[1], values[2]),
         dropout_probability=values[3],
         sigma_img=values[4],

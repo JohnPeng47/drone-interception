@@ -166,7 +166,7 @@ def _instance(seed: int) -> SimInstance:
         max_thrust_n=1.2,
         max_rate_rps=3.4,
         noise=NoiseConfig(
-            processing_delay_s=0.08,
+            camera_image_delay_s=0.08,
             pixel_noise_std_px=(1.0, 2.0),
             dropout_probability=0.25,
             sigma_img=1.0e-3,
