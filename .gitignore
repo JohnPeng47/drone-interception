@@ -189,4 +189,4 @@ ai/rl/scripts/.runpod_pod.json*
 /ai/detection/datasets/
 /ai/detection/models/
 /ai/detection/research/pdfs/
-/ai/detection/runs/
+/ai/**/runs/

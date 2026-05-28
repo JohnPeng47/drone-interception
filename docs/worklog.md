@@ -28,6 +28,10 @@ Artifacts:
 - Annotated images: `.runs/liftoff_variant_yolo_probe/annotated/`
 - CSV: `.runs/liftoff_variant_yolo_probe/detections.csv`
 - JSON summary: `.runs/liftoff_variant_yolo_probe/summary.json`
-- Throwaway probe script: `scripts/probe_liftoff_variant_yolo.py`
+- Throwaway probe script: `docs/analysis/ai/detection/probe_liftoff_variant_yolo.py`
 
 Note: inference completed on CPU. PyTorch printed a CUDA driver warning because the installed CUDA runtime is newer than the system driver.
+
+# 2026-05-28
+- Created structured Generator workflow
+- Now Generators only write samples to disk, decoupled from run

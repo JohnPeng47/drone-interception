@@ -23,7 +23,7 @@ python -m pytest -q tests/test_sim_instance_store.py tests/test_puffer_backend_s
 
 # Scripts and Runnable Code
 - *ALL* executable CLI code (except for analysis, and others explicitly defined in this doc) must follow these conventions
-    - be implemented inside scripts/ -> 
+    - be implemented inside scripts/runners
 
 # One-Off Analysis
 - *All* analysis scripts that generate output should be implemented inside docs/analysis

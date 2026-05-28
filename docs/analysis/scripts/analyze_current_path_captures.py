@@ -11,7 +11,8 @@ from typing import Any
 
 import numpy as np
 
-REPO_ROOT = Path(__file__).resolve().parents[1]
+ANALYSIS_DIR = Path(__file__).resolve().parent
+REPO_ROOT = next(parent for parent in Path(__file__).resolve().parents if (parent / "AGENTS.md").exists())
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
@@ -97,7 +98,7 @@ def main() -> None:
         "--details-out",
         type=Path,
         default=None,
-        help="Optional JSONL file for per-scenario closest-approach results.",
+        help="Optional JSONL file for per-scenario closest-approach results. Relative paths are placed in this analysis folder.",
     )
     args = parser.parse_args()
 
@@ -120,7 +121,7 @@ def main() -> None:
         detail_rows.extend(rows)
 
     if args.details_out is not None:
-        _write_details(args.details_out, detail_rows)
+        _write_details(_artifact_path(args.details_out), detail_rows)
 
     if args.json:
         print(json.dumps([asdict(summary) for summary in summaries], indent=2, sort_keys=True))
@@ -300,6 +301,10 @@ def _write_details(path: Path, rows: list[ScenarioCapture]) -> None:
     with path.open("w", encoding="utf-8") as handle:
         for row in rows:
             handle.write(json.dumps(asdict(row), sort_keys=True) + "\n")
+
+
+def _artifact_path(path: Path) -> Path:
+    return path if path.is_absolute() else ANALYSIS_DIR / path
 
 
 def _print_summaries(summaries: list[CaptureSummary]) -> None:

@@ -4,6 +4,7 @@ import argparse
 import csv
 import json
 import os
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -11,13 +12,19 @@ import numpy as np
 from PIL import Image, ImageDraw
 from ultralytics import YOLO
 
+ANALYSIS_DIR = Path(__file__).resolve().parent
+REPO_ROOT = next(parent for parent in Path(__file__).resolve().parents if (parent / "AGENTS.md").exists())
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
 from backends import RenderConfig
 from backends.csim.rendering.python import LIFTOFF_RENDER_OK, NativeRenderEngine
 from backends.csim.rendering.python.liftoff_assets import export_target_drone_variants, variant_names
 
 
 DEFAULT_MODEL = (
-    Path("/home/john/drone-interception")
+    REPO_ROOT
+    / "ai"
     / "detection"
     / "models"
     / "doguilmak__Drone-Detection-YOLOv11x"
@@ -30,7 +37,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(
         description="Render one centered Liftoff drone variant image and run the local YOLO drone detector."
     )
-    parser.add_argument("--out-dir", type=Path, default=Path(".runs/liftoff_variant_yolo_probe"))
+    parser.add_argument("--out-dir", type=Path, default=ANALYSIS_DIR / "liftoff_variant_yolo_probe")
     parser.add_argument("--model", type=Path, default=DEFAULT_MODEL)
     parser.add_argument("--width-px", type=int, default=640)
     parser.add_argument("--height-px", type=int, default=480)
