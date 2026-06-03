@@ -1,0 +1,316 @@
+# ETH Zurich non-RL drone-control papers, 2024 to 2026-05-30
+
+Goal: identify ETH Zurich papers from 2024 through 2026-05-30 that could support new non-RL competitor implementations for `control_sims`, alongside the existing Beihang-derived policies.
+
+Scope used:
+- Included papers from ETH Zurich or ETH-affiliated labs/authors.
+- Included non-RL control, online control, MPC, or closely related model-identification work when it could plausibly become a control-policy competitor.
+- Excluded RL-only drone-control papers even when ETH-affiliated.
+- Excluded future-dated papers after 2026-05-30.
+
+## Best implementation candidates
+
+### 1. Predictive Linear Online Tracking for Unknown Targets
+
+- Date: 2024
+- Venue: ICML 2024
+- Authors: Anastasios Tsiamis, Aren Karapetyan, Yueshan Li, Efe C. Balta, John Lygeros
+- ETH units: Automatic Control Laboratory and Institute for Dynamic Systems and Control
+- Links:
+  - ETH Research Collection: https://www.research-collection.ethz.ch/entities/publication/6da4eae0-e2bc-4f8b-b835-bf407170079e
+  - PMLR paper page/PDF: https://proceedings.mlr.press/v235/tsiamis24a.html
+  - Code archive: https://www.research-collection.ethz.ch/handle/20.500.11850/742521
+
+Abstract read: The paper studies online tracking for linear control systems when a moving target is unknown, non-stationary, and revealed sequentially. It proposes PLOT, which uses recursive least squares with exponential forgetting to learn a time-varying target model, then feeds that model into a receding-horizon optimal tracking policy. It reports dynamic regret guarantees and a real quadrotor implementation with released code.
+
+Relevance: highest. The repo's task is pursuer-vs-target interception/tracking, and this paper directly addresses unknown moving target tracking with a quadrotor demonstration. It is also non-RL and has released code.
+
+Implementation shape in this repo:
+- Add a `control_sims/plot_tracking_sim` policy.
+- Start with a linearized pursuer model over position/velocity and map desired acceleration to CTBR thrust/body-rate commands using the existing Beihang paper policy's attitude/thrust conversion style.
+- Use RLS over target position history to predict the target over the horizon.
+- Compare against Beihang on generated `.csimin` target trajectories.
+
+Expected adaptation work: medium. The paper's LQT policy works naturally with full-state target observations. If a camera-only mode is required, it needs a target-state estimator before PLOT.
+
+### 2. MPCC++: Model Predictive Contouring Control for Time-Optimal Flight with Safety Constraints
+
+- Date: 2024
+- Venue: RSS 2024
+- Authors: Maria Krinner, Angel Romero, Leonard Bauersfeld, Melanie Zeilinger, Andrea Carron, Davide Scaramuzza
+- ETH unit: Institute for Dynamic Systems and Control, ETH Zurich
+- Links:
+  - ETH Research Collection: https://www.research-collection.ethz.ch/entities/publication/07831c8e-cfb1-4b67-93ab-299ca1bce060
+  - arXiv: https://arxiv.org/abs/2403.17551
+  - RPG PDF: https://rpg.ifi.uzh.ch/docs/RSS24_KrinnerRomero.pdf
+
+Abstract read: The paper improves model predictive contouring control for quadrotor racing. Its key changes are a spatial track constraint and terminal set for safety, a residual dynamics term learned from real flight data for aerodynamic/thrust effects, and TuRBO Bayesian optimization for hyperparameter tuning. It reports matching top RL lap times, outperforming previous model-based control, and 100% gate-crash avoidance in sim and real-world tests at more than 80 km/h.
+
+Relevance: high but indirect. It is a strong non-RL high-agility competitor for "get to/through a moving geometry quickly while respecting constraints." For interception, the path-progress objective would need to become progress along a pursuit/intercept corridor or dynamic target-relative path.
+
+Implementation shape in this repo:
+- Add a simplified MPCC-style policy that optimizes progress along a line-of-sight/intercept path.
+- Defer residual dynamics at first; use the current SimEngine dynamics and compare a deterministic controller before adding learned residuals.
+- Use SciPy/CasADi-style optimization only if dependency policy allows it; otherwise prototype a small finite-horizon sampled optimizer.
+
+Expected adaptation work: high. The original paper depends on a racing track/gate formulation and an optimizer stack. A useful first competitor would be "MPCC-inspired pursuit" rather than a faithful MPCC++ reproduction.
+
+### 3. Embedded Hierarchical MPC for Autonomous Navigation
+
+- Date: preprint 2024, journal article 2025
+- Venue: IEEE Transactions on Robotics, 2025
+- Authors: Dennis Benders, Johannes Koehler, Thijs Niesten, Robert Babuška, Javier Alonso-Mora, Laura Ferranti
+- ETH unit: Institute for Dynamic Systems and Control via Johannes Koehler / Melanie Zeilinger group listing in ETH Research Collection
+- Links:
+  - ETH Research Collection: https://www.research-collection.ethz.ch/entities/publication/8d0d660f-a7ac-42fa-a19d-b11f911b0ffb
+  - arXiv: https://arxiv.org/abs/2406.11506
+  - Project page: https://autonomousrobots.nl/paper_websites/hmpc
+
+Abstract read: The paper proposes a two-layer hierarchical MPC: a slower planner with a long prediction horizon and a faster tracker for local trajectory tracking. It proves collision avoidance and recursive feasibility, and demonstrates the controller in simulation and lab experiments on a quadrotor navigating to a goal in a complex static environment. It reports a 5x longer planning horizon than a single-layer MPC baseline on embedded hardware.
+
+Relevance: medium-high. It is not target-interception-specific, but the planner/tracker split is attractive for adding competitors that reason over longer horizons while still producing real-time commands.
+
+Implementation shape in this repo:
+- Treat the target intercept point as the planner's moving goal.
+- Run the slow layer every N policy ticks to generate a feasible pursuit waypoint sequence.
+- Run the fast layer as a trajectory-tracking command generator.
+
+Expected adaptation work: high if done faithfully. Medium if reduced to a two-rate planner/tracker baseline without obstacle constraints.
+
+## Supporting or lower-priority candidates
+
+### Performance-driven Constrained Optimal Auto-Tuner for MPC / COAt-MPC
+
+- Date: 2025
+- Venue: IEEE Robotics and Automation Letters
+- Authors: Albert Gassol Puigjaner, Manish Prajapat, Andrea Carron, Andreas Krause, Melanie Zeilinger
+- Link: https://albertgassol1.github.io/coat_mpc/
+
+Abstract read: The paper tunes MPC cost-function parameters while keeping measured performance above a threshold with high probability. It uses a GP belief over performance, safe exploration, and finite-time convergence guarantees. It includes autonomous racing evaluations, but the main contribution is tuning rather than a drone-specific controller.
+
+Relevance: supporting. Useful after an MPC/MPCC competitor exists, especially for automated gain/cost tuning over `.csimin` batches. Not a standalone competitor policy.
+
+### Soliro - a hybrid dynamic tilt-wing aerial manipulator with minimal actuators
+
+- Date: 2024-08
+- Venue: ISER 2023 proceedings
+- ETH unit: Autonomous Systems Lab
+- Link: https://www.research-collection.ethz.ch/entities/publication/efc862a7-5f25-4f91-9c8e-954f870c9f27
+
+Abstract read: The paper introduces and controls a 5DOF rotary/fixed-wing hybrid tilt-rotor split tilt-wing aerial manipulator, validated in wind tunnel and flight, including forward/backward transitions and fixed-wing flight up to 10 m/s.
+
+Relevance: low for current `control_sims`. It is control-relevant but hardware-specific and not a standard quadrotor pursuit controller.
+
+### Synergistic morphology and feedback control for traversal of unknown compliant obstacles with aerial robots
+
+- Date: 2024
+- Venue: Nature Communications
+- ETH unit: Environmental Robotics Laboratory
+- Link: https://www.nature.com/articles/s41467-024-46967-5
+
+Abstract/method read: The work combines a task-specific quadrotor shell, force/torque feedback, and NMPC to traverse unknown compliant obstacles. The NMPC includes external wrench effects, path-following and impedance objectives, and safety constraints.
+
+Relevance: low for target interception. Useful if future simulations include contact-rich drone interaction, but not a near-term competitor for the current pursuer-target control sims.
+
+## Excluded non-matches
+
+- Multi-Task Reinforcement Learning for Quadrotors, 2025: excluded because it is RL.
+- Demonstrating Agile Flight from Pixels without State Estimation, RSS 2024: excluded because it trains vision policies with RL.
+- Actor-Critic Model Predictive Control, ICRA 2024: excluded because the core framework embeds MPC in actor-critic RL.
+- Learning to Fly Omnidirectional Micro Aerial Vehicles with an End-To-End Control Network, 2024: excluded because it uses reinforcement learning.
+- Nonlinear system identification for a nano-drone benchmark, dated 2026-07 in ETH Research Collection: excluded because it is future-dated relative to 2026-05-30, and it is system identification rather than a control-policy paper.
+
+## Recommended implementation order
+
+1. PLOT-style online target tracking.
+   - Best match to moving-target pursuit.
+   - Has code.
+   - Can start with full-state target access already available in `SimSnapshot`.
+
+2. MPCC-inspired pursuit controller.
+   - Good model-based high-performance competitor.
+   - Start with a simplified pursuit corridor/progress cost rather than full gate-racing MPCC++.
+
+3. Two-rate hierarchical MPC baseline.
+   - Useful architectural competitor against one-shot controllers.
+   - More valuable once obstacle or field-of-view constraints matter.
+
+4. COAt-MPC tuning pass.
+   - Apply after an MPC competitor exists to tune weights over generated `.csimin` scenario batches.
+
+## Full-paper implementation confirmation
+
+Checked against the current `SimRunner`/`SimControlPolicy` interface:
+
+```text
+SimControlPolicy.reset(state)
+SimControlPolicy.on_slots_started(slots, instances, state)
+SimControlPolicy.command(state) -> CtbrCommandBatch(thrust_n, body_rates_b)
+SimControlPolicy.on_step(step)
+```
+
+The existing Beihang policies show the correct integration shape: each policy reads typed `SimInstance` objects and `SimSnapshot` state from `SimRunnerState`, keeps any per-slot controller memory internally, and returns batched CTBR commands without bypassing the C API or binding layer.
+
+### PLOT: Predictive Linear Online Tracking for Unknown Targets
+
+Implementation status: yes, direct `SimControlPolicy` competitor.
+
+Full-paper details that matter:
+- The controller is explicitly an online tracking controller for a moving target revealed sequentially.
+- Algorithm 2 maintains separate RLS predictors for 1..W step-ahead target predictions, then computes a receding-horizon LQT action.
+- Appendix F gives a Crazyflie linearized model with state `[position, velocity, attitude]` and input `[collective thrust, body rates]`.
+- The hardware setup receives vehicle state and target state at 10 Hz and sends thrust/body-rate style commands to the drone control stack.
+
+Fit to this repo:
+- `SimSnapshot` already exposes pursuer position, velocity, quaternion/body attitude, target position, and target velocity.
+- `CtbrCommandBatch` already matches the paper's useful command surface: collective thrust plus body rates.
+- Per-slot RLS predictors can be stored inside the policy, keyed by runner slot, and reset in `reset()`/`on_slots_started()`.
+
+Recommended implementation:
+- Package: `control_sims/plot_tracking_sim`.
+- Runner: `scripts/runners/control_sim/plot_tracking_sim.py`.
+- Policy class: `PlotTrackingSimControlPolicy(SimControlPolicy)`.
+- First version: full-state target tracking using target position/velocity from `SimSnapshot`.
+- Later version: optional camera-only estimator feeding the same PLOT controller.
+
+Main adaptation:
+- The paper linearizes around hover and uses Euler attitude; this repo stores quaternion snapshots and applies CTBR to `SimEngine`.
+- Use the paper's linear LQT/PLOT core to compute desired thrust delta and body rates, adding hover thrust and clamping to `SimInstance.config.max_thrust_n` and `max_rate_rps`.
+
+Verdict: implementable now as a meaningful competitor.
+
+### MPCC++: Model Predictive Contouring Control for Time-Optimal Flight with Safety Constraints
+
+Implementation status: yes, as an adapted MPCC-inspired `SimControlPolicy` competitor.
+
+Full-paper details that matter:
+- The paper formulates quadrotor dynamics with state `[position, quaternion, velocity, body rates]`.
+- The nominal input is rotor thrusts, and the real platform ultimately needs desired body rates and collective thrust for the low-level controller.
+- The cost is progress along a path plus contour/lag errors; MPCC++ adds spatial tunnel constraints, a terminal set, residual dynamics, and offline TuRBO tuning.
+- The paper notes that translating solver output to body rates and collective thrust is nontrivial and affects performance.
+
+Fit to this repo:
+- The state is available from `SimSnapshot`.
+- The output interface is already the real-world command target discussed in the paper: collective thrust plus body rates.
+- A pursuit/intercept path can replace the racing centerline. Progress becomes progress toward an intercept corridor or line-of-sight path.
+
+Recommended implementation:
+- Package: `control_sims/mpcc_pursuit_sim`.
+- Runner: `scripts/runners/control_sim/mpcc_pursuit_sim.py`.
+- Policy class: `MpccPursuitSimControlPolicy(SimControlPolicy)`.
+- Use a CTBR-native prediction model instead of rotor-level allocation, because the current backend command interface is CTBR.
+- Start with deterministic nominal dynamics and pursuit corridor constraints; add residual dynamics and offline tuning only after the baseline policy works.
+
+Main adaptation:
+- A faithful MPCC++ racing implementation depends on a track/gate/tunnel formulation and an optimizer stack.
+- For interception, the correct repo-native competitor is MPCC-inspired pursuit, not a temporary racing compatibility layer.
+
+Verdict: implementable now as a meaningful adapted competitor, but higher effort than PLOT.
+
+### Embedded Hierarchical MPC for Autonomous Navigation
+
+Implementation status: yes, as an adapted two-rate `SimControlPolicy` competitor.
+
+Full-paper details that matter:
+- The paper decouples MPC into a slow planning MPC and a fast tracking MPC.
+- The PMPC creates a long-horizon dynamically feasible reference trajectory.
+- The TMPC tracks the reference at a faster rate and returns control inputs.
+- Algorithm 2 describes an online implementation with cached PMPC plans and repeated TMPC solves between planner updates.
+- The quadrotor experiments use the same conceptual state available here: position, velocity, attitude/orientation, and control inputs.
+
+Fit to this repo:
+- `SimControlPolicy` lifecycle hooks are a good match for per-slot cached plans.
+- `command()` can run the fast tracker every SimRunner tick.
+- A slower planner update can be triggered every N steps using `state.steps[slot]` or elapsed time.
+- `.csimin` target trajectories can define a moving goal or intercept point for the slow layer.
+
+Recommended implementation:
+- Package: `control_sims/hierarchical_mpc_sim`.
+- Runner: `scripts/runners/control_sim/hierarchical_mpc_sim.py`.
+- Policy class: `HierarchicalMpcSimControlPolicy(SimControlPolicy)`.
+- First version: no obstacle constraints; PMPC generates a long-horizon intercept/reference trajectory, TMPC tracks it.
+- Later version: add field-of-view, safety, or obstacle constraints if those become part of generated scenarios.
+
+Main adaptation:
+- The paper's open-source stack is ROS/C++/ForcesPro-oriented and uses obstacle-free convex region generation.
+- The current repo has no obstacle map in `SimSnapshot`, so the initial competitor should focus on the planner/tracker split for moving-target pursuit rather than obstacle navigation.
+
+Verdict: implementable now as a meaningful adapted competitor, with the obstacle-avoidance part deferred until the sim exposes obstacle data.
+
+### COAt-MPC: Performance-driven Constrained Optimal Auto-Tuner for MPC
+
+Implementation status: yes for a `SimRunner` tuning harness, no for a standalone `SimControlPolicy` competitor.
+
+Full-paper details that matter:
+- COAt-MPC is a constrained Bayesian optimization method for tuning MPC cost parameters.
+- It repeatedly evaluates candidate MPC parameters on a system, measures a performance function, and updates pessimistic/optimistic safe sets.
+- The paper's controller in experiments is an MPCC; COAt-MPC is the outer-loop tuner, not the inner-loop controller.
+
+Fit to this repo:
+- `SimRunner` can evaluate a policy factory over generated `.csimin` scenarios.
+- Performance can be defined from completed sims: capture rate, time to capture, terminal miss distance, command usage, or failure rate.
+- COAt-MPC can tune PLOT, MPCC-inspired pursuit, or hierarchical MPC parameters.
+
+Recommended implementation:
+- Not a `control_sims/<policy>` competitor package by itself.
+- Add an analysis/tuning runner under `scripts/runners` only if it is meant to be reusable CLI code.
+- Store analysis artifacts under `docs/analysis/control_sims`.
+
+Main adaptation:
+- The paper assumes an initial known-safe parameter set and repeated evaluation episodes.
+- This maps naturally to `.csimin` batches, but it wraps policies rather than replacing them.
+
+Verdict: implementable as a useful `SimRunner`-based tuner, but not as one of the competitor controllers.
+
+### Soliro: hybrid dynamic tilt-wing aerial manipulator
+
+Implementation status: no, not against the current `SimEngine` CTBR quadrotor backend.
+
+Full-paper details that matter:
+- Soliro is a 5DOF hybrid rotary/fixed-wing, tilt-rotor, split tilt-wing aerial robot.
+- The core contribution is hardware, aerodynamic model identification, and unified actuator allocation over motor thrusts and wing tilts.
+- The low-level controller commands actuators not present in this repo: left/right/tail thrusts, wing tilts, and differential tilt.
+
+Fit to this repo:
+- The current `SimEngine` represents the pursuer as a CTBR-controlled multirotor, not a tilt-wing vehicle.
+- `CtbrCommandBatch` has no actuator channels for wing tilt, differential tilt, tail rotor thrust, or fixed-wing aerodynamic effects.
+
+Recommended implementation:
+- Do not create a Soliro-branded competitor inside current `control_sims`; it would require a different plant/backend, not just a policy.
+- If hybrid VTOL dynamics are ever added to `SimEngine`, this paper becomes relevant as a vehicle/control-allocation reference.
+
+Verdict: not implementable now as a valid competitor without changing the simulated vehicle model.
+
+### Synergistic morphology and feedback control for compliant-obstacle traversal
+
+Implementation status: no, not against the current pursuer-target `SimEngine` task.
+
+Full-paper details that matter:
+- The controller is an NMPC that includes external wrench feedback from a force/torque sensor mounted between a quadrotor and a discoid shell.
+- The state is `[position, velocity, quaternion, body rates]`; the input is mass-normalized thrust and body torques.
+- The paper's contribution depends on contact-rich traversal, haptic sensing, shell morphology, external wrench dynamics, and obstacle compliance.
+
+Fit to this repo:
+- The current snapshots do not expose external wrench, contact state, shell geometry, compliant obstacles, or local haptic sensing.
+- A path-following NMPC without wrench/contact dynamics would not represent the paper's contribution.
+- Mapping thrust/torque NMPC output to CTBR is possible in principle, but the missing contact/haptic state is the real blocker.
+
+Recommended implementation:
+- Do not create this as a current `control_sims` competitor.
+- Revisit only if `SimEngine` gains contact-rich obstacle traversal scenarios and wrench/haptic observations.
+
+Verdict: not implementable now as a valid competitor for the current drone interception task.
+
+## Final feasibility summary
+
+Implement as new competitors now:
+- `control_sims/plot_tracking_sim`
+- `control_sims/mpcc_pursuit_sim`
+- `control_sims/hierarchical_mpc_sim`
+
+Implement as support tooling, not a competitor:
+- COAt-MPC tuning/evaluation harness around one or more MPC policies.
+
+Do not implement against current backend:
+- Soliro, because it requires a tilt-wing/tilt-rotor plant and actuator allocation.
+- Synergistic morphology/control, because it requires contact dynamics, haptic wrench sensing, and compliant obstacles.

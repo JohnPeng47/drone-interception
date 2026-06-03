@@ -1,0 +1,104 @@
+                        ┌───────────────────────────────┐
+                          │   CABINET  /  TREASURY BOARD   │
+                          │            (TB)               │
+                          │  Central mgmt board: approves  │
+                          │  contracts & expenditures over │
+                          │  thresholds. THE approval gate.│
+                          └───────────────┬───────────────┘
+                            approvals at every major step
+                                          │
+        ┌─────────────────────────────────┼─────────────────────────────────┐
+        │                                 │                                 │
+        ▼                                 ▼                                 ▼
+┌───────────────┐               ┌───────────────────┐             ┌──────────────────┐
+│  DND  +  CAF  │  requirement  │   PSPC / PWGSC    │  industrial │       ISED       │
+│ Dept of Nat'l │ ────────────► │ Public Services & │  benefits   │ Innovation, Sci. │
+│ Defence + the │   "what we    │ Procurement Canada│ ◄─────────► │ & Economic Dev.  │
+│ Armed Forces  │   need"       │ (ex–Public Works, │             │ (ex–Industry Can)│
+│               │               │  PWGSC). Holds the│             │ Runs ITB policy: │
+│ Sets military │               │ CONTRACTING auth. │             │ regional/economic│
+│ requirement,  │               │ Actually runs the │             │ offsets attached │
+│ owns capital  │               │ buy.              │             │ to the contract. │
+│ budget, mgmt  │               └─────────┬─────────┘             └──────────────────┘
+└───────┬───────┘                         │
+        │ advice                          │ specialized buys
+        ▼                                 ▼
+┌───────────────┐        ┌────────────────────────┐    ┌──────────────────────────┐
+│    IRPDA      │        │           DCC          │    │            CCC            │
+│ Indep. Review │        │ Defence Construction   │    │ Canadian Commercial Corp. │
+│ Panel for Def.│        │ Canada — CROWN CORP for│    │ CROWN CORP for govt-to-   │
+│ Acquisition.  │        │ bases & infrastructure │    │ govt (e.g. U.S. FMS) deals│
+│ Advises MND on│        └────────────────────────┘    └──────────────────────────┘
+│ requirements. │
+└───────────────┘
+        ▲
+        │ (2014 patch) coordinating layer, NO separate entity:
+        └──── DPS Secretariat + DM Governance Cmte + Ministers' Working Group
+              "Defence Procurement Strategy" — added committees, not a buyer.
+
+  PATHOLOGY: 3–4 separate accountabilities, sequential sign-offs, no single owner.
+  A file pinballs DND → PSPC → ISED → TB and back. This is the "sclerotic" system.
+
+
+                          ┌───────────────────────────────┐
+                          │   NEW MINISTER FOR THE DIA     │
+                          │  Single political owner. Holds │
+                          │  EXCLUSIVE authority to acquire │
+                          │  defence supplies/services &    │
+                          │  construct defence projects.    │
+                          │  Inherits much of PSPC's        │
+                          │  contracting role + (likely)    │
+                          │  TB contracting authority.      │
+                          └───────────────┬───────────────┘
+                                          │ acts through
+                                          ▼
+                          ┌───────────────────────────────┐
+                          │             DIA               │
+                          │  Defence Investment Agency —   │
+                          │  STANDALONE statutory agency   │
+                          │  (was an SOA inside PSPC).      │
+                          │  Governed by the renamed DPA →  │
+                          │  "Defence & National Security   │
+                          │   Production & Procurement Act" │
+                          └───────────────┬───────────────┘
+                                          │ run day-to-day by
+                                          ▼
+                          ┌───────────────────────────────┐
+                          │            CEO                │
+                          │  Chief Executive Officer at    │
+                          │  DEPUTY-HEAD rank (Guzman).     │
+                          │  Acts on the Minister's behalf. │
+                          │  Can hire private-sector talent │
+                          │  at private-sector pay, outside │
+                          │  normal PSEA hiring.            │
+                          └──┬──────────────┬──────────────┘
+                             │              │
+        ┌────────────────────┘              └───────────────────────┐
+        ▼                                                           ▼
+┌────────────────────┐                                  ┌────────────────────────┐
+│   DND  +  CAF      │  still defines the military       │   ADVISORY COMMITTEES   │
+│ Remains the CLIENT:│  requirement ("what we need");    │   / BOARDS  (s.15)      │
+│ states the need,   │ ────────────────────────────────►│ Min. may appoint outside│
+│ but no longer runs │  DIA now OWNS the acquisition.    │ advisers (Bay St., etc.)│
+└────────────────────┘                                  └────────────────────────┘
+                             │
+                             ▼ now reports up through DIA
+                   ┌──────────────────────┐
+                   │          DCC         │  Defence Construction Canada
+                   │ moved UNDER the DIA  │  pulled in (infrastructure now
+                   │ Minister's authority │  inside the single chain).
+                   └──────────────────────┘
+
+        ┌───────────────────────────────────────────────────────────────┐
+        │  TREASURY BOARD (TB) — RESIDUAL, not the gatekeeper anymore     │
+        │  • Minister can spend from Consolidated Revenue Fund ≤ $1B/op   │
+        │  • TB retains approval only ABOVE ~$1B (loans/projects/programs)│
+        │  • Still signs off on CEO-set salaries.                         │
+        └───────────────────────────────────────────────────────────────┘
+
+  KEY LEVERS the Act adds:
+   • SOLE-SOURCE on "the Minister's opinion" — broad exceptions, incl. the
+     "interoperable/interchangeable" clause (the de facto 'P-8 clause').
+   • Mandate spans national DEFENCE *and* national SECURITY (incl. economic
+     security) → procurement doubles as industrial policy (the DIS).
+   • One Minister + one accounting officer = single point of accountability.
