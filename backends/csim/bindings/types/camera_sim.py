@@ -25,3 +25,9 @@ class CameraConfig:
     body_to_camera: np.ndarray
     intrinsics: CameraIntrinsics
     capture_rate_hz: float
+
+
+@dataclass(frozen=True)
+class CameraObservation:
+    detected: bool
+    uv_norm: np.ndarray

@@ -47,6 +47,7 @@ def test_sim_instance_binary_round_trip(tmp_path):
     assert restored.config.options.validation_dt == np.float32(0.04)
     assert restored.config.max_thrust_n == np.float32(1.2)
     assert restored.config.max_rate_rps == np.float32(3.4)
+    assert restored.config.bounds_w == (30.0, 31.0, 32.0)
     assert restored.config.noise.pixel_noise_std_px == (1.0, 2.0)
     assert restored.config.noise.dropout_probability == 0.25
     assert restored.config.noise.rng_seed == 99
@@ -57,8 +58,6 @@ def test_sim_instance_binary_round_trip(tmp_path):
     assert restored.config.render.scene_id == "liftoff_test"
     assert restored.config.render.timeout_ms == 7
     assert restored.config.render.fail_on_error is True
-    assert restored.raw_config == {}
-    assert restored.metadata == {}
 
 
 def test_sim_generator_reads_slices_from_disk(tmp_path):
@@ -165,6 +164,7 @@ def _instance(seed: int) -> SimInstance:
         intercept_radius_m=0.5,
         max_thrust_n=1.2,
         max_rate_rps=3.4,
+        bounds_w=(30.0, 31.0, 32.0),
         noise=NoiseConfig(
             camera_image_delay_s=0.08,
             pixel_noise_std_px=(1.0, 2.0),
@@ -204,6 +204,4 @@ def _instance(seed: int) -> SimInstance:
             ),
         ),
         config=config,
-        raw_config={"experiment": {"name": "round_trip"}, "vector": np.array([1.0, 2.0, 3.0])},
-        metadata={"source": "test", "seed": np.int64(seed)},
     )

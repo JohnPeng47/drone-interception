@@ -10,6 +10,10 @@
 #define SIM_MAX_TARGETS 16
 #define SIM_MAX_CAMERAS 8
 #define SIM_MAX_CAMERA_OUTPUTS 8
+#define SIM_SNAPSHOT_PURSUER_SIZE 17
+#define SIM_SNAPSHOT_TARGET_SIZE 6
+#define SIM_SNAPSHOT_METRICS_SIZE 5
+#define SIM_SNAPSHOT_CAMERA_SIZE 3
 
 typedef struct {
     float distance_m;
@@ -51,6 +55,16 @@ typedef struct {
     CameraOutput camera_outputs[SIM_MAX_CAMERA_OUTPUTS];
 } SimSnapshot;
 
+typedef struct {
+    int num_engines;
+    float* pursuer_state;
+    float* first_target_state;
+    float* metrics;
+    float* first_camera_observation;
+    float* max_rate_rps;
+    float* max_rpm;
+} SimSnapshots;
+
 void sim_engine_init(SimEngine* engine, PursuerParams params, State pursuer_initial);
 void sim_engine_reset(SimEngine* engine, State pursuer_initial);
 void sim_engine_set_intercept_radius(SimEngine* engine, float intercept_radius_m);
@@ -84,11 +98,8 @@ void sim_engine_batch_step_motor_speeds_dt(
     float dt,
     int substeps
 );
-void sim_engine_batch_snapshot_first_target(
+void sim_engine_batch_get_snapshots(
     SimEngine* engines,
     int num_engines,
-    float* pursuer_state,
-    float* target_state,
-    float* metrics,
-    float* camera_observation
+    SimSnapshots* snapshots
 );

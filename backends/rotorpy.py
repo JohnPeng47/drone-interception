@@ -14,7 +14,7 @@ import numpy as np
 from pydrake.common.value import AbstractValue
 from pydrake.systems.framework import LeafSystem
 
-from control_sims.beihang_paper_sim.drake_compat import ctbr_to_rotorpy, ctbr_value
+from control_sims.beihang_paper_sim.deprecated.drake_compat import ctbr_to_rotorpy, ctbr_value
 
 
 @dataclass

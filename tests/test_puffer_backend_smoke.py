@@ -14,10 +14,12 @@ from backends import (
     PufferSimEngineBackend,
     SimInstance,
     SimOptions,
+    SimSnapshot,
+    SimSnapshots,
     TargetConfig,
     TargetInitialState,
 )
-from control_sims.sim_runner import BatchSimEngineRunner, BatchSimEngineRunnerConfig
+from backends.csim.runner import SimRunner
 from backends.csim.rendering.python import LIFTOFF_RENDER_BACKEND_UNAVAILABLE, RenderError
 from backends.csim.rendering.python import LIFTOFF_RENDER_OK
 
@@ -252,9 +254,11 @@ def test_batch_sim_engine_matches_scalar_step():
     batch.reset_many(np.array([0]), (instance,))
     batch_snapshot = batch.step_ctbr_many(np.array([[0.0, 0.0, 0.0, 0.0]], dtype=np.float32))
 
-    np.testing.assert_allclose(batch_snapshot["pursuer"][0, 0:3], scalar_snapshot["vehicle_state"]["x"], atol=1e-5)
-    np.testing.assert_allclose(batch_snapshot["pursuer"][0, 3:6], scalar_snapshot["vehicle_state"]["v"], atol=1e-5)
-    np.testing.assert_allclose(batch_snapshot["metrics"][0, 0], scalar_snapshot["metrics"]["distance_m"], atol=1e-5)
+    assert isinstance(batch_snapshot, SimSnapshots)
+    assert isinstance(batch_snapshot[0], SimSnapshot)
+    np.testing.assert_allclose(batch_snapshot[0].pursuer.position_w, scalar_snapshot["vehicle_state"]["x"], atol=1e-5)
+    np.testing.assert_allclose(batch_snapshot[0].pursuer.velocity_w, scalar_snapshot["vehicle_state"]["v"], atol=1e-5)
+    np.testing.assert_allclose(batch_snapshot[0].metrics.distance_m, scalar_snapshot["metrics"]["distance_m"], atol=1e-5)
 
 
 def test_batch_sim_engine_accepts_physical_ctbr_commands():
@@ -288,9 +292,13 @@ def test_batch_sim_engine_accepts_physical_ctbr_commands():
         np.zeros((1, 3), dtype=np.float32),
     )
 
-    np.testing.assert_allclose(batch_snapshot["pursuer"][0, 0:3], scalar_snapshot["vehicle_state"]["x"], atol=1e-5)
-    np.testing.assert_allclose(batch_snapshot["pursuer"][0, 3:6], scalar_snapshot["vehicle_state"]["v"], atol=1e-5)
-    np.testing.assert_allclose(batch_snapshot["metrics"][0, 0], scalar_snapshot["metrics"]["distance_m"], atol=1e-5)
+    assert isinstance(batch_snapshot, SimSnapshots)
+    assert isinstance(batch_snapshot[0], SimSnapshot)
+    np.testing.assert_allclose(batch_snapshot[0].thrust_n, params.mass_kg * params.gravity_mps2, atol=1e-6)
+    np.testing.assert_allclose(batch_snapshot[0].body_rates_b, np.zeros(3), atol=1e-6)
+    np.testing.assert_allclose(batch_snapshot[0].pursuer.position_w, scalar_snapshot["vehicle_state"]["x"], atol=1e-5)
+    np.testing.assert_allclose(batch_snapshot[0].pursuer.velocity_w, scalar_snapshot["vehicle_state"]["v"], atol=1e-5)
+    np.testing.assert_allclose(batch_snapshot[0].metrics.distance_m, scalar_snapshot["metrics"]["distance_m"], atol=1e-5)
 
 
 def test_batch_sim_engine_runner_refills_completed_slots():
@@ -298,7 +306,7 @@ def test_batch_sim_engine_runner_refills_completed_slots():
     target = TargetConfig(id="target", kind="target", radius_m=0.2)
     config = SimConfig(
         pursuer=params,
-        options=SimOptions(duration_s=1.0),
+        options=SimOptions(duration_s=0.02),
         targets=(target,),
         intercept_radius_m=0.1,
     )
@@ -317,7 +325,7 @@ def test_batch_sim_engine_runner_refills_completed_slots():
         for seed in range(3)
     )
 
-    runner = BatchSimEngineRunner(BatchSimEngineRunnerConfig(max_envs=2, max_episode_steps=1))
+    runner = SimRunner(max_envs=2)
     state = runner.reset(instances)
     assert state.active.tolist() == [True, True]
     assert state.workload_indices.tolist() == [0, 1]
@@ -326,17 +334,33 @@ def test_batch_sim_engine_runner_refills_completed_slots():
         "thrust_n": np.full(2, params.mass_kg * params.gravity_mps2, dtype=np.float32),
         "body_rates_b": np.zeros((2, 3), dtype=np.float32),
     })
+    assert step.completed == ()
+    assert step.state.active.tolist() == [True, True]
+
+    step = runner.step({
+        "thrust_n": np.full(2, params.mass_kg * params.gravity_mps2, dtype=np.float32),
+        "body_rates_b": np.zeros((2, 3), dtype=np.float32),
+    })
     assert [item.workload_index for item in step.completed] == [0, 1]
     assert [item.terminal_reason for item in step.completed] == ["timeout", "timeout"]
-    assert step.state.active.tolist() == [True, False]
-    assert step.state.workload_indices.tolist() == [2, -1]
+    assert step.state.active.tolist() == [True, True]
+    assert step.state.workload_indices.tolist() == [0, 1]
+    assert runner.state().active.tolist() == [True, False]
+    assert runner.state().workload_indices.tolist() == [2, -1]
+
+    step = runner.step({
+        "thrust_n": np.full(2, params.mass_kg * params.gravity_mps2, dtype=np.float32),
+        "body_rates_b": np.zeros((2, 3), dtype=np.float32),
+    })
+    assert step.completed == ()
 
     step = runner.step({
         "thrust_n": np.full(2, params.mass_kg * params.gravity_mps2, dtype=np.float32),
         "body_rates_b": np.zeros((2, 3), dtype=np.float32),
     })
     assert [item.workload_index for item in step.completed] == [2]
-    assert step.state.active.tolist() == [False, False]
+    assert step.state.active.tolist() == [True, False]
+    assert runner.state().active.tolist() == [False, False]
 
 
 def test_sim_engine_render_config_requests_only_selected_camera():

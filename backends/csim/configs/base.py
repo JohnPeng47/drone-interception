@@ -42,7 +42,7 @@ SIM_CONFIG = SimConfig(
     options=SimOptions(
         backend_dt=0.005,
         action_substeps=1,
-        duration_s=3.0,
+        duration_s=6.0,
         validation_dt=None,
     ),
     targets=(
@@ -74,6 +74,7 @@ SIM_CONFIG = SimConfig(
     intercept_radius_m=0.5,
     max_thrust_n=40.0,
     max_rate_rps=8.0,
+    bounds_w=(30.0, 30.0, 20.0),
     noise=NoiseConfig(
         camera_image_delay_s=0.8,
         pixel_noise_std_px=(0.0, 0.0),

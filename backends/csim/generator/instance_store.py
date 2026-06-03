@@ -24,7 +24,7 @@ from backends.csim.bindings.types import (
 
 
 SIM_INSTANCE_MAGIC = b"CSIMINST"
-SIM_INSTANCE_FORMAT_VERSION = 7
+SIM_INSTANCE_FORMAT_VERSION = 8
 SIM_INSTANCE_WRITE_BLOCK_BYTES = 8 * 1024 * 1024
 _HEADER = struct.Struct("<8sIIQ")
 _U8 = struct.Struct("<B")
@@ -464,6 +464,11 @@ def _write_sim_config(buf: bytearray, config: SimConfig | None) -> None:
     _write_f32(buf, config.intercept_radius_m)
     _write_f32(buf, config.max_thrust_n)
     _write_f32(buf, config.max_rate_rps)
+    _write_optional_array(
+        buf,
+        None if config.bounds_w is None else np.asarray(config.bounds_w, dtype=float),
+        (3,),
+    )
     _write_noise_config(buf, config.noise)
     _write_u8(buf, int(config.rendering))
     _write_render_config(buf, config.render)
@@ -485,6 +490,7 @@ def _read_sim_config(cursor: _Cursor) -> SimConfig | None:
     intercept_radius_m = _read_f32(cursor)
     max_thrust_n = _read_f32(cursor)
     max_rate_rps = _read_f32(cursor)
+    bounds_array = _read_optional_array(cursor, (3,))
     noise = _read_noise_config(cursor)
     rendering = bool(_read_u8(cursor))
     return SimConfig(
@@ -503,6 +509,7 @@ def _read_sim_config(cursor: _Cursor) -> SimConfig | None:
         intercept_radius_m=intercept_radius_m,
         max_thrust_n=max_thrust_n,
         max_rate_rps=max_rate_rps,
+        bounds_w=None if bounds_array is None else tuple(float(x) for x in bounds_array),
         noise=noise,
         rendering=rendering,
         render=_read_render_config(cursor),

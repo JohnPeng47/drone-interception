@@ -6,17 +6,17 @@ from typing import Any
 import numpy as np
 
 from backends.csim.bindings import BatchPufferSimEngineBackend
+from backends.csim.bindings.types import SimSnapshots
 from ai.rl.simengine_env.rewards import RewardConfig
 from ai.rl.simengine_env.scenario_table import ScenarioLabel
 
 from .generator import BatchReset, BatchSimGenerator
-from .observations import OBS_SIZE, observation_from_batch_snapshot
+from .observations import OBS_SIZE, observation_from_batch_arrays, observation_from_batch_snapshot
 
 
 @dataclass(frozen=True)
 class BatchRunnerConfig:
     max_episode_steps: int | None = None
-    bounds_w: tuple[float, float, float] = (30.0, 30.0, 20.0)
     reward: RewardConfig = field(default_factory=RewardConfig)
 
 
@@ -29,9 +29,10 @@ class BatchSimRunner:
         self.config = config or BatchRunnerConfig()
         self.num_envs = generator.num_envs
         self.backend = BatchPufferSimEngineBackend(self.num_envs)
-        self.snapshot: dict[str, np.ndarray] | None = None
+        self.snapshot: SimSnapshots | None = None
         self.labels: list[ScenarioLabel] = [ScenarioLabel(-1, None, None, None)] * self.num_envs
         self.duration_s = np.zeros(self.num_envs, dtype=np.float32)
+        self.bounds_w = np.full((self.num_envs, 3), np.inf, dtype=np.float32)
         self.elapsed_s = np.zeros(self.num_envs, dtype=np.float32)
         self.episode_length = np.zeros(self.num_envs, dtype=np.int32)
         self.episode_return = np.zeros(self.num_envs, dtype=np.float32)
@@ -53,14 +54,17 @@ class BatchSimRunner:
         self.elapsed_s += self._dt()
         self.episode_length += 1
 
-        metrics = self.snapshot["metrics"]
+        arrays = self.snapshot.arrays
+        metrics = arrays.metrics
         distance = metrics[:, 0].astype(np.float32, copy=False)
         intercepted = metrics[:, 2] > 0.5
         failed, fail_reasons = self._failed(self.snapshot)
         timeout = self._timeout()
         done = intercepted | failed | timeout
 
-        body_rates = self.snapshot["body_rates_b"]
+        if arrays.body_rates_b is None:
+            raise RuntimeError("batch snapshot is missing applied body-rate commands")
+        body_rates = arrays.body_rates_b
         rewards = self._reward(distance, body_rates, intercepted, failed)
         self.episode_return += rewards
         reasons = [
@@ -73,7 +77,7 @@ class BatchSimRunner:
                 infos[i]["episode"] = self._episode_info(i, reasons[i])
 
         self.previous_distance_m = distance
-        obs = observation_from_batch_snapshot(self.snapshot)
+        obs = observation_from_batch_arrays(arrays)
 
         if np.any(done):
             done_indices = np.flatnonzero(done)
@@ -87,17 +91,24 @@ class BatchSimRunner:
 
         return obs, rewards.astype(np.float32, copy=False), done.astype(bool, copy=False), infos
 
-    def _apply_reset(self, reset: BatchReset) -> dict[str, np.ndarray]:
+    def _apply_reset(self, reset: BatchReset) -> SimSnapshots:
         snapshot = self.backend.reset_many(reset.indices, reset.instances)
         for local, slot in enumerate(reset.indices):
             slot = int(slot)
             self.labels[slot] = reset.labels[local]
             self.duration_s[slot] = reset.duration_s[local]
+            instance = reset.instances[local]
+            bounds_w = None if instance.config is None else instance.config.bounds_w
+            self.bounds_w[slot] = (
+                np.full(3, np.inf, dtype=np.float32)
+                if bounds_w is None
+                else np.asarray(bounds_w, dtype=np.float32).reshape(3)
+            )
             self.elapsed_s[slot] = 0.0
             self.episode_length[slot] = 0
             self.episode_return[slot] = 0.0
             self.episode_counter[slot] += 1
-            self.previous_distance_m[slot] = snapshot["metrics"][slot, 0]
+            self.previous_distance_m[slot] = snapshot[slot].metrics.distance_m
         return snapshot
 
     def _reward(
@@ -117,10 +128,9 @@ class BatchSimRunner:
             - np.where(failed, cfg.fail_penalty, 0.0)
         ).astype(np.float32)
 
-    def _failed(self, snapshot: dict[str, np.ndarray]) -> tuple[np.ndarray, list[str]]:
-        pos = snapshot["pursuer"][:, 0:3]
-        bounds = np.asarray(self.config.bounds_w, dtype=np.float32)
-        oob = np.any(np.abs(pos) > bounds[None, :], axis=1)
+    def _failed(self, snapshot: SimSnapshots) -> tuple[np.ndarray, list[str]]:
+        pos = snapshot.arrays.pursuer[:, 0:3]
+        oob = np.any(np.abs(pos) > self.bounds_w, axis=1)
         nonfinite = ~np.all(np.isfinite(pos), axis=1)
         failed = oob | nonfinite
         reasons = ["nonfinite" if nonfinite[i] else "oob" if oob[i] else "" for i in range(self.num_envs)]
@@ -138,7 +148,7 @@ class BatchSimRunner:
 
     def _infos(self, done: np.ndarray, reasons: list[str]) -> list[dict[str, Any]]:
         assert self.snapshot is not None
-        metrics = self.snapshot["metrics"]
+        metrics = self.snapshot.arrays.metrics
         infos = []
         for i, label in enumerate(self.labels):
             intercepted = bool(metrics[i, 2] > 0.5)
@@ -159,7 +169,7 @@ class BatchSimRunner:
 
     def _episode_info(self, index: int, reason: str) -> dict[str, Any]:
         assert self.snapshot is not None
-        metrics = self.snapshot["metrics"]
+        metrics = self.snapshot.arrays.metrics
         label = self.labels[index]
         intercepted = bool(metrics[index, 2] > 0.5)
         return {

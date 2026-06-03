@@ -27,7 +27,6 @@ class EpisodeStats:
 @dataclass(frozen=True)
 class EnvConfig:
     max_episode_steps: int | None = None
-    bounds_w: tuple[float, float, float] = (30.0, 30.0, 20.0)
     reward: RewardConfig = field(default_factory=RewardConfig)
 
 
@@ -136,10 +135,11 @@ class SimEngineInterceptEnv:
 
     def _failed(self) -> tuple[bool, str]:
         assert self.snapshot is not None
-        bounds = np.asarray(self.config.bounds_w, dtype=float)
         pos = np.asarray(self.snapshot["vehicle_state"]["x"], dtype=float)
-        if bool(np.any(np.abs(pos) > bounds)):
-            return True, "oob"
+        if self.instance is not None and self.instance.config is not None and self.instance.config.bounds_w is not None:
+            bounds = np.asarray(self.instance.config.bounds_w, dtype=float).reshape(3)
+            if bool(np.any(np.abs(pos) > bounds)):
+                return True, "oob"
         if not np.all(np.isfinite(pos)):
             return True, "nonfinite"
         return False, ""

@@ -2,15 +2,21 @@ from __future__ import annotations
 
 import numpy as np
 
+from backends.csim.bindings.types import SimSnapshotArrays, SimSnapshots
+
 
 OBS_SIZE = 26
 
 
-def observation_from_batch_snapshot(snapshot: dict[str, np.ndarray]) -> np.ndarray:
-    pursuer = np.asarray(snapshot["pursuer"], dtype=np.float32)
-    target = np.asarray(snapshot["target"], dtype=np.float32)
-    metrics = np.asarray(snapshot["metrics"], dtype=np.float32)
-    camera = np.asarray(snapshot["camera"], dtype=np.float32)
+def observation_from_batch_snapshot(snapshot: SimSnapshots) -> np.ndarray:
+    return observation_from_batch_arrays(snapshot.arrays)
+
+
+def observation_from_batch_arrays(arrays: SimSnapshotArrays) -> np.ndarray:
+    pursuer = arrays.pursuer
+    target = arrays.target
+    metrics = arrays.metrics
+    camera = arrays.camera
     n = pursuer.shape[0]
 
     pos = pursuer[:, 0:3]
@@ -36,8 +42,8 @@ def observation_from_batch_snapshot(snapshot: dict[str, np.ndarray]) -> np.ndarr
     distance = metrics[:, 0]
     range_norm = np.maximum(np.linalg.norm(rel_pos_w, axis=1), 1e-9)
     closing_speed = np.sum(rel_vel_w * rel_pos_w, axis=1) / range_norm
-    max_rate = np.maximum(np.asarray(snapshot["max_rate_rps"], dtype=np.float32), 1e-6)
-    max_rpm = np.maximum(np.asarray(snapshot["max_rpm"], dtype=np.float32), 1e-6)
+    max_rate = np.maximum(arrays.max_rate_rps, 1e-6)
+    max_rpm = np.maximum(arrays.max_rpm, 1e-6)
     vel_denom = np.float32(20.0 * np.sqrt(3.0))
 
     obs = np.concatenate(

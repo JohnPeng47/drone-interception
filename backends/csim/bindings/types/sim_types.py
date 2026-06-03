@@ -42,3 +42,12 @@ class PursuerInitialState:
     body_rates_b: np.ndarray
     rotor_speeds: np.ndarray | None = None
     wind_w: np.ndarray | None = None
+
+
+@dataclass(frozen=True)
+class PursuerState:
+    position_w: np.ndarray
+    velocity_w: np.ndarray
+    quat_xyzw: np.ndarray
+    body_rates_b: np.ndarray
+    rotor_speeds: np.ndarray

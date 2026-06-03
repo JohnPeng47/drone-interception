@@ -437,23 +437,21 @@ void sim_engine_batch_step_motor_speeds_dt(
     }
 }
 
-void sim_engine_batch_snapshot_first_target(
+void sim_engine_batch_get_snapshots(
     SimEngine* engines,
     int num_engines,
-    float* pursuer_state,
-    float* target_state,
-    float* metrics,
-    float* camera_observation
+    SimSnapshots* snapshots
 ) {
-    if (engines == NULL || num_engines <= 0) return;
+    if (engines == NULL || snapshots == NULL || num_engines <= 0) return;
+    snapshots->num_engines = num_engines;
 
     #pragma omp parallel for schedule(static)
     for (int i = 0; i < num_engines; i++) {
         SimEngine* engine = &engines[i];
 
-        if (pursuer_state != NULL) {
+        if (snapshots->pursuer_state != NULL) {
             State state = engine->pursuer.state;
-            float* out = &pursuer_state[i * 17];
+            float* out = &snapshots->pursuer_state[i * SIM_SNAPSHOT_PURSUER_SIZE];
             out[0] = state.pos.x;
             out[1] = state.pos.y;
             out[2] = state.pos.z;
@@ -473,8 +471,8 @@ void sim_engine_batch_snapshot_first_target(
             out[16] = state.rpms[3];
         }
 
-        if (target_state != NULL) {
-            float* out = &target_state[i * 6];
+        if (snapshots->first_target_state != NULL) {
+            float* out = &snapshots->first_target_state[i * SIM_SNAPSHOT_TARGET_SIZE];
             if (engine->num_targets > 0) {
                 TargetState target = target_sim_get_state(&engine->targets[0]);
                 out[0] = target.pos.x;
@@ -488,8 +486,8 @@ void sim_engine_batch_snapshot_first_target(
             }
         }
 
-        if (metrics != NULL) {
-            float* out = &metrics[i * 5];
+        if (snapshots->metrics != NULL) {
+            float* out = &snapshots->metrics[i * SIM_SNAPSHOT_METRICS_SIZE];
             out[0] = engine->metrics.distance_m;
             out[1] = engine->metrics.min_distance_m;
             out[2] = (float)engine->metrics.intercepted;
@@ -497,8 +495,8 @@ void sim_engine_batch_snapshot_first_target(
             out[4] = (float)engine->metrics.target_index;
         }
 
-        if (camera_observation != NULL) {
-            float* out = &camera_observation[i * 3];
+        if (snapshots->first_camera_observation != NULL) {
+            float* out = &snapshots->first_camera_observation[i * SIM_SNAPSHOT_CAMERA_SIZE];
             out[0] = 0.0f;
             out[1] = 0.0f;
             out[2] = 0.0f;
@@ -517,6 +515,13 @@ void sim_engine_batch_snapshot_first_target(
                     out[2] = obs.detected ? obs.uv_norm[1] : 0.0f;
                 }
             }
+        }
+
+        if (snapshots->max_rate_rps != NULL) {
+            snapshots->max_rate_rps[i] = engine->pursuer.params.max_omega;
+        }
+        if (snapshots->max_rpm != NULL) {
+            snapshots->max_rpm[i] = engine->pursuer.params.max_rpm;
         }
     }
 }

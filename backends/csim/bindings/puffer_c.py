@@ -20,6 +20,7 @@ from .types import (
     SimConfig,
     SimInstance,
     SimOptions,
+    SimSnapshots,
     TargetConfig,
 )
 from ..rendering.python.config import backend_kind, platform_kind, status_name
@@ -229,6 +230,18 @@ class _CSimSnapshot(C.Structure):
         ("metrics", _CInterceptMetrics),
         ("num_camera_outputs", C.c_int),
         ("camera_outputs", _CCameraOutput * SIM_MAX_CAMERA_OUTPUTS),
+    ]
+
+
+class _CSimSnapshots(C.Structure):
+    _fields_ = [
+        ("num_engines", C.c_int),
+        ("pursuer_state", C.POINTER(C.c_float)),
+        ("first_target_state", C.POINTER(C.c_float)),
+        ("metrics", C.POINTER(C.c_float)),
+        ("first_camera_observation", C.POINTER(C.c_float)),
+        ("max_rate_rps", C.POINTER(C.c_float)),
+        ("max_rpm", C.POINTER(C.c_float)),
     ]
 
 
@@ -721,7 +734,7 @@ class BatchPufferSimEngineBackend:
     def max_rate_rps(self) -> np.ndarray:
         return self._max_rate.copy()
 
-    def reset_many(self, indices: np.ndarray, instances: list[SimInstance] | tuple[SimInstance, ...]) -> dict[str, np.ndarray]:
+    def reset_many(self, indices: np.ndarray, instances: list[SimInstance] | tuple[SimInstance, ...]) -> SimSnapshots:
         indices = np.asarray(indices, dtype=np.int64).reshape(-1)
         if len(indices) != len(instances):
             raise ValueError("indices and instances must have the same length")
@@ -729,13 +742,13 @@ class BatchPufferSimEngineBackend:
             self._reset_one(int(slot), instance)
         return self.snapshot()
 
-    def step_ctbr_many(self, actions: np.ndarray) -> dict[str, np.ndarray]:
+    def step_ctbr_many(self, actions: np.ndarray) -> SimSnapshots:
         actions = np.asarray(actions, dtype=np.float32).reshape(self.num_envs, 4)
         thrust = np.clip((actions[:, 0] + 1.0) * 0.5, 0.0, 1.0) * self._max_thrust
         body_rates = np.clip(actions[:, 1:4], -1.0, 1.0) * self._max_rate[:, None]
         return self.step_ctbr_commands_many(thrust, body_rates)
 
-    def step_ctbr_commands_many(self, thrust_n: np.ndarray, body_rates_b: np.ndarray) -> dict[str, np.ndarray]:
+    def step_ctbr_commands_many(self, thrust_n: np.ndarray, body_rates_b: np.ndarray) -> SimSnapshots:
         thrust = np.asarray(thrust_n, dtype=np.float32).reshape(self.num_envs)
         body_rates = np.asarray(body_rates_b, dtype=np.float32).reshape(self.num_envs, 3)
         thrust = np.clip(thrust, 0.0, self._max_thrust)
@@ -748,28 +761,43 @@ class BatchPufferSimEngineBackend:
             C.c_float(float(self._dt if self._dt is not None else PUFFER_ACTION_DT)),
             C.c_int(max(1, int(self._substeps if self._substeps is not None else PUFFER_ACTION_SUBSTEPS))),
         )
-        snapshot = self.snapshot()
-        snapshot["body_rates_b"] = body_rates.astype(np.float32, copy=False)
-        snapshot["thrust_n"] = thrust.astype(np.float32, copy=False)
-        return snapshot
+        return self.snapshot().with_commands(thrust, body_rates)
 
-    def snapshot(self) -> dict[str, np.ndarray]:
-        self._lib.sim_engine_batch_snapshot_first_target(
+    def step_motor_speeds_many(self, cmd_motor_speeds_rpm: np.ndarray) -> SimSnapshots:
+        cmd_rpms = np.asarray(cmd_motor_speeds_rpm, dtype=np.float32).reshape(self.num_envs, 4)
+        cmd_rpms = np.clip(cmd_rpms, self._min_rpm[:, None], self._max_rpm[:, None])
+        self._lib.sim_engine_batch_step_motor_speeds_dt(
             self._engines,
+            np.ascontiguousarray(cmd_rpms, dtype=np.float32).ctypes.data_as(C.POINTER(C.c_float)),
+            C.c_int(self.num_envs),
+            C.c_float(float(self._dt if self._dt is not None else PUFFER_ACTION_DT)),
+            C.c_int(max(1, int(self._substeps if self._substeps is not None else PUFFER_ACTION_SUBSTEPS))),
+        )
+        return self.snapshot()
+
+    def snapshot(self) -> SimSnapshots:
+        c_snapshot = _CSimSnapshots(
             C.c_int(self.num_envs),
             self._pursuer.ctypes.data_as(C.POINTER(C.c_float)),
             self._targets.ctypes.data_as(C.POINTER(C.c_float)),
             self._metrics.ctypes.data_as(C.POINTER(C.c_float)),
             self._camera.ctypes.data_as(C.POINTER(C.c_float)),
+            None,
+            None,
         )
-        return {
-            "pursuer": self._pursuer.copy(),
-            "target": self._targets.copy(),
-            "metrics": self._metrics.copy(),
-            "camera": self._camera.copy(),
-            "max_rate_rps": self._max_rate.copy(),
-            "max_rpm": self._max_rpm.copy(),
-        }
+        self._lib.sim_engine_batch_get_snapshots(
+            self._engines,
+            C.c_int(self.num_envs),
+            C.byref(c_snapshot),
+        )
+        return SimSnapshots.from_arrays(
+            self._pursuer.copy(),
+            self._targets.copy(),
+            self._metrics.copy(),
+            self._camera.copy(),
+            self._max_rate.copy(),
+            self._max_rpm.copy(),
+        )
 
     def _reset_one(self, slot: int, instance: SimInstance) -> None:
         if slot < 0 or slot >= self.num_envs:
@@ -961,15 +989,12 @@ def _load_lib() -> C.CDLL:
         C.c_int,
     ]
     lib.sim_engine_batch_step_motor_speeds_dt.restype = None
-    lib.sim_engine_batch_snapshot_first_target.argtypes = [
+    lib.sim_engine_batch_get_snapshots.argtypes = [
         C.POINTER(_CSimEngine),
         C.c_int,
-        C.POINTER(C.c_float),
-        C.POINTER(C.c_float),
-        C.POINTER(C.c_float),
-        C.POINTER(C.c_float),
+        C.POINTER(_CSimSnapshots),
     ]
-    lib.sim_engine_batch_snapshot_first_target.restype = None
+    lib.sim_engine_batch_get_snapshots.restype = None
     _LIB = lib
     return lib
 
