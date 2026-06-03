@@ -49,6 +49,88 @@ static void sim_engine_update_metrics(SimEngine* engine) {
     }
 }
 
+static int allocation_has_rotor_geometry(const PursuerParams* params) {
+    for (int i = 0; i < 4; i++) {
+        if (fabsf(params->rotor_pos_x[i]) > 1e-9f ||
+                fabsf(params->rotor_pos_y[i]) > 1e-9f) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static void build_allocation_matrix(const PursuerParams* params, float allocation[4][4]) {
+    for (int c = 0; c < 4; c++) {
+        allocation[0][c] = 1.0f;
+    }
+
+    if (allocation_has_rotor_geometry(params)) {
+        for (int c = 0; c < 4; c++) {
+            allocation[1][c] = params->rotor_pos_y[c];
+            allocation[2][c] = -params->rotor_pos_x[c];
+            allocation[3][c] = params->k_drag * params->rotor_dir[c];
+        }
+        return;
+    }
+
+    float arm_factor = params->arm_len / sqrtf(2.0f);
+    allocation[1][0] = -arm_factor;
+    allocation[1][1] = -arm_factor;
+    allocation[1][2] = arm_factor;
+    allocation[1][3] = arm_factor;
+    allocation[2][0] = -arm_factor;
+    allocation[2][1] = arm_factor;
+    allocation[2][2] = arm_factor;
+    allocation[2][3] = -arm_factor;
+    allocation[3][0] = -params->k_drag;
+    allocation[3][1] = params->k_drag;
+    allocation[3][2] = -params->k_drag;
+    allocation[3][3] = params->k_drag;
+}
+
+static void solve_4x4(float a[4][4], const float b[4], float x[4]) {
+    float aug[4][5];
+    for (int r = 0; r < 4; r++) {
+        for (int c = 0; c < 4; c++) aug[r][c] = a[r][c];
+        aug[r][4] = b[r];
+    }
+
+    for (int col = 0; col < 4; col++) {
+        int pivot = col;
+        float pivot_abs = fabsf(aug[col][col]);
+        for (int r = col + 1; r < 4; r++) {
+            float value_abs = fabsf(aug[r][col]);
+            if (value_abs > pivot_abs) {
+                pivot = r;
+                pivot_abs = value_abs;
+            }
+        }
+        if (pivot_abs < 1e-12f) {
+            for (int i = 0; i < 4; i++) x[i] = 0.0f;
+            return;
+        }
+        if (pivot != col) {
+            for (int c = col; c < 5; c++) {
+                float tmp = aug[col][c];
+                aug[col][c] = aug[pivot][c];
+                aug[pivot][c] = tmp;
+            }
+        }
+
+        float denom = aug[col][col];
+        for (int c = col; c < 5; c++) aug[col][c] /= denom;
+        for (int r = 0; r < 4; r++) {
+            if (r == col) continue;
+            float factor = aug[r][col];
+            for (int c = col; c < 5; c++) {
+                aug[r][c] -= factor * aug[col][c];
+            }
+        }
+    }
+
+    for (int i = 0; i < 4; i++) x[i] = aug[i][4];
+}
+
 static void sim_engine_init_render_fields(SimEngine* engine) {
     engine->render_enabled = 0;
     engine->render_camera_id = -1;
@@ -373,6 +455,77 @@ void sim_engine_step_motor_speeds_dt(SimEngine* engine, float cmd_rpms[4], float
     sim_engine_update_metrics(engine);
 }
 
+void sim_engine_ctbr_to_motor_speeds(
+    const SimEngine* engine,
+    float thrust_n,
+    const float body_rates_b[3],
+    float max_thrust_n,
+    float max_rate_rps,
+    float min_rpm,
+    float k_w,
+    float cmd_rpms[4]
+) {
+    if (engine == NULL || body_rates_b == NULL || cmd_rpms == NULL) return;
+
+    const PursuerParams* params = &engine->pursuer.params;
+    float thrust = clampf(thrust_n, 0.0f, max_thrust_n > 0.0f ? max_thrust_n : INFINITY);
+    float max_rate = max_rate_rps > 0.0f ? max_rate_rps : params->max_omega;
+    float target_rates[3] = {
+        clampf(body_rates_b[0], -max_rate, max_rate),
+        clampf(body_rates_b[1], -max_rate, max_rate),
+        clampf(body_rates_b[2], -max_rate, max_rate),
+    };
+    float inertia[3] = {params->ixx, params->iyy, params->izz};
+    float omega[3] = {
+        engine->pursuer.state.omega.x,
+        engine->pursuer.state.omega.y,
+        engine->pursuer.state.omega.z,
+    };
+    float desired[4] = {thrust, 0.0f, 0.0f, 0.0f};
+    for (int i = 0; i < 3; i++) {
+        desired[i + 1] = inertia[i] * k_w * (target_rates[i] - omega[i]);
+    }
+
+    float allocation[4][4];
+    float rotor_thrusts[4];
+    build_allocation_matrix(params, allocation);
+    solve_4x4(allocation, desired, rotor_thrusts);
+
+    float rpm_min = clampf(min_rpm, 0.0f, params->max_rpm);
+    float k_thrust = fmaxf(params->k_thrust, 1e-12f);
+    for (int i = 0; i < 4; i++) {
+        float speed_sq = rotor_thrusts[i] / k_thrust;
+        float rpm = (speed_sq < 0.0f ? -1.0f : 1.0f) * sqrtf(fabsf(speed_sq));
+        cmd_rpms[i] = clampf(rpm, rpm_min, params->max_rpm);
+    }
+}
+
+void sim_engine_step_ctbr_dt(
+    SimEngine* engine,
+    float thrust_n,
+    const float body_rates_b[3],
+    float max_thrust_n,
+    float max_rate_rps,
+    float min_rpm,
+    float k_w,
+    float dt,
+    int substeps
+) {
+    if (engine == NULL || body_rates_b == NULL) return;
+    float cmd_rpms[4];
+    sim_engine_ctbr_to_motor_speeds(
+        engine,
+        thrust_n,
+        body_rates_b,
+        max_thrust_n,
+        max_rate_rps,
+        min_rpm,
+        k_w,
+        cmd_rpms
+    );
+    sim_engine_step_motor_speeds_dt(engine, cmd_rpms, dt, substeps);
+}
+
 State sim_engine_get_pursuer_state(const SimEngine* engine) {
     return engine->pursuer.state;
 }
@@ -434,6 +587,49 @@ void sim_engine_batch_step_motor_speeds_dt(
             cmd_rpms[i * 4 + 3],
         };
         sim_engine_step_motor_speeds_dt(&engines[i], speeds, dt, substeps);
+    }
+}
+
+void sim_engine_batch_step_ctbr_dt(
+    SimEngine* engines,
+    const float* thrust_n,
+    const float* body_rates_b,
+    const float* max_thrust_n,
+    const float* max_rate_rps,
+    const float* min_rpm,
+    const float* k_w,
+    int num_engines,
+    float dt,
+    int substeps
+) {
+    if (engines == NULL || thrust_n == NULL || body_rates_b == NULL || num_engines <= 0) return;
+
+    #pragma omp parallel for schedule(static)
+    for (int i = 0; i < num_engines; i++) {
+        const SimEngine* engine = &engines[i];
+        const PursuerParams* params = &engine->pursuer.params;
+        float body_rates[3] = {
+            body_rates_b[i * 3 + 0],
+            body_rates_b[i * 3 + 1],
+            body_rates_b[i * 3 + 2],
+        };
+        float max_thrust = max_thrust_n != NULL
+            ? max_thrust_n[i]
+            : params->mass * params->gravity * 2.0f;
+        float max_rate = max_rate_rps != NULL ? max_rate_rps[i] : params->max_omega;
+        float rpm_min = min_rpm != NULL ? min_rpm[i] : 0.0f;
+        float rate_gain = k_w != NULL ? k_w[i] : 1.0f;
+        sim_engine_step_ctbr_dt(
+            &engines[i],
+            thrust_n[i],
+            body_rates,
+            max_thrust,
+            max_rate,
+            rpm_min,
+            rate_gain,
+            dt,
+            substeps
+        );
     }
 }
 

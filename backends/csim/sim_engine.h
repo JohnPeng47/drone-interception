@@ -85,6 +85,27 @@ void sim_engine_close_rendering(SimEngine* engine);
 int sim_engine_collect_camera_outputs(SimEngine* engine, CameraOutput* outputs, int max_outputs);
 void sim_engine_step_motor_dt(SimEngine* engine, float actions[4], float dt, int substeps);
 void sim_engine_step_motor_speeds_dt(SimEngine* engine, float cmd_rpms[4], float dt, int substeps);
+void sim_engine_ctbr_to_motor_speeds(
+    const SimEngine* engine,
+    float thrust_n,
+    const float body_rates_b[3],
+    float max_thrust_n,
+    float max_rate_rps,
+    float min_rpm,
+    float k_w,
+    float cmd_rpms[4]
+);
+void sim_engine_step_ctbr_dt(
+    SimEngine* engine,
+    float thrust_n,
+    const float body_rates_b[3],
+    float max_thrust_n,
+    float max_rate_rps,
+    float min_rpm,
+    float k_w,
+    float dt,
+    int substeps
+);
 State sim_engine_get_pursuer_state(const SimEngine* engine);
 int sim_engine_get_num_targets(const SimEngine* engine);
 TargetState sim_engine_get_target_state(const SimEngine* engine, int target_index);
@@ -94,6 +115,18 @@ void sim_engine_get_snapshot(SimEngine* engine, SimSnapshot* snapshot);
 void sim_engine_batch_step_motor_speeds_dt(
     SimEngine* engines,
     const float* cmd_rpms,
+    int num_engines,
+    float dt,
+    int substeps
+);
+void sim_engine_batch_step_ctbr_dt(
+    SimEngine* engines,
+    const float* thrust_n,
+    const float* body_rates_b,
+    const float* max_thrust_n,
+    const float* max_rate_rps,
+    const float* min_rpm,
+    const float* k_w,
     int num_engines,
     float dt,
     int substeps

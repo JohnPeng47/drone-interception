@@ -301,6 +301,79 @@ def test_batch_sim_engine_accepts_physical_ctbr_commands():
     np.testing.assert_allclose(batch_snapshot[0].metrics.distance_m, scalar_snapshot["metrics"]["distance_m"], atol=1e-5)
 
 
+@pytest.mark.parametrize(
+    ("rotor_positions_b", "rotor_directions"),
+    [
+        (None, np.array([-1.0, 1.0, -1.0, 1.0])),
+        (
+            np.array([
+                [0.03, 0.03, 0.0],
+                [-0.03, 0.03, 0.0],
+                [-0.03, -0.03, 0.0],
+                [0.03, -0.03, 0.0],
+            ]),
+            np.array([-1.0, 1.0, -1.0, 1.0]),
+        ),
+    ],
+)
+def test_batch_ctbr_matches_reference_motor_speed_conversion(rotor_positions_b, rotor_directions):
+    base = _params()
+    params = PursuerParams(
+        mass_kg=base.mass_kg,
+        ixx=base.ixx,
+        iyy=base.iyy,
+        izz=base.izz,
+        arm_len_m=base.arm_len_m,
+        k_thrust=base.k_thrust,
+        k_yaw=base.k_yaw,
+        k_ang_damp=base.k_ang_damp,
+        b_drag=base.b_drag,
+        gravity_mps2=base.gravity_mps2,
+        max_rpm=base.max_rpm,
+        max_vel_mps=base.max_vel_mps,
+        max_omega_rps=base.max_omega_rps,
+        motor_tau_s=base.motor_tau_s,
+        k_w=base.k_w,
+        rpm_min=base.rpm_min,
+        rotor_positions_b=rotor_positions_b,
+        rotor_directions=rotor_directions,
+    )
+    target = TargetConfig(id="target", kind="target", radius_m=0.2)
+    config = SimConfig(
+        pursuer=params,
+        options=SimOptions(action_substeps=2),
+        targets=(target,),
+        intercept_radius_m=0.1,
+        max_thrust_n=params.mass_kg * params.gravity_mps2 * 2.0,
+        max_rate_rps=params.max_omega_rps,
+    )
+    initial = PursuerInitialState(
+        position_w=np.zeros(3),
+        velocity_w=np.zeros(3),
+        quat_xyzw=np.array([0.0, 0.0, 0.0, 1.0]),
+        body_rates_b=np.array([0.1, -0.2, 0.05]),
+    )
+    target_initial = TargetInitialState(
+        position_w=np.array([2.0, 0.0, 0.0]),
+        velocity_w=np.zeros(3),
+    )
+    instance = SimInstance(seed=1, pursuer_initial=initial, target_initials=(target_initial,), config=config)
+    thrust = np.array([params.mass_kg * params.gravity_mps2 * 1.1], dtype=np.float32)
+    rates = np.array([[0.4, -0.3, 0.2]], dtype=np.float32)
+
+    ctbr_backend = BatchPufferSimEngineBackend(1)
+    ctbr_backend.reset_many(np.array([0]), (instance,))
+    motor_backend = BatchPufferSimEngineBackend(1)
+    motor_backend.reset_many(np.array([0]), (instance,))
+    reference_rpms = _reference_ctbr_to_motor_speeds(params, initial.body_rates_b, thrust[0], rates[0])
+
+    ctbr_snapshot = ctbr_backend.step_ctbr_commands_many(thrust, rates)
+    motor_snapshot = motor_backend.step_motor_speeds_many(reference_rpms.reshape(1, 4))
+
+    np.testing.assert_allclose(ctbr_snapshot.arrays.pursuer, motor_snapshot.arrays.pursuer, rtol=1e-5, atol=1e-5)
+    np.testing.assert_allclose(ctbr_snapshot.arrays.metrics, motor_snapshot.arrays.metrics, rtol=1e-5, atol=1e-5)
+
+
 def test_batch_sim_engine_runner_refills_completed_slots():
     params = _params()
     target = TargetConfig(id="target", kind="target", radius_m=0.2)
@@ -501,3 +574,44 @@ def _camera(camera_id: str) -> dict:
             "vfov_rad": np.deg2rad(60.0),
         },
     }
+
+
+def _reference_ctbr_to_motor_speeds(
+    params: PursuerParams,
+    omega: np.ndarray,
+    thrust_n: float,
+    body_rates_b: np.ndarray,
+) -> np.ndarray:
+    arm_factor = params.arm_len_m / np.sqrt(2.0)
+    rotor_positions = params.rotor_positions_b
+    if rotor_positions is not None and np.any(np.abs(np.asarray(rotor_positions)[:, :2]) > 1e-9):
+        rotor_positions = np.asarray(rotor_positions, dtype=float).reshape(4, 3)
+        rotor_directions = np.asarray(params.rotor_directions, dtype=float).reshape(4)
+        allocation = np.vstack((
+            np.ones(4),
+            rotor_positions[:, 1],
+            -rotor_positions[:, 0],
+            params.k_yaw * rotor_directions,
+        ))
+    else:
+        allocation = np.array([
+            [1.0, 1.0, 1.0, 1.0],
+            [-arm_factor, -arm_factor, arm_factor, arm_factor],
+            [-arm_factor, arm_factor, arm_factor, -arm_factor],
+            [-params.k_yaw, params.k_yaw, -params.k_yaw, params.k_yaw],
+        ])
+    wdot_cmd = params.k_w * (
+        np.asarray(body_rates_b, dtype=float).reshape(3)
+        - np.asarray(omega, dtype=float).reshape(3)
+    )
+    moment = np.array([params.ixx, params.iyy, params.izz], dtype=float) * wdot_cmd
+    desired = np.array([max(float(thrust_n), 0.0), *moment], dtype=float)
+    rotor_thrusts = np.linalg.solve(allocation, desired)
+    speed_sq = rotor_thrusts / max(params.k_thrust, 1e-12)
+    rpms = np.sign(speed_sq) * np.sqrt(np.abs(speed_sq))
+    if params.rpm_min is None:
+        hover_rpm = np.sqrt((params.mass_kg * params.gravity_mps2) / (4.0 * params.k_thrust))
+        min_rpm = float(np.clip(2.0 * hover_rpm - params.max_rpm, 0.0, params.max_rpm))
+    else:
+        min_rpm = float(np.clip(params.rpm_min, 0.0, params.max_rpm))
+    return np.clip(rpms, min_rpm, params.max_rpm).astype(np.float32)

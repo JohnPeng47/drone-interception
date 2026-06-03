@@ -572,15 +572,29 @@ class PufferSimEngineBackend(PufferDroneBackend):
         self._set_engine_cameras(camera_specs)
         self._configure_renderer()
 
-        cmd_speeds = self.ctbr_to_motor_speeds(vehicle_state, thrust_n, body_rates_b)
-        speed_arr = (C.c_float * 4)(*cmd_speeds.astype(np.float32))
-        self._lib.sim_engine_step_motor_speeds_dt(
+        rates_arr = (C.c_float * 3)(*np.asarray(body_rates_b, dtype=np.float32).reshape(3))
+        self._lib.sim_engine_step_ctbr_dt(
             C.byref(self._engine),
-            speed_arr,
+            C.c_float(thrust_n),
+            rates_arr,
+            C.c_float(self._max_thrust_n()),
+            C.c_float(self._max_rate_rps()),
+            C.c_float(self._min_rpm()),
+            C.c_float(float(self.params.k_w)),
             C.c_float(dt),
             C.c_int(max(1, int(self.options.action_substeps))),
         )
         return self._snapshot_from_engine(wind)
+
+    def _max_thrust_n(self) -> float:
+        if self.config is not None and self.config.max_thrust_n > 0.0:
+            return float(self.config.max_thrust_n)
+        return float(self.params.mass_kg * self.params.gravity_mps2 * 2.0)
+
+    def _max_rate_rps(self) -> float:
+        if self.config is not None and self.config.max_rate_rps > 0.0:
+            return float(self.config.max_rate_rps)
+        return float(self.params.max_omega_rps)
 
     def _set_engine_targets(self, specs: tuple[dict[str, Any], ...]) -> None:
         c_targets = [_target_to_c(spec) for spec in specs]
@@ -753,10 +767,14 @@ class BatchPufferSimEngineBackend:
         body_rates = np.asarray(body_rates_b, dtype=np.float32).reshape(self.num_envs, 3)
         thrust = np.clip(thrust, 0.0, self._max_thrust)
         body_rates = np.clip(body_rates, -self._max_rate[:, None], self._max_rate[:, None])
-        cmd_rpms = self._ctbr_to_motor_speeds(thrust, body_rates)
-        self._lib.sim_engine_batch_step_motor_speeds_dt(
+        self._lib.sim_engine_batch_step_ctbr_dt(
             self._engines,
-            np.ascontiguousarray(cmd_rpms, dtype=np.float32).ctypes.data_as(C.POINTER(C.c_float)),
+            np.ascontiguousarray(thrust, dtype=np.float32).ctypes.data_as(C.POINTER(C.c_float)),
+            np.ascontiguousarray(body_rates, dtype=np.float32).ctypes.data_as(C.POINTER(C.c_float)),
+            self._max_thrust.ctypes.data_as(C.POINTER(C.c_float)),
+            self._max_rate.ctypes.data_as(C.POINTER(C.c_float)),
+            self._min_rpm.ctypes.data_as(C.POINTER(C.c_float)),
+            self._k_w.ctypes.data_as(C.POINTER(C.c_float)),
             C.c_int(self.num_envs),
             C.c_float(float(self._dt if self._dt is not None else PUFFER_ACTION_DT)),
             C.c_int(max(1, int(self._substeps if self._substeps is not None else PUFFER_ACTION_SUBSTEPS))),
@@ -866,17 +884,6 @@ class BatchPufferSimEngineBackend:
         self._max_thrust[slot] = float(config.max_thrust_n or params.mass_kg * params.gravity_mps2 * 2.0)
         self._max_rate[slot] = float(config.max_rate_rps or params.max_omega_rps)
 
-    def _ctbr_to_motor_speeds(self, thrust_n: np.ndarray, body_rates_b: np.ndarray) -> np.ndarray:
-        omega = self._pursuer[:, 10:13]
-        wdot_cmd = self._k_w[:, None] * (body_rates_b - omega)
-        cmd_moment = self._inertia * wdot_cmd
-        desired = np.concatenate([np.maximum(thrust_n[:, None], 0.0), cmd_moment], axis=1)
-        rotor_thrusts = np.einsum("nij,nj->ni", self._tm_to_f, desired)
-        rotor_speed_sq = rotor_thrusts / np.maximum(self._k_thrust[:, None], 1e-12)
-        cmd_speeds = np.sign(rotor_speed_sq) * np.sqrt(np.abs(rotor_speed_sq))
-        return np.clip(cmd_speeds, self._min_rpm[:, None], self._max_rpm[:, None])
-
-
 def _load_lib() -> C.CDLL:
     global _LIB
     if _LIB is not None:
@@ -971,6 +978,29 @@ def _load_lib() -> C.CDLL:
     lib.sim_engine_step_motor_dt.restype = None
     lib.sim_engine_step_motor_speeds_dt.argtypes = [C.POINTER(_CSimEngine), C.POINTER(C.c_float), C.c_float, C.c_int]
     lib.sim_engine_step_motor_speeds_dt.restype = None
+    lib.sim_engine_ctbr_to_motor_speeds.argtypes = [
+        C.POINTER(_CSimEngine),
+        C.c_float,
+        C.POINTER(C.c_float),
+        C.c_float,
+        C.c_float,
+        C.c_float,
+        C.c_float,
+        C.POINTER(C.c_float),
+    ]
+    lib.sim_engine_ctbr_to_motor_speeds.restype = None
+    lib.sim_engine_step_ctbr_dt.argtypes = [
+        C.POINTER(_CSimEngine),
+        C.c_float,
+        C.POINTER(C.c_float),
+        C.c_float,
+        C.c_float,
+        C.c_float,
+        C.c_float,
+        C.c_float,
+        C.c_int,
+    ]
+    lib.sim_engine_step_ctbr_dt.restype = None
     lib.sim_engine_get_pursuer_state.argtypes = [C.POINTER(_CSimEngine)]
     lib.sim_engine_get_pursuer_state.restype = _CState
     lib.sim_engine_get_num_targets.argtypes = [C.POINTER(_CSimEngine)]
@@ -989,6 +1019,19 @@ def _load_lib() -> C.CDLL:
         C.c_int,
     ]
     lib.sim_engine_batch_step_motor_speeds_dt.restype = None
+    lib.sim_engine_batch_step_ctbr_dt.argtypes = [
+        C.POINTER(_CSimEngine),
+        C.POINTER(C.c_float),
+        C.POINTER(C.c_float),
+        C.POINTER(C.c_float),
+        C.POINTER(C.c_float),
+        C.POINTER(C.c_float),
+        C.POINTER(C.c_float),
+        C.c_int,
+        C.c_float,
+        C.c_int,
+    ]
+    lib.sim_engine_batch_step_ctbr_dt.restype = None
     lib.sim_engine_batch_get_snapshots.argtypes = [
         C.POINTER(_CSimEngine),
         C.c_int,
