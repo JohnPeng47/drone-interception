@@ -190,3 +190,37 @@ ai/rl/scripts/.runpod_pod.json*
 /ai/detection/models/
 /ai/detection/research/pdfs/
 /ai/**/runs/
+
+# Local agent workspaces and planning artifacts
+/.agents/
+
+# Generated simulation instances and sample metadata
+/scripts/generators/sim_instances/**/*.csimin
+/scripts/generators/sim_instances/**/*.json
+!/scripts/generators/sim_instances/controller_regression_6/sobol_samples.csimin
+
+# Analysis run outputs. Keep analysis scripts/reports trackable.
+/docs/analysis/**/*.json
+/docs/analysis/**/*.csv
+/docs/analysis/**/*.png
+/docs/analysis/**/trials.csv
+/docs/analysis/**/snapshots/
+/docs/analysis/**/plots/
+/docs/analysis/**/generated_*_plots/
+/docs/analysis/**/papers/
+/docs/analysis/**/results.txt
+/docs/analysis/**/*.csimin
+/docs/analysis/**/*.pdf
+/docs/analysis/**/*.html
+
+# Rendered media artifacts
+/renders/
+
+# Local third-party source checkouts
+/tools/rpg_time_optimal/
+
+# Local research paper downloads. Force-add curated papers when needed.
+/papers/*.pdf
+/papers/*.txt
+/papers/**/*.pdf
+/papers/**/*.txt
