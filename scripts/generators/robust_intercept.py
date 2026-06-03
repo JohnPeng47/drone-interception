@@ -51,7 +51,7 @@ DEFAULT_ROBUST_INTERCEPT_CONFIG: dict[str, Any] = {
     },
     "sim": {
         "backend": "puffer_c",
-        "duration_s": 3.0,
+        "duration_s": 6.0,
         "dt": 0.005,
     },
     "controller": {
@@ -141,7 +141,10 @@ class RobustInterceptConfigGenerator(SimInstanceGenerator):
             raise TypeError(f"{type(self).__name__}.sample does not accept kwargs")
         point = self._by_seed.get(int(seed))
         if point is None:
-            raise KeyError(f"No robust-intercept sample for seed {seed}")
+            raise KeyError(f"No {type(self).__name__} sample for seed {seed}")
+        return self._resolve_instance(point)
+
+    def _resolve_instance(self, point: _SamplePoint) -> SimInstance:
         return _resolve_instance(self.config, point)
 
 
@@ -353,7 +356,12 @@ def _build_grid_sample_points(
     return points
 
 
-def _resolve_instance(config: dict[str, Any], point: _SamplePoint) -> SimInstance:
+def _resolve_instance(
+    config: dict[str, Any],
+    point: _SamplePoint,
+    *,
+    target_velocity_override_w: np.ndarray | None = None,
+) -> SimInstance:
     values = point.values
     camera_cfg = config["camera"]
     scenario = config["scenario"]
@@ -379,7 +387,11 @@ def _resolve_instance(config: dict[str, Any], point: _SamplePoint) -> SimInstanc
 
     relative_velocity_w = values["forward_speed_mps"] * camera_forward_w
     target_dir_w = _spherical_rad(values["target_azimuth_rad"], math.radians(values["target_elevation_deg"]))
-    target_velocity_w = values["target_speed_mps"] * target_dir_w
+    target_velocity_w = (
+        values["target_speed_mps"] * target_dir_w
+        if target_velocity_override_w is None
+        else _array(target_velocity_override_w, length=3)
+    )
     pursuer_velocity_w = target_velocity_w + relative_velocity_w
 
     wind_w = np.array([
