@@ -33,7 +33,7 @@ class BeihangBaselineStrategy:
         R_wb = np.asarray(observation.vehicle_rotation_wb, dtype=float)
         v_w = np.asarray(observation.vehicle_velocity_w, dtype=float)
 
-        bearing_b = np.array([1.0, uv[0], uv[1]], dtype=float)
+        bearing_b = np.asarray(observation.bearing_b, dtype=float).reshape(3)
         bearing_b /= max(float(np.linalg.norm(bearing_b)), 1e-12)
         bearing_w = R_wb @ bearing_b
         body_x_w = R_wb[:, 0]

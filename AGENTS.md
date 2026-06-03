@@ -24,6 +24,7 @@ python -m pytest -q tests/test_sim_instance_store.py tests/test_puffer_backend_s
 # Scripts and Runnable Code
 - *ALL* executable CLI code (except for analysis, and others explicitly defined in this doc) must follow these conventions
     - be implemented inside scripts/runners
+- In the case control_sim SimRunners, put core logic (including shared runner logic) inside each respective controller folders inside control_sims/ *then alias them in scripts/runners/control_sim
 
 # One-Off Analysis
 - *All* analysis scripts that generate output should be implemented inside docs/analysis

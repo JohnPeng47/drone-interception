@@ -7,23 +7,26 @@ from types import SimpleNamespace
 import numpy as np
 
 from control_sims.logging import LoggingConfig, SnapshotLogger
-from control_sims.sim_runner import BatchSimEngineRunnerState, BatchSimEngineStep, CtbrCommandBatch
+from backends.csim.bindings.types import SimSnapshots
+from backends.csim.runner import CtbrCommandBatch, SimRunnerState, SimRunnerStep
 
 
 def test_snapshot_logger_writes_batch_snapshot_rows(tmp_path):
-    snapshot = {
-        "pursuer": np.array([[
+    snapshot = SimSnapshots.from_arrays(
+        pursuer=np.array([[
             1.0, 2.0, 3.0,
             4.0, 5.0, 6.0,
             0.1, 0.2, 0.3, 0.9,
             0.4, 0.5, 0.6,
             100.0, 101.0, 102.0, 103.0,
         ]], dtype=np.float32),
-        "target": np.array([[7.0, 8.0, 9.0, 10.0, 11.0, 12.0]], dtype=np.float32),
-        "metrics": np.array([[13.0, 12.5, 1.0, 0.75, 0.0]], dtype=np.float32),
-        "camera": np.array([[1.0, 0.25, -0.5]], dtype=np.float32),
-    }
-    state = BatchSimEngineRunnerState(
+        target=np.array([[7.0, 8.0, 9.0, 10.0, 11.0, 12.0]], dtype=np.float32),
+        metrics=np.array([[13.0, 12.5, 1.0, 0.75, 0.0]], dtype=np.float32),
+        camera=np.array([[1.0, 0.25, -0.5]], dtype=np.float32),
+        max_rate_rps=np.array([1.0], dtype=np.float32),
+        max_rpm=np.array([1000.0], dtype=np.float32),
+    )
+    state = SimRunnerState(
         snapshot=snapshot,
         active=np.array([True]),
         workload_indices=np.array([4]),
@@ -31,7 +34,7 @@ def test_snapshot_logger_writes_batch_snapshot_rows(tmp_path):
         elapsed_s=np.array([0.5], dtype=np.float32),
         steps=np.array([10], dtype=np.int32),
     )
-    step = BatchSimEngineStep(
+    step = SimRunnerStep(
         state=state,
         completed=(),
         commands=CtbrCommandBatch(
@@ -57,16 +60,20 @@ def test_snapshot_logger_writes_batch_snapshot_rows(tmp_path):
 
     config = json.loads((tmp_path / "snapshots" / "logging_config.json").read_text(encoding="utf-8"))
     assert config["every_n_ticks"] == 5
+    assert config["sim"] == "unit"
+    assert config["output_dir"] == str(tmp_path / "snapshots")
 
 
 def test_snapshot_logger_respects_tick_rate(tmp_path):
-    snapshot = {
-        "pursuer": np.zeros((1, 17), dtype=np.float32),
-        "target": np.zeros((1, 6), dtype=np.float32),
-        "metrics": np.zeros((1, 5), dtype=np.float32),
-        "camera": np.zeros((1, 3), dtype=np.float32),
-    }
-    state = BatchSimEngineRunnerState(
+    snapshot = SimSnapshots.from_arrays(
+        pursuer=np.zeros((1, 17), dtype=np.float32),
+        target=np.zeros((1, 6), dtype=np.float32),
+        metrics=np.zeros((1, 5), dtype=np.float32),
+        camera=np.zeros((1, 3), dtype=np.float32),
+        max_rate_rps=np.array([1.0], dtype=np.float32),
+        max_rpm=np.array([1000.0], dtype=np.float32),
+    )
+    state = SimRunnerState(
         snapshot=snapshot,
         active=np.array([True]),
         workload_indices=np.array([0]),
@@ -75,7 +82,7 @@ def test_snapshot_logger_respects_tick_rate(tmp_path):
         steps=np.array([9], dtype=np.int32),
     )
     logger = SnapshotLogger("unit", LoggingConfig(output_dir=tmp_path / "snapshots", every_n_ticks=10))
-    logger.log_snapshots(BatchSimEngineStep(state=state, completed=()))
+    logger.log_snapshots(SimRunnerStep(state=state, completed=()))
     logger.close()
 
     with (tmp_path / "snapshots" / "unit.csv").open(newline="", encoding="utf-8") as handle:

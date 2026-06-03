@@ -9,7 +9,8 @@ from typing import Any
 
 import numpy as np
 
-from .sim_runner import BatchSimEngineStep, CtbrCommandBatch
+from backends.csim.bindings.types import CameraObservation, InterceptMetrics, PursuerState, TargetState
+from backends.csim.runner import CtbrCommandBatch, MotorSpeedCommandBatch, SimRunnerStep
 
 
 @dataclass(frozen=True)
@@ -60,7 +61,7 @@ class SnapshotLogger:
             return
         self.output_dir.mkdir(parents=True, exist_ok=True)
         (self.output_dir / "logging_config.json").write_text(
-            json.dumps(_config_to_json(self.config), indent=2, sort_keys=True) + "\n",
+            json.dumps(snapshot_logging_metadata(self.sim_name, self.config), indent=2, sort_keys=True) + "\n",
             encoding="utf-8",
         )
         self._handle = self.path.open("w", newline="", encoding="utf-8")
@@ -74,18 +75,18 @@ class SnapshotLogger:
         self._handle = None
         self._writer = None
 
-    def log_snapshots(self, step: BatchSimEngineStep) -> None:
+    def log_snapshots(self, step: SimRunnerStep) -> None:
         self.open()
         assert self._writer is not None
-        rows = list(_rows_from_batch_step(self.sim_name, self.config, step))
+        rows = snapshot_rows_from_step(self.sim_name, self.config, step)
         if rows:
             self._writer.writerows(rows)
 
 
-def _rows_from_batch_step(
+def snapshot_rows_from_step(
     sim_name: str,
     config: LoggingConfig,
-    step: BatchSimEngineStep,
+    step: SimRunnerStep,
 ) -> list[dict[str, Any]]:
     state = step.state
     snapshot = state.snapshot
@@ -105,97 +106,134 @@ def _rows_from_batch_step(
             "tick": tick,
             "t_s": float(state.elapsed_s[slot_i]),
         }
+        slot_snapshot = snapshot[slot_i]
         if config.log_pursuer_state:
-            _add_pursuer(row, np.asarray(snapshot["pursuer"])[slot_i])
+            _add_pursuer(row, slot_snapshot.pursuer)
         if config.log_motor_state:
-            _add_motor_state(row, np.asarray(snapshot["pursuer"])[slot_i])
-        if config.log_target_state and "target" in snapshot:
-            _add_target(row, np.asarray(snapshot["target"])[slot_i])
-        if config.log_metrics and "metrics" in snapshot:
-            _add_metrics(row, np.asarray(snapshot["metrics"])[slot_i])
-        if config.log_camera and "camera" in snapshot:
-            _add_camera(row, np.asarray(snapshot["camera"])[slot_i])
+            _add_motor_state(row, slot_snapshot.pursuer)
+        if config.log_target_state:
+            _add_target(row, slot_snapshot.target)
+        if config.log_metrics:
+            _add_metrics(row, slot_snapshot.metrics)
+        if config.log_camera:
+            _add_camera(row, slot_snapshot.camera)
         if config.log_commands and commands is not None:
-            thrust_n, body_rates_b = commands
-            row.update({
-                "command_thrust_n": float(thrust_n[slot_i]),
-                "command_body_rate_x_rad_s": float(body_rates_b[slot_i, 0]),
-                "command_body_rate_y_rad_s": float(body_rates_b[slot_i, 1]),
-                "command_body_rate_z_rad_s": float(body_rates_b[slot_i, 2]),
-            })
+            if commands["kind"] == "ctbr":
+                thrust_n = commands["thrust_n"]
+                body_rates_b = commands["body_rates_b"]
+                row.update({
+                    "command_thrust_n": float(thrust_n[slot_i]),
+                    "command_body_rate_x_rad_s": float(body_rates_b[slot_i, 0]),
+                    "command_body_rate_y_rad_s": float(body_rates_b[slot_i, 1]),
+                    "command_body_rate_z_rad_s": float(body_rates_b[slot_i, 2]),
+                })
+            else:
+                motor_speeds_rpm = commands["motor_speeds_rpm"]
+                row.update({
+                    "command_motor_0_rpm": float(motor_speeds_rpm[slot_i, 0]),
+                    "command_motor_1_rpm": float(motor_speeds_rpm[slot_i, 1]),
+                    "command_motor_2_rpm": float(motor_speeds_rpm[slot_i, 2]),
+                    "command_motor_3_rpm": float(motor_speeds_rpm[slot_i, 3]),
+                })
         rows.append(row)
     return rows
 
 
-def _commands_to_arrays(commands: CtbrCommandBatch | Mapping[str, Any] | None) -> tuple[np.ndarray, np.ndarray] | None:
+def snapshot_fieldnames(config: LoggingConfig) -> list[str]:
+    return _fieldnames(config)
+
+
+def snapshot_logging_metadata(sim_name: str, config: LoggingConfig) -> dict[str, Any]:
+    data = asdict(config)
+    data["output_dir"] = str(config.output_dir)
+    data["sim"] = str(sim_name)
+    return data
+
+
+def _commands_to_arrays(commands: CtbrCommandBatch | MotorSpeedCommandBatch | Mapping[str, Any] | None) -> dict[str, Any] | None:
     if commands is None:
         return None
     if isinstance(commands, CtbrCommandBatch):
         thrust_n = commands.thrust_n
         body_rates_b = commands.body_rates_b
+        return {
+            "kind": "ctbr",
+            "thrust_n": np.asarray(thrust_n, dtype=float).reshape(-1),
+            "body_rates_b": np.asarray(body_rates_b, dtype=float).reshape(-1, 3),
+        }
+    if isinstance(commands, MotorSpeedCommandBatch):
+        return {
+            "kind": "motor_speeds",
+            "motor_speeds_rpm": np.asarray(commands.motor_speeds_rpm, dtype=float).reshape(-1, 4),
+        }
+    if "motor_speeds_rpm" in commands:
+        return {
+            "kind": "motor_speeds",
+            "motor_speeds_rpm": np.asarray(commands["motor_speeds_rpm"], dtype=float).reshape(-1, 4),
+        }
     else:
         thrust_n = commands["thrust_n"]
         body_rates_b = commands["body_rates_b"]
-    return (
-        np.asarray(thrust_n, dtype=float).reshape(-1),
-        np.asarray(body_rates_b, dtype=float).reshape(-1, 3),
-    )
+        return {
+            "kind": "ctbr",
+            "thrust_n": np.asarray(thrust_n, dtype=float).reshape(-1),
+            "body_rates_b": np.asarray(body_rates_b, dtype=float).reshape(-1, 3),
+        }
 
 
-def _add_pursuer(row: dict[str, Any], pursuer: np.ndarray) -> None:
+def _add_pursuer(row: dict[str, Any], pursuer: PursuerState) -> None:
     row.update({
-        "pursuer_x_w_m": float(pursuer[0]),
-        "pursuer_y_w_m": float(pursuer[1]),
-        "pursuer_z_w_m": float(pursuer[2]),
-        "pursuer_vx_w_mps": float(pursuer[3]),
-        "pursuer_vy_w_mps": float(pursuer[4]),
-        "pursuer_vz_w_mps": float(pursuer[5]),
-        "pursuer_qx": float(pursuer[6]),
-        "pursuer_qy": float(pursuer[7]),
-        "pursuer_qz": float(pursuer[8]),
-        "pursuer_qw": float(pursuer[9]),
-        "pursuer_p_b_rad_s": float(pursuer[10]),
-        "pursuer_q_b_rad_s": float(pursuer[11]),
-        "pursuer_r_b_rad_s": float(pursuer[12]),
+        "pursuer_x_w_m": float(pursuer.position_w[0]),
+        "pursuer_y_w_m": float(pursuer.position_w[1]),
+        "pursuer_z_w_m": float(pursuer.position_w[2]),
+        "pursuer_vx_w_mps": float(pursuer.velocity_w[0]),
+        "pursuer_vy_w_mps": float(pursuer.velocity_w[1]),
+        "pursuer_vz_w_mps": float(pursuer.velocity_w[2]),
+        "pursuer_qx": float(pursuer.quat_xyzw[0]),
+        "pursuer_qy": float(pursuer.quat_xyzw[1]),
+        "pursuer_qz": float(pursuer.quat_xyzw[2]),
+        "pursuer_qw": float(pursuer.quat_xyzw[3]),
+        "pursuer_p_b_rad_s": float(pursuer.body_rates_b[0]),
+        "pursuer_q_b_rad_s": float(pursuer.body_rates_b[1]),
+        "pursuer_r_b_rad_s": float(pursuer.body_rates_b[2]),
     })
 
 
-def _add_motor_state(row: dict[str, Any], pursuer: np.ndarray) -> None:
-    if len(pursuer) >= 17:
-        row.update({
-            "motor_0_rpm": float(pursuer[13]),
-            "motor_1_rpm": float(pursuer[14]),
-            "motor_2_rpm": float(pursuer[15]),
-            "motor_3_rpm": float(pursuer[16]),
-        })
-
-
-def _add_target(row: dict[str, Any], target: np.ndarray) -> None:
+def _add_motor_state(row: dict[str, Any], pursuer: PursuerState) -> None:
     row.update({
-        "target_x_w_m": float(target[0]),
-        "target_y_w_m": float(target[1]),
-        "target_z_w_m": float(target[2]),
-        "target_vx_w_mps": float(target[3]),
-        "target_vy_w_mps": float(target[4]),
-        "target_vz_w_mps": float(target[5]),
+        "motor_0_rpm": float(pursuer.rotor_speeds[0]),
+        "motor_1_rpm": float(pursuer.rotor_speeds[1]),
+        "motor_2_rpm": float(pursuer.rotor_speeds[2]),
+        "motor_3_rpm": float(pursuer.rotor_speeds[3]),
     })
 
 
-def _add_metrics(row: dict[str, Any], metrics: np.ndarray) -> None:
+def _add_target(row: dict[str, Any], target: TargetState) -> None:
     row.update({
-        "distance_m": float(metrics[0]),
-        "min_distance_m": float(metrics[1]),
-        "intercepted": bool(metrics[2] > 0.5),
-        "intercept_time_s": float(metrics[3]),
-        "target_index": int(metrics[4]),
+        "target_x_w_m": float(target.position_w[0]),
+        "target_y_w_m": float(target.position_w[1]),
+        "target_z_w_m": float(target.position_w[2]),
+        "target_vx_w_mps": float(target.velocity_w[0]),
+        "target_vy_w_mps": float(target.velocity_w[1]),
+        "target_vz_w_mps": float(target.velocity_w[2]),
     })
 
 
-def _add_camera(row: dict[str, Any], camera: np.ndarray) -> None:
+def _add_metrics(row: dict[str, Any], metrics: InterceptMetrics) -> None:
     row.update({
-        "camera_detected": bool(camera[0] > 0.5),
-        "camera_u_norm": float(camera[1]),
-        "camera_v_norm": float(camera[2]),
+        "distance_m": float(metrics.distance_m),
+        "min_distance_m": float(metrics.min_distance_m),
+        "intercepted": bool(metrics.intercepted),
+        "intercept_time_s": float(metrics.intercept_time_s),
+        "target_index": int(metrics.target_index),
+    })
+
+
+def _add_camera(row: dict[str, Any], camera: CameraObservation) -> None:
+    row.update({
+        "camera_detected": bool(camera.detected),
+        "camera_u_norm": float(camera.uv_norm[0]),
+        "camera_v_norm": float(camera.uv_norm[1]),
     })
 
 
@@ -238,11 +276,9 @@ def _fieldnames(config: LoggingConfig) -> list[str]:
             "command_body_rate_x_rad_s",
             "command_body_rate_y_rad_s",
             "command_body_rate_z_rad_s",
+            "command_motor_0_rpm",
+            "command_motor_1_rpm",
+            "command_motor_2_rpm",
+            "command_motor_3_rpm",
         ])
     return fields
-
-
-def _config_to_json(config: LoggingConfig) -> dict[str, Any]:
-    data = asdict(config)
-    data["output_dir"] = str(config.output_dir)
-    return data

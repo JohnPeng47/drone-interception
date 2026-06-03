@@ -35,11 +35,9 @@ details.
 +----------------------------------------------------------------------------+
 | CONSUMERS                                                                   |
 |                                                                            |
-|  control_sims/common.py                                                     |
-|  - CLI loads .csimin files for beihang_minimal and beihang_paper            |
-|                                                                            |
-|  control_sims/sim_runner.py                                                 |
-|  - BatchSimEngineRunner accepts typed SimInstance workloads                 |
+|  scripts/runners/control_sim                                                |
+|  - CLI loads .csimin files for beihang_minimal, beihang_paper, and policies |
+|  - SimRunner accepts typed SimInstance workloads                           |
 |  - fixed-width slots are reset/refilled from those instances                |
 |                                                                            |
 |  ai/rl/simengine_*                                                          |
@@ -94,8 +92,8 @@ Important C-side entities:
 - `sim_engine_batch_step_motor_speeds_dt`: advance an array of independent
   engines in fixed-width batch mode.
 - `sim_engine_get_snapshot`: export a full snapshot for Python callers.
-- `sim_engine_batch_snapshot_first_target`: export compact batched arrays for
-  RL/control loops.
+- `sim_engine_batch_get_snapshots`: export compact batched snapshot buffers for
+  the Python binding layer.
 
 Rule: Python code outside `backends/csim/bindings` must not call `sim_engine_*`
 directly. The binding layer is the only place where C structs, ctypes
@@ -107,8 +105,8 @@ conversions, and direct C API calls belong.
 
 Typed inputs come from `backends/csim/bindings/types`:
 
-- `SimInstance`: seed, pursuer initial state, target initial states, optional
-  `SimConfig`, raw config, and metadata.
+- `SimInstance`: seed, pursuer initial state, target initial states, and typed
+  `SimConfig`.
 - `SimConfig`: pursuer parameters, sim options, targets, cameras, intercept
   radius, command limits, noise, and rendering settings.
 - `PursuerInitialState`: world pose/velocity, body rates, optional rotor speeds,
@@ -124,7 +122,9 @@ Binding responsibilities:
 - Normalize state shapes and quaternions before crossing into C.
 - Pair `TargetConfig` records with matching `TargetInitialState` records.
 - Configure cameras and optional rendering from `SimConfig`.
-- Convert C snapshots back into Python dictionaries or compact numpy arrays.
+- Convert C snapshots back into typed `SimSnapshot` / `SimSnapshots` objects.
+- Keep vectorized batch data behind typed `SimSnapshotArrays` for high-throughput
+  RL/control loops.
 - Enforce batch constraints such as homogeneous `backend_dt` and
   `action_substeps`.
 
@@ -193,7 +193,7 @@ Table boundary facts:
 - Header magic is `CSIMINST`.
 - The format has an explicit version.
 - Records contain typed `SimInstance` content, including nested `SimConfig`,
-  target config, camera config, options, noise, and metadata.
+  target config, camera config, options, and noise.
 - Readers validate magic, version, payload length, offsets, counts, and trailing
   bytes.
 - Generated files must be written under
@@ -208,15 +208,13 @@ settings, parameter specs, labels, record paths, and plot paths when available.
 ### Control Sim CLI Flow
 
 Runnable control-sim CLI entry points live under `scripts/runners/control_sim`.
-They call `control_sims.common.run_cli(...)`.
+Each script aliases its concrete `SimControlPolicy` and delegates only shared
+artifact mechanics to `control_sims.runner`.
 
 The control-sim CLI boundary is:
 
 ```text
 scripts/runners/control_sim/*
-        |
-        v
-control_sims.common.run_cli
         |
         | --scenario-table required
         v
@@ -225,17 +223,19 @@ read_sim_instances(.csimin)
         v
 typed SimInstance tasks
         |
-        +--> beihang_minimal adapter -> minimal sim config -> run_trial
+        +--> beihang_minimal SimControlPolicy -> SimRunner -> C SimEngine
         |
-        +--> beihang_paper adapter   -> paper raw config   -> Drake Simulator
+        +--> beihang_paper   SimControlPolicy -> SimRunner -> C SimEngine
+        |
+        +--> neural policy   SimControlPolicy -> SimRunner -> C SimEngine
 ```
 
 `--scenario-table` is required. Control sims consume generated `.csimin` files;
 they do not sample procedural generators directly.
 
-### `control_sims/sim_runner`
+### `backends/csim/runner`
 
-`BatchSimEngineRunner` is the batch-native control runner for typed
+`SimRunner` is the batch-native control runner for typed
 `SimInstance` workloads.
 
 Boundary flow:
@@ -244,7 +244,7 @@ Boundary flow:
 tuple[SimInstance, ...]
         |
         v
-BatchSimEngineRunner.reset()
+SimRunner.reset()
         |
         | validates SimInstance.config exists
         | validates homogeneous dt/action_substeps
@@ -273,9 +273,10 @@ Important runner concepts:
 - Commands are physical CTBR commands: thrust in newtons and body rates in
   radians per second.
 - Completion is based on interception metrics, out-of-bounds/nonfinite failure,
-  max episode steps, or `SimConfig.options.duration_s`.
-- `CompletedSim` carries the original instance, seed, terminal snapshot,
-  visible fraction, control effort, and terminal reason.
+  or `SimConfig.options.duration_s`.
+- `CompletedSim` carries the original instance, seed, terminal snapshot, and
+  terminal reason. Derived metrics such as visible fraction and control effort
+  are computed by consumers from `SimRunnerStep` history when needed.
 
 ### RL Consumer Flow
 
@@ -372,8 +373,8 @@ Use these nodes for a high-level component diagram:
 - `backends/csim/generator/instance_store`: `.csimin` persistence.
 - `scripts/generators/sim_instances`: generated sample table storage.
 - `SimGenerator`: disk-backed generated sample reader.
-- `control_sims/common`: control-sim CLI loader and adapters.
-- `control_sims/sim_runner`: batched control runner over typed instances.
+- `scripts/runners/control_sim`: control-sim CLI loaders, policy aliases, and
+  run artifact writers over typed instances.
 - `ai/rl/simengine_env/ScenarioTable`: RL table reader.
 - `ai/rl/simengine_batch/BatchSimGenerator`: RL scenario index sampler.
 - `backends/csim/bindings/puffer_c`: ctypes binding layer.
@@ -392,17 +393,16 @@ Use these edges:
 - `instance_store` -> `scripts/generators/sim_instances`: stores generated
   sample tables.
 - `scripts/generators/sim_instances` -> `SimGenerator`: disk-backed sampling.
-- `scripts/generators/sim_instances` -> `control_sims/common`: CLI scenario
-  table input.
+- `scripts/generators/sim_instances` -> `scripts/runners/control_sim`: CLI
+  scenario table input.
 - `scripts/generators/sim_instances` -> `ScenarioTable`: RL scenario input.
-- `control_sims/sim_runner` -> `BatchPufferSimEngineBackend`: reset/step typed
-  instances in C slots.
+- `scripts/runners/control_sim` -> `backends/csim/runner`: run typed
+  instances through `SimRunner`.
 - `ScenarioTable` -> `BatchSimGenerator`: table index sampling.
 - `BatchSimGenerator` -> `BatchSimRunner`: batch resets with typed instances.
 - `PufferSimEngineBackend` -> `backends/csim/sim_engine`: single-engine C API
   calls.
 - `BatchPufferSimEngineBackend` -> `backends/csim/sim_engine`: batched C API
   calls.
-- `control_sims/common` -> `.runs`: writes trials, summaries, and snapshots.
-- `control_sims/sim_runner` -> `.runs`: writes snapshot rows through logging
-  callbacks when configured.
+- `scripts/runners/control_sim` -> `.runs`: writes trials, summaries, and
+  snapshots.

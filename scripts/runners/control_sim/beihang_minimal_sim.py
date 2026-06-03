@@ -1,10 +1,21 @@
 from __future__ import annotations
 
-from control_sims.common import run_cli
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
+
+from control_sims.beihang_minimal_sim.policy import BeihangMinimalSimControlPolicy
+
+from control_sims.runner import run_policy_cli
 
 
 def main() -> int:
-    return run_cli("beihang_minimal", "Run beihang_minimal_sim scenarios.")
+    return run_policy_cli(
+        sim_name="beihang_minimal",
+        description="Run beihang_minimal_sim scenarios.",
+        policy_factory=BeihangMinimalSimControlPolicy,
+    )
 
 
 if __name__ == "__main__":
