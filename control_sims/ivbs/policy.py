@@ -8,7 +8,7 @@ from backends.csim.bindings.types import SimInstance
 from backends.csim.runner import CtbrCommandBatch, SimControlPolicy, SimRunnerState
 from control_sims.beihang_paper_sim.controller.control_math import DEFAULT_GAINS
 
-from .control_law import beihang_command_from_estimate, cautious_bearing_command
+from .control_law import bearing_error_rad, beihang_command_from_estimate, cautious_bearing_command
 from .observer import VisualObserverConfig, VisualRelativeStateObserver
 
 
@@ -19,6 +19,7 @@ class IVBSControlPolicy(SimControlPolicy):
         self,
         gains: Mapping[str, float] | None = None,
         observer_config: VisualObserverConfig | Mapping[str, float] | None = None,
+        record_telemetry: bool = False,
     ):
         self._gains = {
             **DEFAULT_GAINS,
@@ -27,9 +28,12 @@ class IVBSControlPolicy(SimControlPolicy):
             **dict(gains or {}),
         }
         self._observer = VisualRelativeStateObserver(observer_config)
+        self._record_telemetry = bool(record_telemetry)
+        self.telemetry_rows: list[dict[str, float | int | str | bool]] = []
 
     def reset(self, state: SimRunnerState) -> None:
         self._observer.reset()
+        self.telemetry_rows.clear()
 
     def on_slots_started(
         self,
@@ -55,9 +59,55 @@ class IVBSControlPolicy(SimControlPolicy):
                 t_s=float(state.elapsed_s[slot]),
             )
             if estimate.metric_confident:
+                mode = "metric"
                 command = beihang_command_from_estimate(instance, snapshot, estimate, self._gains)
             else:
+                mode = "bearing_fallback" if estimate.valid else "hover"
                 command = cautious_bearing_command(instance, snapshot, estimate, self._gains)
             thrust_n[slot] = np.float32(command[0])
             body_rates_b[slot] = np.asarray(command[1], dtype=np.float32).reshape(3)
+            if self._record_telemetry:
+                self._append_telemetry_row(
+                    state,
+                    slot,
+                    instance,
+                    mode,
+                    estimate,
+                    float(command[0]),
+                    np.asarray(command[1], dtype=float).reshape(3),
+                )
         return CtbrCommandBatch(thrust_n=thrust_n, body_rates_b=body_rates_b)
+
+    def _append_telemetry_row(
+        self,
+        state: SimRunnerState,
+        slot: int,
+        instance: SimInstance,
+        mode: str,
+        estimate,
+        thrust_n: float,
+        body_rates_b: np.ndarray,
+    ) -> None:
+        snapshot = state.snapshot[slot]
+        self.telemetry_rows.append(
+            {
+                "seed": int(instance.seed),
+                "slot": int(slot),
+                "workload_index": int(state.workload_indices[slot]),
+                "tick": int(state.steps[slot]),
+                "t_s": float(state.elapsed_s[slot]),
+                "mode": str(mode),
+                "detected": bool(snapshot.camera.detected),
+                "valid": bool(estimate.valid),
+                "metric_confident": bool(estimate.metric_confident),
+                "stale_s": float(estimate.stale_s),
+                "detection_count": int(estimate.detection_count),
+                "estimated_range_m": float(estimate.estimated_range_m),
+                "range_std_m": float(estimate.range_std_m),
+                "position_std_m": float(estimate.position_std_m),
+                "velocity_std_mps": float(estimate.velocity_std_m),
+                "bearing_error_rad": bearing_error_rad(instance, snapshot, estimate),
+                "thrust_n": float(thrust_n),
+                "body_rate_norm": float(np.linalg.norm(body_rates_b)),
+            }
+        )

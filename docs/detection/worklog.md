@@ -1,5 +1,26 @@
 # Drone Detection Worklog
 
+## 2026-06-04 - IVBS Apparent-Size Range Cue Planning
+
+- Identified detector-derived apparent target size as the most direct way to
+  improve IVBS range observability without using simulator truth.
+- Added an IVBS improvement milestone to expose apparent size as an image
+  measurement derived from rendered pixels or detector output, not from
+  `SimEngine` truth fields such as `range_m` or `target_pos_c`.
+- Planned EKF fusion of apparent size using the known target radius and camera
+  focal length as a noisy scalar range cue.
+
+## 2026-06-04 - Traditional CV Constraint For IVBS Detection
+
+- Clarified that IVBS image-based detection/range-cue work should not require
+  SimEngine changes.
+- Updated the IVBS improvement plan to use deterministic traditional CV
+  techniques outside SimEngine, such as frame differencing, segmentation,
+  contour extraction, connected components, morphology, blob/ellipse fitting,
+  and temporal filtering.
+- The planned apparent-size measurement must come from pixels or an existing
+  image stream, not simulator truth fields.
+
 ## 2026-05-23 - Liftoff Drone Variants And Detector Probe
 
 - Added five Liftoff-derived Vortex-frame target drone variants:

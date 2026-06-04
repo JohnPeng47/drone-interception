@@ -11,6 +11,21 @@ from control_sims.beihang_paper_sim.policy import _hover_command, _tilt_rotation
 from .observer import RelativeStateEstimate
 
 
+def bearing_error_rad(instance: SimInstance, snapshot: SimSnapshot, estimate: RelativeStateEstimate) -> float:
+    if instance.config is None or not instance.config.cameras or not estimate.valid:
+        return float("nan")
+    r_wb = quat_xyzw_to_rot(snapshot.pursuer.quat_xyzw)
+    camera = instance.config.cameras[0]
+    r_b2c = np.asarray(camera.body_to_camera, dtype=float).reshape(3, 3)
+    n_td_body = r_b2c.T @ np.array([1.0, 0.0, 0.0], dtype=float)
+    n_td = r_wb @ n_td_body
+    n_t = np.asarray(estimate.bearing_w, dtype=float).reshape(3)
+    if not np.all(np.isfinite(n_t)):
+        return float("nan")
+    n_t = n_t / max(float(np.linalg.norm(n_t)), 1.0e-12)
+    return float(np.arccos(np.clip(float(n_td @ n_t), -1.0, 1.0)))
+
+
 def beihang_command_from_estimate(
     instance: SimInstance,
     snapshot: SimSnapshot,

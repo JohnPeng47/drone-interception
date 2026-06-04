@@ -33,6 +33,11 @@ class RelativeStateEstimate:
     stale_s: float
     bearing_w: np.ndarray
     metric_confident: bool
+    detection_count: int
+    estimated_range_m: float
+    range_std_m: float
+    position_std_m: float
+    velocity_std_m: float
 
 
 class VisualRelativeStateObserver:
@@ -134,6 +139,11 @@ class _SlotObserver:
                 stale_s=float("inf"),
                 bearing_w=self.last_bearing_w.copy(),
                 metric_confident=False,
+                detection_count=0,
+                estimated_range_m=float("nan"),
+                range_std_m=float("inf"),
+                position_std_m=float("inf"),
+                velocity_std_m=float("inf"),
             )
         pursuer_p_w = np.asarray(snapshot.pursuer.position_w, dtype=float).reshape(3)
         pursuer_v_w = np.asarray(snapshot.pursuer.velocity_w, dtype=float).reshape(3)
@@ -167,6 +177,11 @@ class _SlotObserver:
             stale_s=stale_s,
             bearing_w=bearing_w,
             metric_confident=metric_confident,
+            detection_count=int(self.detection_count),
+            estimated_range_m=float(np.linalg.norm(pursuer_p_w - target_p_w)),
+            range_std_m=range_std,
+            position_std_m=pos_std,
+            velocity_std_m=vel_std,
         )
 
     def _bearing_from_snapshot(self, snapshot: SimSnapshot) -> np.ndarray | None:
