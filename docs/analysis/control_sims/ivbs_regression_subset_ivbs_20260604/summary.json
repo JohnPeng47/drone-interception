@@ -1,0 +1,28 @@
+{
+  "dt": 0.004999999888241291,
+  "duration_s": 3.0,
+  "elapsed_wall_s": 38.65011016599601,
+  "max_envs": 8,
+  "num_scenarios": 23,
+  "offset": 0,
+  "run_dir": "docs/analysis/control_sims/ivbs_regression_subset_ivbs_20260604",
+  "sim": "ivbs",
+  "snapshot_log": {
+    "enabled": false,
+    "every_n_ticks": 100,
+    "path": null
+  },
+  "source": "scripts/generators/sim_instances/ivbs_regression_20260604/sobol_samples.csimin",
+  "summary": {
+    "catch_fraction": 0.34782608695652173,
+    "control_effort_mean": 6.714454668650397,
+    "errors": 0,
+    "final_distance_p50_m": 3.4882194995880127,
+    "min_distance_p50_m": 0.6848912239074707,
+    "min_distance_p90_m": 4.080754995346071,
+    "n": 23,
+    "valid": 23,
+    "visible_fraction_mean": 0.09558135801782744
+  },
+  "workers": 1
+}

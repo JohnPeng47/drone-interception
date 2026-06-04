@@ -1,0 +1,27 @@
+{
+  "generator": {
+    "name": "IVBSRegressionSubsetAnalysis",
+    "strategy": "selected_from_existing_table"
+  },
+  "kind": "sim_instance_table",
+  "records": {
+    "path": "docs/analysis/control_sims/ivbs_regression_set_20260604/selected_regression_rows.csv"
+  },
+  "samples": {
+    "count": 23,
+    "path": "scripts/generators/sim_instances/ivbs_regression_20260604/sobol_samples.csimin"
+  },
+  "schema_version": 1,
+  "selection_classes": {
+    "beihang_only": 4,
+    "high_visibility_miss": 5,
+    "ivbs_only": 4,
+    "low_visibility_miss": 6,
+    "shared_catch": 4
+  },
+  "source": {
+    "beihang_trials": "docs/analysis/control_sims/beihang_paper_512_20260604/trials.csv",
+    "ivbs_trials": "docs/analysis/control_sims/ivbs_512_m4_default_20260604/trials.csv",
+    "scenario_table": "scripts/generators/sim_instances/sobol_samples_512.csimin"
+  }
+}

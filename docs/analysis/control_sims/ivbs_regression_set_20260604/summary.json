@@ -1,0 +1,22 @@
+{
+  "beihang_caught": 19,
+  "beihang_only": 9,
+  "beihang_trials": "docs/analysis/control_sims/beihang_paper_512_20260604/trials.csv",
+  "ivbs_caught": 24,
+  "ivbs_only": 14,
+  "ivbs_trials": "docs/analysis/control_sims/ivbs_512_m4_default_20260604/trials.csv",
+  "joined_scenarios": "docs/analysis/control_sims/ivbs_regression_set_20260604/joined_scenarios.csv",
+  "n": 512,
+  "output_table": "scripts/generators/sim_instances/ivbs_regression_20260604/sobol_samples.csimin",
+  "scenario_table": "scripts/generators/sim_instances/sobol_samples_512.csimin",
+  "selected_counts": {
+    "beihang_only": 4,
+    "high_visibility_miss": 5,
+    "ivbs_only": 4,
+    "low_visibility_miss": 6,
+    "shared_catch": 4
+  },
+  "selected_n": 23,
+  "selected_rows": "docs/analysis/control_sims/ivbs_regression_set_20260604/selected_regression_rows.csv",
+  "slice_summary": "docs/analysis/control_sims/ivbs_regression_set_20260604/slice_summary.csv"
+}
