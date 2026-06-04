@@ -55,6 +55,34 @@ def test_ivbs_command_does_not_depend_on_forbidden_truth_after_step():
     assert policy_a.telemetry_rows[-1] == policy_b.telemetry_rows[-1]
 
 
+def test_ivbs_metric_command_does_not_depend_on_forbidden_truth():
+    instance = read_six_robust_intercept_samples()[0]
+    runner = SimRunner(max_envs=1)
+    state = runner.reset([instance])
+    altered_instance, altered_state = _alter_forbidden_truth(instance, state)
+    observer_config = {
+        "min_detections_for_metric": 0,
+        "metric_range_std_threshold_m": 99.0,
+        "metric_position_std_threshold_m": 99.0,
+        "metric_velocity_std_threshold_mps": 99.0,
+    }
+    policy_a = IVBSControlPolicy(observer_config=observer_config, record_telemetry=True)
+    policy_b = IVBSControlPolicy(observer_config=observer_config, record_telemetry=True)
+    policy_a.reset(state)
+    policy_b.reset(altered_state)
+    policy_a.on_slots_started(np.array([0], dtype=np.int64), (instance,), state)
+    policy_b.on_slots_started(np.array([0], dtype=np.int64), (altered_instance,), altered_state)
+
+    command_a = policy_a.command(state)
+    command_b = policy_b.command(altered_state)
+
+    assert policy_a.telemetry_rows[-1]["mode"] == "metric"
+    assert policy_b.telemetry_rows[-1]["mode"] == "metric"
+    np.testing.assert_allclose(command_a.thrust_n, command_b.thrust_n, atol=0.0)
+    np.testing.assert_allclose(command_a.body_rates_b, command_b.body_rates_b, atol=0.0)
+    assert policy_a.telemetry_rows[-1] == policy_b.telemetry_rows[-1]
+
+
 def test_ivbs_controller_runs_generated_scenarios_without_errors():
     instances = read_six_robust_intercept_samples()[:2]
     result = _run_instances(

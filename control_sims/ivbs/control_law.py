@@ -131,7 +131,7 @@ def cautious_bearing_command(
     f_max = float(gains.get("f_max", DEFAULT_GAINS["f_max"]))
     if instance.config.max_thrust_n > 0.0:
         f_max = min(f_max, float(instance.config.max_thrust_n))
-    closing_accel = float(gains.get("cautious_closing_accel_mps2", 4.0))
+    closing_accel = float(gains.get("cautious_closing_accel_mps2", 3.0))
     damping = float(gains.get("cautious_velocity_damping", 0.25))
     pursuer_v_w = np.asarray(snapshot.pursuer.velocity_w, dtype=float).reshape(3)
     a_d = closing_accel * n_t - damping * pursuer_v_w

@@ -23,7 +23,8 @@ class IVBSControlPolicy(SimControlPolicy):
     ):
         self._gains = {
             **DEFAULT_GAINS,
-            "cautious_closing_accel_mps2": 4.0,
+            "k_b": 0.65,
+            "cautious_closing_accel_mps2": 3.0,
             "cautious_velocity_damping": 0.25,
             **dict(gains or {}),
         }

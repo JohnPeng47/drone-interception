@@ -17,7 +17,7 @@ class VisualObserverConfig:
     stale_timeout_s: float = 3.0
     metric_position_std_threshold_m: float = 3.0
     metric_velocity_std_threshold_mps: float = 3.0
-    metric_range_std_threshold_m: float = 1.5
+    metric_range_std_threshold_m: float = 2.0
     process_position_noise_mps: float = 0.15
     process_velocity_noise_mps2: float = 0.4
     image_noise_norm: float = 1.0e-3
