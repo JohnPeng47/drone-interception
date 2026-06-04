@@ -1,5 +1,25 @@
 # Drone Detection Worklog
 
+## 2026-06-04 - Traditional CV Blob Detector For IVBS
+
+- Added a deterministic `control_sims/ivbs` image measurement path based on
+  traditional CV, not SimEngine truth.
+- Implemented dark-blob segmentation, connected-component selection, centroid
+  extraction, equivalent-area apparent radius, and confidence scoring.
+- Wired the IVBS observer to optionally fuse detector centroid and apparent
+  size as a noisy range cue using known target radius and camera focal length.
+- Added tests covering blob detection and proving that apparent-size
+  measurements can affect IVBS commands while forbidden target truth mutations
+  do not.
+- Tightened the image-measurement provider boundary to accept only a slot id,
+  so providers are not handed `SimInstance`, `SimSnapshot`, or full runner
+  state. A supplied CV miss now suppresses fallback to simulator camera
+  projection for that tick.
+- Treated `None` from a configured image provider as an explicit detector miss
+  and made telemetry report provider detection state when a provider is
+  configured.
+- Extended detector validation to reject non-finite principal points.
+
 ## 2026-06-04 - IVBS Apparent-Size Range Cue Planning
 
 - Identified detector-derived apparent target size as the most direct way to

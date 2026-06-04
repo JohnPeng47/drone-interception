@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 
 import numpy as np
 
@@ -9,7 +9,11 @@ from backends.csim.runner import CtbrCommandBatch, SimControlPolicy, SimRunnerSt
 from control_sims.beihang_paper_sim.controller.control_math import DEFAULT_GAINS
 
 from .control_law import bearing_error_rad, beihang_command_from_estimate, cautious_bearing_command
+from .cv_detection import TraditionalCvMeasurement, missed_measurement
 from .observer import VisualObserverConfig, VisualRelativeStateObserver
+
+
+ImageMeasurementProvider = Callable[[int], TraditionalCvMeasurement | None]
 
 
 class IVBSControlPolicy(SimControlPolicy):
@@ -20,6 +24,7 @@ class IVBSControlPolicy(SimControlPolicy):
         gains: Mapping[str, float] | None = None,
         observer_config: VisualObserverConfig | Mapping[str, float] | None = None,
         record_telemetry: bool = False,
+        image_measurement_provider: ImageMeasurementProvider | None = None,
     ):
         self._gains = {
             **DEFAULT_GAINS,
@@ -30,6 +35,7 @@ class IVBSControlPolicy(SimControlPolicy):
         }
         self._observer = VisualRelativeStateObserver(observer_config)
         self._record_telemetry = bool(record_telemetry)
+        self._image_measurement_provider = image_measurement_provider
         self.telemetry_rows: list[dict[str, float | int | str | bool]] = []
 
     def reset(self, state: SimRunnerState) -> None:
@@ -42,8 +48,10 @@ class IVBSControlPolicy(SimControlPolicy):
         instances: Sequence[SimInstance],
         state: SimRunnerState,
     ) -> None:
-        snapshots = tuple(state.snapshot[int(slot)] for slot in np.asarray(slots, dtype=np.int64).reshape(-1))
-        self._observer.start_slots(slots, instances, snapshots)
+        slot_array = np.asarray(slots, dtype=np.int64).reshape(-1)
+        snapshots = tuple(state.snapshot[int(slot)] for slot in slot_array)
+        image_measurements = {int(slot): self._image_measurement(int(slot)) for slot in slot_array}
+        self._observer.start_slots(slots, instances, snapshots, image_measurements=image_measurements)
 
     def command(self, state: SimRunnerState) -> CtbrCommandBatch:
         thrust_n = np.zeros(len(state.instances), dtype=np.float32)
@@ -53,11 +61,13 @@ class IVBSControlPolicy(SimControlPolicy):
                 self._observer.stop_slot(slot)
                 continue
             snapshot = state.snapshot[slot]
+            image_measurement = self._image_measurement(slot)
             estimate = self._observer.estimate(
                 slot,
                 instance,
                 snapshot,
                 t_s=float(state.elapsed_s[slot]),
+                image_measurement=image_measurement,
             )
             if estimate.metric_confident:
                 mode = "metric"
@@ -76,6 +86,7 @@ class IVBSControlPolicy(SimControlPolicy):
                     estimate,
                     float(command[0]),
                     np.asarray(command[1], dtype=float).reshape(3),
+                    image_measurement,
                 )
         return CtbrCommandBatch(thrust_n=thrust_n, body_rates_b=body_rates_b)
 
@@ -88,8 +99,10 @@ class IVBSControlPolicy(SimControlPolicy):
         estimate,
         thrust_n: float,
         body_rates_b: np.ndarray,
+        image_measurement: TraditionalCvMeasurement | None,
     ) -> None:
         snapshot = state.snapshot[slot]
+        detected = bool(snapshot.camera.detected) if image_measurement is None else bool(image_measurement.detected)
         self.telemetry_rows.append(
             {
                 "seed": int(instance.seed),
@@ -98,7 +111,7 @@ class IVBSControlPolicy(SimControlPolicy):
                 "tick": int(state.steps[slot]),
                 "t_s": float(state.elapsed_s[slot]),
                 "mode": str(mode),
-                "detected": bool(snapshot.camera.detected),
+                "detected": detected,
                 "valid": bool(estimate.valid),
                 "metric_confident": bool(estimate.metric_confident),
                 "stale_s": float(estimate.stale_s),
@@ -112,3 +125,12 @@ class IVBSControlPolicy(SimControlPolicy):
                 "body_rate_norm": float(np.linalg.norm(body_rates_b)),
             }
         )
+
+    def _image_measurement(
+        self,
+        slot: int,
+    ) -> TraditionalCvMeasurement | None:
+        if self._image_measurement_provider is None:
+            return None
+        measurement = self._image_measurement_provider(int(slot))
+        return missed_measurement() if measurement is None else measurement
