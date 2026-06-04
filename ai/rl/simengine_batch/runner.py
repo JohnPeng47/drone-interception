@@ -7,7 +7,7 @@ import numpy as np
 
 from backends.csim.bindings import BatchPufferSimEngineBackend
 from backends.csim.bindings.types import SimSnapshots
-from ai.rl.simengine_env.rewards import RewardConfig
+from ai.rl.simengine_env.rewards import RewardConfig, compute_rewards
 from ai.rl.simengine_env.scenario_table import ScenarioLabel
 
 from .generator import BatchReset, BatchSimGenerator
@@ -119,14 +119,14 @@ class BatchSimRunner:
         failed: np.ndarray,
     ) -> np.ndarray:
         cfg = self.config.reward
-        progress = self.previous_distance_m - distance
-        return (
-            np.where(intercepted, cfg.catch_reward, 0.0)
-            + cfg.progress_weight * progress
-            - cfg.distance_weight * distance
-            - cfg.rate_weight * np.linalg.norm(body_rates_b, axis=1)
-            - np.where(failed, cfg.fail_penalty, 0.0)
-        ).astype(np.float32)
+        del intercepted
+        return compute_rewards(
+            previous_distance_m=self.previous_distance_m,
+            distance_m=distance,
+            body_rates_b=body_rates_b,
+            failed=failed,
+            config=cfg,
+        )
 
     def _failed(self, snapshot: SimSnapshots) -> tuple[np.ndarray, list[str]]:
         pos = snapshot.arrays.pursuer[:, 0:3]
