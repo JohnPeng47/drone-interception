@@ -8,7 +8,12 @@ from backends.csim.bindings.types import SimInstance
 from backends.csim.runner import CtbrCommandBatch, SimControlPolicy, SimRunnerState
 from control_sims.beihang_paper_sim.controller.control_math import DEFAULT_GAINS
 
-from .control_law import bearing_error_rad, beihang_command_from_estimate, cautious_bearing_command
+from .control_law import (
+    bearing_error_rad,
+    beihang_command_from_estimate,
+    cautious_bearing_command,
+    terminal_visual_command,
+)
 from .cv_detection import TraditionalCvMeasurement, missed_measurement
 from .observer import VisualObserverConfig, VisualRelativeStateObserver
 
@@ -31,6 +36,14 @@ class IVBSControlPolicy(SimControlPolicy):
             "k_b": 0.65,
             "cautious_closing_accel_mps2": 3.0,
             "cautious_velocity_damping": 0.25,
+            "terminal_visual_range_m": 0.0,
+            "terminal_visual_range_std_m": 3.5,
+            "terminal_visual_bearing_error_rad": 0.35,
+            "terminal_closing_speed_max_mps": 2.5,
+            "terminal_closing_accel_mps2": 1.0,
+            "terminal_overspeed_decel_mps2": 2.0,
+            "terminal_velocity_damping": 0.55,
+            "terminal_bearing_thrust_cutoff_rad": 0.55,
             **dict(gains or {}),
         }
         self._observer = VisualRelativeStateObserver(observer_config)
@@ -69,9 +82,13 @@ class IVBSControlPolicy(SimControlPolicy):
                 t_s=float(state.elapsed_s[slot]),
                 image_measurement=image_measurement,
             )
-            if estimate.metric_confident:
+            terminal_visual = self._use_terminal_visual(instance, snapshot, estimate)
+            if estimate.metric_confident and not terminal_visual:
                 mode = "metric"
                 command = beihang_command_from_estimate(instance, snapshot, estimate, self._gains)
+            elif terminal_visual:
+                mode = "terminal_visual"
+                command = terminal_visual_command(instance, snapshot, estimate, self._gains)
             else:
                 mode = "bearing_fallback" if estimate.valid else "hover"
                 command = cautious_bearing_command(instance, snapshot, estimate, self._gains)
@@ -134,3 +151,17 @@ class IVBSControlPolicy(SimControlPolicy):
             return None
         measurement = self._image_measurement_provider(int(slot))
         return missed_measurement() if measurement is None else measurement
+
+    def _use_terminal_visual(self, instance: SimInstance, snapshot, estimate) -> bool:
+        if not estimate.valid or not np.isfinite(float(estimate.estimated_range_m)):
+            return False
+        terminal_range = float(self._gains.get("terminal_visual_range_m", 2.5))
+        if terminal_range <= 0.0 or float(estimate.estimated_range_m) > terminal_range:
+            return False
+        if float(estimate.range_std_m) > float(self._gains.get("terminal_visual_range_std_m", 3.5)):
+            return True
+        bearing_error = bearing_error_rad(instance, snapshot, estimate)
+        return bool(
+            np.isfinite(bearing_error)
+            and bearing_error > float(self._gains.get("terminal_visual_bearing_error_rad", 0.35))
+        )

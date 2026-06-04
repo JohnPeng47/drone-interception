@@ -161,10 +161,23 @@ def test_ivbs_policy_records_command_telemetry():
     assert len(policy.telemetry_rows) == 1
     row = policy.telemetry_rows[0]
     assert row["seed"] == int(instance.seed)
-    assert row["mode"] in {"metric", "bearing_fallback", "hover"}
+    assert row["mode"] in {"metric", "bearing_fallback", "terminal_visual", "hover"}
     assert "estimated_range_m" in row
     assert "range_std_m" in row
     assert "bearing_error_rad" in row
+
+
+def test_ivbs_default_policy_does_not_select_terminal_visual_mode():
+    instance = read_six_robust_intercept_samples()[0]
+    runner = SimRunner(max_envs=1)
+    state = runner.reset([instance])
+    policy = IVBSControlPolicy(record_telemetry=True)
+    policy.reset(state)
+    policy.on_slots_started(np.array([0], dtype=np.int64), (instance,), state)
+
+    policy.command(state)
+
+    assert policy.telemetry_rows[-1]["mode"] != "terminal_visual"
 
 
 def test_traditional_cv_detects_dark_blob_and_apparent_size():
@@ -475,6 +488,108 @@ def test_ivbs_apparent_size_measurement_reduces_range_covariance():
     )
 
     assert estimate_with_size.range_std_m < estimate_without_size.range_std_m
+
+
+def test_ivbs_observer_process_models_predict_different_velocity_decay():
+    instance = read_six_robust_intercept_samples()[0]
+    runner = SimRunner(max_envs=1)
+    state = runner.reset([instance])
+    no_detection_state = _state_with_camera(state, detected=False, uv_norm=(0.0, 0.0))
+    observers = {
+        name: VisualRelativeStateObserver({"target_process_model": name})
+        for name in ("stationary", "constant_velocity", "damped_velocity")
+    }
+    for observer in observers.values():
+        observer.start_slots(np.array([0], dtype=np.int64), (instance,), (state.snapshot[0],))
+        observer._slots[0].x[3:6] = np.array([1.0, 0.0, 0.0], dtype=float)
+    initial_x = {
+        name: observer._slots[0].x.copy()
+        for name, observer in observers.items()
+    }
+
+    for observer in observers.values():
+        observer.estimate(0, instance, no_detection_state.snapshot[0], t_s=1.0)
+    final_x = {
+        name: observer._slots[0].x.copy()
+        for name, observer in observers.items()
+    }
+
+    np.testing.assert_allclose(final_x["stationary"][0:3], initial_x["stationary"][0:3])
+    np.testing.assert_allclose(final_x["stationary"][3:6], np.zeros(3))
+    assert final_x["constant_velocity"][0] > initial_x["constant_velocity"][0] + 0.9
+    assert final_x["constant_velocity"][3] == 1.0
+    assert initial_x["damped_velocity"][0] < final_x["damped_velocity"][0] < final_x["constant_velocity"][0]
+    assert 0.0 < final_x["damped_velocity"][3] < final_x["constant_velocity"][3]
+
+
+def test_ivbs_terminal_visual_mode_selected_for_close_uncertain_estimate():
+    instance = read_six_robust_intercept_samples()[0]
+    runner = SimRunner(max_envs=1)
+    state = runner.reset([instance])
+    policy = IVBSControlPolicy(
+        gains={
+            "terminal_visual_range_m": 99.0,
+            "terminal_visual_range_std_m": 0.0,
+        },
+        record_telemetry=True,
+    )
+    policy.reset(state)
+    policy.on_slots_started(np.array([0], dtype=np.int64), (instance,), state)
+
+    command = policy.command(state)
+
+    assert policy.telemetry_rows[-1]["mode"] == "terminal_visual"
+    assert np.all(np.isfinite(command.thrust_n))
+    assert np.all(np.isfinite(command.body_rates_b))
+
+
+def test_ivbs_terminal_visual_command_does_not_depend_on_forbidden_truth():
+    instance = read_six_robust_intercept_samples()[0]
+    runner = SimRunner(max_envs=1)
+    state = runner.reset([instance])
+    altered_instance, altered_state = _alter_forbidden_truth(instance, state)
+    gains = {
+        "terminal_visual_range_m": 99.0,
+        "terminal_visual_range_std_m": 0.0,
+    }
+    policy_a = IVBSControlPolicy(gains=gains, record_telemetry=True)
+    policy_b = IVBSControlPolicy(gains=gains, record_telemetry=True)
+    policy_a.reset(state)
+    policy_b.reset(altered_state)
+    policy_a.on_slots_started(np.array([0], dtype=np.int64), (instance,), state)
+    policy_b.on_slots_started(np.array([0], dtype=np.int64), (altered_instance,), altered_state)
+
+    command_a = policy_a.command(state)
+    command_b = policy_b.command(altered_state)
+
+    assert policy_a.telemetry_rows[-1]["mode"] == "terminal_visual"
+    assert policy_b.telemetry_rows[-1]["mode"] == "terminal_visual"
+    np.testing.assert_allclose(command_a.thrust_n, command_b.thrust_n, atol=0.0)
+    np.testing.assert_allclose(command_a.body_rates_b, command_b.body_rates_b, atol=0.0)
+    assert policy_a.telemetry_rows[-1] == policy_b.telemetry_rows[-1]
+
+
+def test_ivbs_terminal_visual_bearing_error_branch_can_select_mode():
+    instance = read_six_robust_intercept_samples()[0]
+    runner = SimRunner(max_envs=1)
+    state = _state_with_camera(runner.reset([instance]), detected=True, uv_norm=(0.4, 0.0))
+    policy = IVBSControlPolicy(
+        gains={
+            "terminal_visual_range_m": 99.0,
+            "terminal_visual_range_std_m": 99.0,
+            "terminal_visual_bearing_error_rad": 0.01,
+        },
+        record_telemetry=True,
+    )
+    policy.reset(state)
+    policy.on_slots_started(np.array([0], dtype=np.int64), (instance,), state)
+
+    command = policy.command(state)
+
+    assert policy.telemetry_rows[-1]["mode"] == "terminal_visual"
+    assert policy.telemetry_rows[-1]["bearing_error_rad"] > 0.01
+    assert np.all(np.isfinite(command.thrust_n))
+    assert np.all(np.isfinite(command.body_rates_b))
 
 
 def _first_command_for_state(instance, state):

@@ -22,6 +22,8 @@ class VisualObserverConfig:
     metric_range_std_threshold_m: float = 2.0
     process_position_noise_mps: float = 0.15
     process_velocity_noise_mps2: float = 0.4
+    target_process_model: str = "constant_velocity"
+    target_velocity_damping_per_s: float = 0.5
     image_noise_norm: float = 1.0e-3
     size_noise_fraction: float = 0.25
     min_size_confidence: float = 0.05
@@ -153,7 +155,19 @@ class _SlotObserver:
     def _predict(self, dt: float) -> None:
         assert self.x is not None and self.p is not None
         f = np.eye(6, dtype=float)
-        f[0:3, 3:6] = np.eye(3) * float(dt)
+        model = str(self.config.target_process_model)
+        if model == "constant_velocity":
+            f[0:3, 3:6] = np.eye(3) * float(dt)
+        elif model == "damped_velocity":
+            damping = max(float(self.config.target_velocity_damping_per_s), 0.0)
+            decay = float(np.exp(-damping * float(dt))) if damping > 1.0e-9 else 1.0
+            alpha = (1.0 - decay) / damping if damping > 1.0e-9 else float(dt)
+            f[0:3, 3:6] = np.eye(3) * alpha
+            f[3:6, 3:6] = np.eye(3) * decay
+        elif model == "stationary":
+            f[3:6, 3:6] = np.zeros((3, 3), dtype=float)
+        else:
+            raise ValueError(f"unsupported IVBS target_process_model: {model}")
         q = np.zeros((6, 6), dtype=float)
         q_pos = float(self.config.process_position_noise_mps) ** 2 * float(dt)
         q_vel = float(self.config.process_velocity_noise_mps2) ** 2 * float(dt)
