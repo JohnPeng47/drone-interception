@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib
+import os
 import re
 from abc import ABC, abstractmethod
 from pathlib import Path
@@ -10,6 +11,8 @@ from backends.csim.bindings.types import SimConfig, SimInstance
 
 
 _CONFIG_NAME_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+_CONFIG_MODULE_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z_][A-Za-z0-9_]*)*$")
+CONFIG_MODULE_ENV = "CSIM_CONFIG_MODULE"
 
 
 def get_config(config_name: str) -> SimConfig:
@@ -18,10 +21,15 @@ def get_config(config_name: str) -> SimConfig:
     if not _CONFIG_NAME_RE.fullmatch(module_name):
         raise ValueError(f"Invalid SimConfig name {config_name!r}")
 
-    module = importlib.import_module(f"backends.csim.configs.{module_name}")
+    configured_module = os.environ.get(CONFIG_MODULE_ENV)
+    import_path = f"backends.csim.configs.{module_name}" if configured_module is None else configured_module
+    if not _CONFIG_MODULE_RE.fullmatch(import_path):
+        raise ValueError(f"Invalid {CONFIG_MODULE_ENV} module path {import_path!r}")
+
+    module = importlib.import_module(import_path)
     config = getattr(module, "SIM_CONFIG", None)
     if not isinstance(config, SimConfig):
-        raise TypeError(f"backends.csim.configs.{module_name}.SIM_CONFIG must be a SimConfig")
+        raise TypeError(f"{import_path}.SIM_CONFIG must be a SimConfig")
     return config
 
 

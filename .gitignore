@@ -194,15 +194,22 @@ ai/rl/scripts/.runpod_pod.json*
 # Local agent workspaces and planning artifacts
 /.agents/
 
+# Generated RL reports
+/ai/rl/report/reports/
+
 # Generated simulation instances and sample metadata
 /scripts/generators/sim_instances/**/*.csimin
 /scripts/generators/sim_instances/**/*.json
 !/scripts/generators/sim_instances/controller_regression_6/sobol_samples.csimin
 
+# Generated controller profiling and run outputs
+/control_sims/optimizing_rpg/*_profile*/
+
 # Analysis run outputs. Keep analysis scripts/reports trackable.
 /docs/analysis/**/*.json
 /docs/analysis/**/*.csv
 /docs/analysis/**/*.png
+/docs/analysis/**/*.npz
 /docs/analysis/**/trials.csv
 /docs/analysis/**/snapshots/
 /docs/analysis/**/plots/
@@ -218,9 +225,15 @@ ai/rl/scripts/.runpod_pod.json*
 
 # Local third-party source checkouts
 /tools/rpg_time_optimal/
+/docs/analysis/ai/rl/sim_benchmarks/agilicious/
+/docs/analysis/ai/rl/sim_benchmarks/flightmare/
+/docs/analysis/ai/rl/sim_benchmarks/habitat-sim/
 
 # Local research paper downloads. Force-add curated papers when needed.
 /papers/*.pdf
-/papers/*.txt
 /papers/**/*.pdf
+/papers/*.txt
 /papers/**/*.txt
+/papers/**/*.html
+/research/**/*.pdf
+/research/**/txt/

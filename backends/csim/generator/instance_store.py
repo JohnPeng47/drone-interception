@@ -113,6 +113,44 @@ def read_sim_instances(
         return instances
 
 
+def read_sim_instances_by_index(path: str | Path, indices: list[int] | tuple[int, ...]) -> tuple[dict[int, SimInstance], int]:
+    requested = sorted({int(index) for index in indices})
+    if any(index < 0 for index in requested):
+        raise ValueError("indices must be non-negative")
+    if not requested:
+        return {}, 0
+
+    in_path = Path(path)
+    with in_path.open("rb") as handle:
+        header = handle.read(_HEADER.size)
+        if len(header) < _HEADER.size:
+            raise ValueError(f"{path} is too small to be a SimInstance table")
+        magic, version, total_count, payload_len = _HEADER.unpack(header)
+        if magic != SIM_INSTANCE_MAGIC:
+            raise ValueError(f"{path} is not a SimInstance table")
+        if version != SIM_INSTANCE_FORMAT_VERSION:
+            raise ValueError(
+                f"Unsupported SimInstance table version {version}; "
+                f"expected {SIM_INSTANCE_FORMAT_VERSION}"
+            )
+        payload_end = _HEADER.size + int(payload_len)
+        if in_path.stat().st_size != payload_end:
+            raise ValueError(f"{path} has an invalid SimInstance table length")
+
+        cursor = _FileCursor(handle, payload_end)
+        selected: dict[int, SimInstance] = {}
+        requested_pos = 0
+        max_index = min(requested[-1], int(total_count) - 1)
+        for index in range(max_index + 1):
+            instance = _read_sim_instance(cursor)
+            if requested_pos < len(requested) and index == requested[requested_pos]:
+                selected[index] = instance
+                requested_pos += 1
+                while requested_pos < len(requested) and requested[requested_pos] >= int(total_count):
+                    requested_pos += 1
+        return selected, int(total_count)
+
+
 class _Cursor:
     def __init__(self, data: bytes):
         self.data = data

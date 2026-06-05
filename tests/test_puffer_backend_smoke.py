@@ -261,6 +261,57 @@ def test_batch_sim_engine_matches_scalar_step():
     np.testing.assert_allclose(batch_snapshot[0].metrics.distance_m, scalar_snapshot["metrics"]["distance_m"], atol=1e-5)
 
 
+def test_scalar_sim_engine_reset_instance_overrides_constructor_config():
+    params = _params()
+    target = TargetConfig(id="target", kind="target", radius_m=0.2)
+    config = SimConfig(
+        pursuer=params,
+        options=SimOptions(backend_dt=0.007, action_substeps=3),
+        targets=(target,),
+        intercept_radius_m=0.1,
+    )
+    wrong_params = PursuerParams(
+        mass_kg=1.0,
+        ixx=3.85e-6,
+        iyy=3.85e-6,
+        izz=5.9675e-6,
+        arm_len_m=0.0396,
+        k_thrust=3.16e-10,
+        k_yaw=0.005964552,
+        max_rpm=21702.0,
+    )
+    wrong_config = SimConfig(
+        pursuer=wrong_params,
+        options=SimOptions(backend_dt=0.02, action_substeps=5),
+        intercept_radius_m=9.0,
+    )
+    initial = PursuerInitialState(
+        position_w=np.zeros(3),
+        velocity_w=np.zeros(3),
+        quat_xyzw=np.array([0.0, 0.0, 0.0, 1.0]),
+        body_rates_b=np.zeros(3),
+    )
+    target_initial = TargetInitialState(
+        position_w=np.array([2.0, 0.0, 0.0]),
+        velocity_w=np.zeros(3),
+    )
+    instance = SimInstance(seed=1, pursuer_initial=initial, target_initials=(target_initial,), config=config)
+
+    scalar = PufferSimEngineBackend(wrong_config)
+    scalar_snapshot = scalar.reset(instance)
+    batch = BatchPufferSimEngineBackend(1)
+    batch_snapshot = batch.reset_many(np.array([0]), (instance,))
+
+    assert scalar.params == params
+    assert scalar.options == config.options
+    assert scalar.dt == config.options.backend_dt * config.options.action_substeps
+    np.testing.assert_allclose(
+        scalar_snapshot["vehicle_state"]["rotor_speeds"],
+        batch_snapshot[0].pursuer.rotor_speeds,
+        atol=1e-5,
+    )
+
+
 def test_batch_sim_engine_accepts_physical_ctbr_commands():
     params = _params()
     target = TargetConfig(id="target", kind="target", radius_m=0.2)

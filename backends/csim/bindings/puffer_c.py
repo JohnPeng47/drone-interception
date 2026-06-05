@@ -486,6 +486,11 @@ class PufferSimEngineBackend(PufferDroneBackend):
             instance = initial_state
             if instance.config is None:
                 raise ValueError("SimInstance reset requires SimInstance.config")
+            self.config = instance.config
+            self.params = instance.config.pursuer
+            self.options = instance.config.options
+            self.mass_kg = self.params.mass_kg
+            self.dt = self.options.backend_dt * self.options.action_substeps
             initial_state = instance.pursuer_initial
             targets = _target_specs_from_instance(instance)
             cameras = instance.config.cameras
@@ -782,13 +787,22 @@ class BatchPufferSimEngineBackend:
         return self.snapshot().with_commands(thrust, body_rates)
 
     def step_motor_speeds_many(self, cmd_motor_speeds_rpm: np.ndarray) -> SimSnapshots:
+        return self.step_motor_speeds_many_dt(
+            cmd_motor_speeds_rpm,
+            float(self._dt if self._dt is not None else PUFFER_ACTION_DT),
+        )
+
+    def step_motor_speeds_many_dt(self, cmd_motor_speeds_rpm: np.ndarray, dt: float) -> SimSnapshots:
+        step_dt = float(dt)
+        if not np.isfinite(step_dt) or step_dt <= 0.0:
+            raise ValueError("dt must be finite and positive")
         cmd_rpms = np.asarray(cmd_motor_speeds_rpm, dtype=np.float32).reshape(self.num_envs, 4)
         cmd_rpms = np.clip(cmd_rpms, self._min_rpm[:, None], self._max_rpm[:, None])
         self._lib.sim_engine_batch_step_motor_speeds_dt(
             self._engines,
             np.ascontiguousarray(cmd_rpms, dtype=np.float32).ctypes.data_as(C.POINTER(C.c_float)),
             C.c_int(self.num_envs),
-            C.c_float(float(self._dt if self._dt is not None else PUFFER_ACTION_DT)),
+            C.c_float(step_dt),
             C.c_int(max(1, int(self._substeps if self._substeps is not None else PUFFER_ACTION_SUBSTEPS))),
         )
         return self.snapshot()

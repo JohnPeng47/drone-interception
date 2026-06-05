@@ -5,10 +5,10 @@ from argparse import Namespace
 import numpy as np
 import torch
 
-from ai.rl.simengine_batch.checkpointing import CHECKPOINT_TYPE, SCHEMA_VERSION
-from ai.rl.simengine_batch.observations import OBS_SIZE
-from ai.rl.simengine_batch.policy import NeuralNetworkSimControlPolicy
-from ai.rl.simengine_batch.puffer_ppo import PufferMLPPolicy
+from ai.rl.puffer_intercept.checkpointing import CHECKPOINT_TYPE, SCHEMA_VERSION
+from ai.rl.puffer_intercept.observations import OBS_SIZE
+from ai.rl.puffer_intercept.policy import NeuralNetworkSimControlPolicy
+from ai.rl.puffer_intercept.puffer_ppo import PufferMLPPolicy
 from backends.csim.generator.instance_store import read_sim_instances
 from backends.csim.runner import SimRunner, SimRunnerState
 

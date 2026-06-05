@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import importlib
+
 import numpy as np
 
 from backends.csim.bindings.types import SimConfig
-from backends.csim.generator.generator import SimInstanceGenerator, get_config
+from backends.csim.generator.generator import CONFIG_MODULE_ENV, SimInstanceGenerator, get_config
 from scripts.generators.robust_intercept import RobustInterceptConfigGenerator, evaluate_samples
 
 
@@ -14,7 +16,20 @@ def test_base_config_resolver_returns_typed_sim_config():
     assert config.targets[0].radius_m == 0.2
     assert config.options.duration_s == 6.0
     assert len(config.cameras) == 1
+    assert config.pursuer.max_omega_rps == config.max_rate_rps
     assert SimInstanceGenerator.get_config("base").targets[0].id == "target"
+
+
+def test_config_resolver_supports_environment_module_override(monkeypatch):
+    monkeypatch.setenv(CONFIG_MODULE_ENV, "ai.rl.config")
+
+    config = get_config("base")
+    expected = importlib.import_module("ai.rl.config").SIM_CONFIG
+
+    assert config is expected
+    assert config.targets[0].behavior.waypoints == ()
+    assert config.targets[0].controller.kp == 0.0
+    assert config.targets[0].controller.kv == 0.0
 
 
 def test_camera_bearing_offset_drives_current_path_lateral_miss():

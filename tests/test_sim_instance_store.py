@@ -22,6 +22,7 @@ from backends import (
     read_sim_instances,
     write_sim_instances,
 )
+from backends.csim.generator.instance_store import read_sim_instances_by_index
 from backends.csim.generator.metadata import write_sample_metadata
 
 
@@ -47,6 +48,7 @@ def test_sim_instance_binary_round_trip(tmp_path):
     assert restored.config.options.validation_dt == np.float32(0.04)
     assert restored.config.max_thrust_n == np.float32(1.2)
     assert restored.config.max_rate_rps == np.float32(3.4)
+    assert restored.config.pursuer.max_omega_rps == np.float32(3.4)
     assert restored.config.bounds_w == (30.0, 31.0, 32.0)
     assert restored.config.noise.pixel_noise_std_px == (1.0, 2.0)
     assert restored.config.noise.dropout_probability == 0.25
@@ -78,6 +80,18 @@ def test_read_sim_instances_supports_bounded_reads(tmp_path):
     assert [instance.seed for instance in read_sim_instances(path, count=2)] == [1, 2]
     assert [instance.seed for instance in read_sim_instances(path, count=2, offset=2)] == [3, 4]
     assert read_sim_instances(path, count=2, offset=10) == []
+
+
+def test_read_sim_instances_by_index_returns_selected_records(tmp_path):
+    path = tmp_path / "instances.bin"
+    write_sim_instances(path, [_instance(seed=1), _instance(seed=2), _instance(seed=3), _instance(seed=4)])
+
+    selected, total_count = read_sim_instances_by_index(path, (3, 1, 3))
+
+    assert total_count == 4
+    assert sorted(selected) == [1, 3]
+    assert selected[1].seed == 2
+    assert selected[3].seed == 4
 
 
 def test_sample_metadata_sidecar_records_table_summary(tmp_path):
@@ -155,6 +169,7 @@ def _instance(seed: int) -> SimInstance:
             arm_len_m=0.0396,
             k_thrust=3.16e-10,
             k_yaw=0.0059,
+            max_omega_rps=3.4,
             rotor_positions_b=np.zeros((4, 3)),
             rotor_directions=np.array([1.0, -1.0, 1.0, -1.0]),
         ),

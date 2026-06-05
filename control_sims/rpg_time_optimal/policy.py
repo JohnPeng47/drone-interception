@@ -6,7 +6,7 @@ from backends.csim.bindings.types import SimInstance, SimSnapshot
 from backends.csim.runner import CtbrCommandBatch, SimControlPolicy, SimRunnerState
 from control_sims.eth_mpc.policy import _accel_to_ctbr, _hover_command
 
-from .adapter import RpgTimeOptimalAdapter, RpgTimeOptimalPlan
+from .planner import RpgTimeOptimalPlanner, RpgTimeOptimalPlan
 from .config import RpgTimeOptimalConfig
 
 
@@ -15,7 +15,7 @@ class RpgTimeOptimalControlPolicy(SimControlPolicy):
 
     def __init__(self, config: RpgTimeOptimalConfig | None = None):
         self.config = config or RpgTimeOptimalConfig()
-        self.adapter = RpgTimeOptimalAdapter(self.config)
+        self.planner = RpgTimeOptimalPlanner(self.config)
         self._slots: dict[int, RpgTimeOptimalPlan] = {}
 
     def reset(self, state: SimRunnerState) -> None:
@@ -27,7 +27,7 @@ class RpgTimeOptimalControlPolicy(SimControlPolicy):
             instance = state.instances[slot_i]
             if instance is None:
                 continue
-            self._slots[slot_i] = self.adapter.solve(instance)
+            self._slots[slot_i] = self.planner.solve(instance)
 
     def command(self, state: SimRunnerState) -> CtbrCommandBatch:
         thrust_n = np.zeros(len(state.instances), dtype=np.float32)

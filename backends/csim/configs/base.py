@@ -31,6 +31,7 @@ SIM_CONFIG = SimConfig(
         k_thrust=8.54858e-6,
         k_yaw=0.016,
         max_rpm=21702.0,
+        max_omega_rps=8.0,
         rotor_positions_b=np.array([
             [_ARM_M, _ARM_M, 0.0],
             [-_ARM_M, _ARM_M, 0.0],

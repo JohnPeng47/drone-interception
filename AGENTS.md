@@ -30,3 +30,7 @@ python -m pytest -q tests/test_sim_instance_store.py tests/test_puffer_backend_s
 - *All* analysis scripts that generate output should be implemented inside docs/analysis
 - If the target of the analysis is tied to a specific source code folder, then you should create a subfolder for that source code inside docs/analysis/<source_folder>
 - If the analysis generates artifacts, then put it into the analysis folder
+
+# Running a Training Run
+- When the user asks you kick off a live training run, make sure that he specified the reward file
+- Never assume a default reward, prompt him to provide one if it is not given

@@ -76,6 +76,7 @@ def run_policy_cli(
     parser.add_argument("--samples", type=int, default=None)
     parser.add_argument("--scenario-table", type=Path, default=None)
     parser.add_argument("--offset", type=int, default=0)
+    parser.add_argument("--seeds", default="", help="Comma-separated seed filter after samples/offset selection.")
     parser.add_argument("--out-dir", type=Path, default=None)
     parser.add_argument("--run-suffix", default=None)
     parser.add_argument("--progress-every", type=int, default=10)
@@ -134,6 +135,7 @@ def run_policy_cli(
             except Exception as exc:  # noqa: BLE001
                 rows.extend(_error_rows_for_chunk(chunk, sim_name, exc))
             completed_count += len(chunk)
+            _write_partial_artifacts(runner, run_dir, rows, start)
             _print_progress(completed_count, len(tasks), int(args.progress_every), start)
     else:
         with concurrent.futures.ProcessPoolExecutor(max_workers=workers) as executor:
@@ -159,6 +161,7 @@ def run_policy_cli(
                 except Exception as exc:  # noqa: BLE001
                     rows.extend(_error_rows_for_chunk(chunk, sim_name, exc))
                 completed_count += len(chunk)
+                _write_partial_artifacts(runner, run_dir, rows, start)
                 _print_progress(completed_count, len(tasks), int(args.progress_every), start)
 
     rows.sort(key=lambda row: int(row["seed"]))
@@ -211,6 +214,9 @@ def _load_tasks(args: argparse.Namespace) -> tuple[list[Any], str, float, float]
         count=None if args.samples is None else int(args.samples),
         offset=int(args.offset),
     )
+    if args.seeds.strip():
+        requested = {int(seed) for seed in args.seeds.split(",") if seed.strip()}
+        instances = [instance for instance in instances if int(instance.seed) in requested]
     if not instances:
         return [], str(scenario_table), math.nan, math.nan
     first_config = instances[0].config
@@ -254,6 +260,24 @@ def _print_progress(completed: int, total: int, progress_every: int, start: floa
         return
     elapsed = time.perf_counter() - start
     print(f"completed {completed}/{total} scenarios in {elapsed:.1f}s", flush=True)
+
+
+def _write_partial_artifacts(
+    runner: ControlSimRunsRunner,
+    run_dir: Path,
+    rows: list[dict[str, Any]],
+    start: float,
+) -> None:
+    sorted_rows = sorted(rows, key=lambda row: int(row["seed"]))
+    runner.runs_logger.write_csv(run_dir, "trials.partial.csv", sorted_rows, TRIAL_FIELDNAMES)
+    runner.runs_logger.write_json(
+        run_dir,
+        "summary.partial.json",
+        {
+            "elapsed_wall_s": time.perf_counter() - start,
+            "summary": _summarize_subset(sorted_rows),
+        },
+    )
 
 
 def _run_instances(

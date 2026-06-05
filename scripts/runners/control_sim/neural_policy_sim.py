@@ -11,7 +11,7 @@ import numpy as np
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
 
-from ai.rl.simengine_batch.policy import NeuralNetworkSimControlPolicy
+from ai.rl.puffer_intercept.policy import NeuralNetworkSimControlPolicy
 from backends.csim.generator.instance_store import read_sim_instances
 from backends.csim.runner import SimRunner
 from control_sims.logging import snapshot_rows_from_step

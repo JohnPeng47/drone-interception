@@ -5,7 +5,7 @@ import numpy as np
 from backends.csim.bindings.types import PursuerParams, SimInstance
 from backends.csim.runner import MotorSpeedCommandBatch, SimControlPolicy, SimRunnerState
 
-from .adapter import RpgTimeOptimalAdapter, RpgTimeOptimalPlan
+from .planner import RpgTimeOptimalPlanner, RpgTimeOptimalPlan
 from .config import RpgTimeOptimalConfig
 
 
@@ -14,7 +14,7 @@ class RpgTimeOptimalMotorFeedforwardPolicy(SimControlPolicy):
 
     def __init__(self, config: RpgTimeOptimalConfig | None = None):
         self.config = config or RpgTimeOptimalConfig()
-        self.adapter = RpgTimeOptimalAdapter(self.config)
+        self.planner = RpgTimeOptimalPlanner(self.config)
         self._slots: dict[int, RpgTimeOptimalPlan] = {}
 
     def reset(self, state: SimRunnerState) -> None:
@@ -25,7 +25,7 @@ class RpgTimeOptimalMotorFeedforwardPolicy(SimControlPolicy):
             slot_i = int(slot)
             instance = state.instances[slot_i]
             if instance is not None:
-                self._slots[slot_i] = self.adapter.solve(instance)
+                self._slots[slot_i] = self.planner.solve(instance)
 
     def command(self, state: SimRunnerState) -> MotorSpeedCommandBatch:
         motor_speeds_rpm = np.zeros((len(state.instances), 4), dtype=np.float32)
@@ -36,21 +36,23 @@ class RpgTimeOptimalMotorFeedforwardPolicy(SimControlPolicy):
             if plan is None:
                 motor_speeds_rpm[slot] = _hover_rpm(instance.config.pursuer)
                 continue
-            motor_speeds_rpm[slot] = _command_one(
+            motor_speeds_rpm[slot] = sample_motor_speed_command(
                 instance,
                 plan,
                 float(state.elapsed_s[slot]),
                 time_scale=float(self.config.plan_time_scale),
+                command_mode=self.config.motor_command_mode,
             )
         return MotorSpeedCommandBatch(motor_speeds_rpm=motor_speeds_rpm)
 
 
-def _command_one(
+def sample_motor_speed_command(
     instance: SimInstance,
     plan: RpgTimeOptimalPlan,
     elapsed_s: float,
     *,
     time_scale: float,
+    command_mode: str,
 ) -> np.ndarray:
     assert instance.config is not None
     params = instance.config.pursuer
@@ -58,9 +60,7 @@ def _command_one(
     if plan_time_s > float(plan.total_time_s):
         return np.full(4, _hover_rpm(params), dtype=np.float32)
     if plan.motor_speed_commands_rpm is not None:
-        index = int(np.searchsorted(plan.t_u_s, max(plan_time_s, 0.0), side="right") - 1)
-        index = int(np.clip(index, 0, plan.motor_speed_commands_rpm.shape[1] - 1))
-        return np.asarray(plan.motor_speed_commands_rpm[:, index], dtype=np.float32).reshape(4)
+        return _sample_motor_commands(plan, plan_time_s, command_mode).astype(np.float32)
     index = int(np.searchsorted(plan.t_u_s, max(plan_time_s, 0.0), side="right") - 1)
     index = int(np.clip(index, 0, plan.motor_thrusts_n.shape[1] - 1))
     cpc_rotor_thrusts_n = np.asarray(plan.motor_thrusts_n[:, index], dtype=float).reshape(4)
@@ -68,6 +68,22 @@ def _command_one(
     sim_rotor_thrusts_n = _sim_rotor_thrusts_from_wrench(wrench, params)
     motor_speeds = _rotor_thrusts_to_rpm(sim_rotor_thrusts_n, params)
     return motor_speeds.astype(np.float32)
+
+
+def _sample_motor_commands(plan: RpgTimeOptimalPlan, plan_time_s: float, command_mode: str) -> np.ndarray:
+    assert plan.motor_speed_commands_rpm is not None
+    sample_t = max(float(plan_time_s), 0.0)
+    if command_mode == "linear":
+        t_u = np.asarray(plan.t_u_s, dtype=float)
+        commands = np.asarray(plan.motor_speed_commands_rpm, dtype=float)
+        if commands.shape[1] == 1:
+            return commands[:, 0].copy()
+        t_ref = np.append(t_u, float(plan.total_time_s))
+        values = np.column_stack((commands, commands[:, -1]))
+        return np.array([np.interp(sample_t, t_ref, values[row]) for row in range(4)], dtype=float)
+    index = int(np.searchsorted(plan.t_u_s, sample_t, side="right") - 1)
+    index = int(np.clip(index, 0, plan.motor_speed_commands_rpm.shape[1] - 1))
+    return np.asarray(plan.motor_speed_commands_rpm[:, index], dtype=float).reshape(4)
 
 
 def _cpc_wrench_from_rotor_thrusts(rotor_thrusts_n: np.ndarray, params: PursuerParams) -> np.ndarray:

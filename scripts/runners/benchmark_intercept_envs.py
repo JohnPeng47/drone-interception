@@ -10,10 +10,7 @@ ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from ai.rl.simengine_batch.benchmark_modes import (
-    run_puffer_native_benchmark,
-    run_simengine_batch_benchmark,
-)
+from ai.rl.puffer_intercept.benchmark_modes import run_puffer_native_benchmark
 
 
 def main() -> None:
@@ -25,8 +22,8 @@ def main() -> None:
     )
     parser.add_argument(
         "--mode",
-        choices=("simengine_batch", "puffer_native", "both"),
-        default="both",
+        choices=("puffer_native",),
+        default="puffer_native",
     )
     parser.add_argument("--num-envs", type=int, nargs="+", default=[os.cpu_count() or 1])
     parser.add_argument("--steps", type=int, default=256)
@@ -36,26 +33,15 @@ def main() -> None:
     args = parser.parse_args()
 
     for num_envs in args.num_envs:
-        if args.mode in ("simengine_batch", "both"):
-            result = run_simengine_batch_benchmark(
-                args.scenario_file,
-                num_envs=num_envs,
-                steps=args.steps,
-                seed=args.seed,
-                policy_latency_us=args.policy_latency_us,
-                max_episode_steps=args.max_episode_steps,
-            )
-            print(json.dumps(result.to_dict(), sort_keys=True), flush=True)
-        if args.mode in ("puffer_native", "both"):
-            result = run_puffer_native_benchmark(
-                args.scenario_file,
-                num_envs=num_envs,
-                steps=args.steps,
-                seed=args.seed,
-                policy_latency_us=args.policy_latency_us,
-                max_episode_steps=args.max_episode_steps,
-            )
-            print(json.dumps(result.to_dict(), sort_keys=True), flush=True)
+        result = run_puffer_native_benchmark(
+            args.scenario_file,
+            num_envs=num_envs,
+            steps=args.steps,
+            seed=args.seed,
+            policy_latency_us=args.policy_latency_us,
+            max_episode_steps=args.max_episode_steps,
+        )
+        print(json.dumps(result.to_dict(), sort_keys=True), flush=True)
 
 
 if __name__ == "__main__":
